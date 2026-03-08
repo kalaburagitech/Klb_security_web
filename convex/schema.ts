@@ -19,7 +19,8 @@ export default defineSchema({
             v.literal("Officer"),
             v.literal("Security Officer"),
             v.literal("SG"),
-            v.literal("SO")
+            v.literal("SO"),
+            v.literal("NEW_USER")
         ),
         organizationId: v.id("organizations"),
         siteId: v.optional(v.id("sites")), // Legacy field for migration
@@ -36,6 +37,17 @@ export default defineSchema({
     }).index("by_clerkId", ["clerkId"])
         .index("by_org", ["organizationId"])
         .index("by_email", ["email"]),
+
+    loginLogs: defineTable({
+        userId: v.id("users"),
+        email: v.string(),
+        loginTime: v.number(),
+        logoutTime: v.optional(v.number()),
+        ipAddress: v.optional(v.string()),
+        browserInfo: v.optional(v.string()),
+        sessionId: v.optional(v.string()),
+        loginStatus: v.string(),
+    }).index("by_user", ["userId"]),
 
     sites: defineTable({
         name: v.string(),

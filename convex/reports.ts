@@ -1,5 +1,4 @@
-import { action, internalQuery } from "./_generated/server";
-import { v } from "convex/values";
+import { internalAction, internalQuery } from "./_generated/server";
 import { internal } from "./_generated/api";
 
 export const getDailySummary = internalQuery({
@@ -43,9 +42,10 @@ export const getDailySummary = internalQuery({
     }
 });
 
-export const sendDailyEmailReport = action({
+export const sendDailyEmailReport = internalAction({
     args: {},
     handler: async (ctx) => {
+        // @ts-ignore
         const brevoApiKey = process.env.BREVO_API_KEY;
         if (!brevoApiKey) {
             console.error("BREVO_API_KEY is not set in environment variables");

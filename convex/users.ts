@@ -32,7 +32,8 @@ export const create = mutation({
             v.literal("Officer"),
             v.literal("Security Officer"),
             v.literal("SG"),
-            v.literal("SO")
+            v.literal("SO"),
+            v.literal("NEW_USER")
         ),
         organizationId: v.id("organizations"),
         siteIds: v.optional(v.array(v.id("sites"))),
@@ -74,7 +75,8 @@ export const update = mutation({
             v.literal("Officer"),
             v.literal("Security Officer"),
             v.literal("SG"),
-            v.literal("SO")
+            v.literal("SO"),
+            v.literal("NEW_USER")
         ),
         organizationId: v.optional(v.id("organizations")),
         siteIds: v.optional(v.array(v.id("sites"))),

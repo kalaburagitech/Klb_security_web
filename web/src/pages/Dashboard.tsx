@@ -42,28 +42,28 @@ export default function Dashboard() {
     const stats = [
         {
             label: "Active Sites",
-            value: sites?.length.toString() || "0",
+            value: sites?.length?.toString() || "0",
             icon: MapPin,
             color: "text-emerald-400",
             trend: sites === undefined ? "Loading..." : "Live"
         },
         {
             label: "Total Users",
-            value: users?.length.toString() || "0",
+            value: users?.length?.toString() || "0",
             icon: Users,
             color: "text-blue-400",
             trend: users === undefined ? "Loading..." : `+${users?.length || 0}`
         },
         {
             label: "Total Patrols",
-            value: patrolLogs?.length.toString() || "0",
+            value: patrolLogs?.length?.toString() || "0",
             icon: ShieldCheck,
             color: "text-amber-400",
             trend: patrolLogs === undefined ? "Loading..." : "Updated"
         },
         {
             label: "Open Issues",
-            value: issuesList?.filter(i => i.status === "open").length.toString() || "0",
+            value: issuesList?.filter(i => i.status === "open").length?.toString() || "0",
             icon: AlertTriangle,
             color: "text-rose-500",
             trend: issuesList === undefined ? "Loading..." : "Critical"

@@ -430,13 +430,13 @@ export default function SiteManagement() {
                                                                         await updateUser({
                                                                             id: officer._id,
                                                                             name: officer.name,
-                                                                            role: officer.role,
+                                                                            role: officer.role as any,
                                                                             email: officer.email,
                                                                             mobileNumber: officer.mobileNumber,
                                                                             organizationId: officer.organizationId,
                                                                             siteIds: officer.siteIds?.filter(id => id !== site._id),
                                                                             permissions: officer.permissions
-                                                                        });
+                                                                        } as any);
                                                                         toast.success(`${officer.name} unassigned`);
                                                                     } catch (error: any) {
                                                                         console.error("Failed to unassign officer:", error);
@@ -504,13 +504,13 @@ export default function SiteManagement() {
                                             await updateUser({
                                                 id: officer._id,
                                                 name: officer.name,
-                                                role: officer.role,
+                                                role: officer.role as any,
                                                 email: officer.email,
                                                 mobileNumber: officer.mobileNumber,
                                                 organizationId: officer.organizationId,
                                                 siteIds: [...currentSiteIds, assigningSiteId],
                                                 permissions: officer.permissions
-                                            });
+                                            } as any);
                                             toast.success(`${officer.name} assigned successfully`);
                                             setIsAssignModalOpen(false);
                                             setAssignSearchQuery("");

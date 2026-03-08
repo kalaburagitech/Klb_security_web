@@ -8,7 +8,7 @@ import { useUser } from "@clerk/clerk-react";
 import type { Id } from "../../../../convex/_generated/dataModel";
 import { toast } from "sonner";
 
-const ROLES = ["Owner", "Deployment Manager", "Manager", "Officer", "Security Officer", "SG", "SO"] as const;
+const ROLES = ["Owner", "Deployment Manager", "Manager", "Officer", "Security Officer", "SG", "SO", "NEW_USER"] as const;
 type Role = typeof ROLES[number];
 
 export default function UserManagement() {
@@ -74,7 +74,7 @@ export default function UserManagement() {
                 clerkId: newClerkId || undefined,
                 email: newEmail || undefined,
                 mobileNumber: newMobile || undefined,
-                role: newRole,
+                role: newRole as any,
                 organizationId: orgIdToUse as Id<"organizations">,
                 siteIds: selectedSiteIds.length > 0 ? selectedSiteIds : undefined,
                 permissions: newPermissions
@@ -118,7 +118,7 @@ export default function UserManagement() {
                 name: editingUser.name,
                 email: editingUser.email,
                 mobileNumber: editingUser.mobileNumber,
-                role: editingUser.role,
+                role: editingUser.role as any,
                 siteIds: editingUser.siteIds,
                 organizationId: editingUser.organizationId,
                 permissions: (editingUser as any).permissions
@@ -258,7 +258,8 @@ export default function UserManagement() {
                                                                 u.role === "Manager" ? "bg-primary/10 text-primary border-primary/20" :
                                                                     u.role === "Officer" ? "bg-blue-500/10 text-blue-500 border-blue-500/20" :
                                                                         u.role === "Security Officer" ? "bg-amber-500/10 text-amber-500 border-amber-500/20" :
-                                                                            "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
+                                                                            u.role === "NEW_USER" ? "bg-gray-500/10 text-gray-500 border-gray-500/20" :
+                                                                                "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
                                                     )}>
                                                         <Shield className="w-2.5 h-2.5 sm:w-3 h-3 mr-1" />
                                                         {u.role}
