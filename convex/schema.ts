@@ -22,7 +22,8 @@ export default defineSchema({
             v.literal("SO")
         ),
         organizationId: v.id("organizations"),
-        siteId: v.optional(v.id("sites")),
+        siteId: v.optional(v.id("sites")), // Legacy field for migration
+        siteIds: v.optional(v.array(v.id("sites"))),
         permissions: v.optional(v.object({
             users: v.boolean(),
             sites: v.boolean(),
@@ -34,7 +35,6 @@ export default defineSchema({
         })),
     }).index("by_clerkId", ["clerkId"])
         .index("by_org", ["organizationId"])
-        .index("by_site", ["siteId"])
         .index("by_email", ["email"]),
 
     sites: defineTable({

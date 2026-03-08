@@ -14,16 +14,16 @@ type Role = typeof ROLES[number];
 export default function UserManagement() {
     const { user } = useUser();
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-    const [editingUser, setEditingUser] = useState<{ id: Id<"users">; name: string; email?: string; mobileNumber?: string; role: Role; siteId?: Id<"sites">; organizationId: Id<"organizations">; permissions?: any } | null>(null);
+    const [editingUser, setEditingUser] = useState<{ id: Id<"users">; name: string; email?: string; mobileNumber?: string; role: Role; siteIds?: Id<"sites">[]; organizationId: Id<"organizations">; permissions?: any } | null>(null);
     const [isDeletingId, setIsDeletingId] = useState<Id<"users"> | null>(null);
     const [searchQuery, setSearchQuery] = useState("");
+    const [selectedSiteIds, setSelectedSiteIds] = useState<Id<"sites">[]>([]);
 
     const [newName, setNewName] = useState("");
     const [newClerkId, setNewClerkId] = useState("");
     const [newEmail, setNewEmail] = useState("");
     const [newMobile, setNewMobile] = useState("");
     const [newRole, setNewRole] = useState<Role>("SO");
-    const [selectedSiteId, setSelectedSiteId] = useState<string>("");
     const [selectedOrgId, setSelectedOrgId] = useState<string>("");
     const [isCreateOrgModalOpen, setIsCreateOrgModalOpen] = useState(false);
     const [newOrgName, setNewOrgName] = useState("");
@@ -76,7 +76,7 @@ export default function UserManagement() {
                 mobileNumber: newMobile || undefined,
                 role: newRole,
                 organizationId: orgIdToUse as Id<"organizations">,
-                siteId: selectedSiteId ? selectedSiteId as Id<"sites"> : undefined,
+                siteIds: selectedSiteIds.length > 0 ? selectedSiteIds : undefined,
                 permissions: newPermissions
             });
             setIsAddModalOpen(false);
@@ -85,6 +85,7 @@ export default function UserManagement() {
             setNewEmail("");
             setNewMobile("");
             setNewRole("SO");
+            setSelectedSiteIds([]);
             toast.success("User added successfully");
         } catch (error: any) {
             console.error("Failed to create user:", error);
@@ -118,7 +119,7 @@ export default function UserManagement() {
                 email: editingUser.email,
                 mobileNumber: editingUser.mobileNumber,
                 role: editingUser.role,
-                siteId: editingUser.siteId,
+                siteIds: editingUser.siteIds,
                 organizationId: editingUser.organizationId,
                 permissions: (editingUser as any).permissions
             });
@@ -278,7 +279,7 @@ export default function UserManagement() {
                                                                 email: u.email,
                                                                 mobileNumber: u.mobileNumber,
                                                                 role: u.role as Role,
-                                                                siteId: u.siteId,
+                                                                siteIds: u.siteIds,
                                                                 organizationId: u.organizationId,
                                                                 permissions: u.permissions || newPermissions
                                                             })}
@@ -370,15 +371,29 @@ export default function UserManagement() {
                                 </select>
                             </div>
                             <div>
-                                <label className="text-xs font-medium text-muted-foreground uppercase">Assigned Site</label>
-                                <select
-                                    value={selectedSiteId}
-                                    onChange={e => setSelectedSiteId(e.target.value)}
-                                    className="w-full mt-1 px-4 py-2 bg-neutral-900 border border-white/10 rounded-xl focus:outline-none focus:ring-1 focus:ring-primary/50"
-                                >
-                                    <option value="">No Specific Site</option>
-                                    {sites?.map(s => <option key={s._id} value={s._id}>{s.name}</option>)}
-                                </select>
+                                <label className="text-xs font-medium text-muted-foreground uppercase">Assigned Sites</label>
+                                <div className="mt-2 space-y-2 max-h-40 overflow-y-auto custom-scrollbar bg-neutral-900/50 p-3 rounded-xl border border-white/10">
+                                    {sites?.map(s => (
+                                        <label key={s._id} className="flex items-center gap-3 cursor-pointer group">
+                                            <input
+                                                type="checkbox"
+                                                checked={selectedSiteIds.includes(s._id)}
+                                                onChange={e => {
+                                                    if (e.target.checked) {
+                                                        setSelectedSiteIds([...selectedSiteIds, s._id]);
+                                                    } else {
+                                                        setSelectedSiteIds(selectedSiteIds.filter(id => id !== s._id));
+                                                    }
+                                                }}
+                                                className="w-4 h-4 rounded border-white/20 bg-white/5 text-primary focus:ring-primary/50"
+                                            />
+                                            <span className="text-sm text-white/70 group-hover:text-white">{s.name}</span>
+                                        </label>
+                                    ))}
+                                    {(!sites || sites.length === 0) && (
+                                        <div className="text-xs text-muted-foreground italic">No sites available</div>
+                                    )}
+                                </div>
                             </div>
                             <div className="space-y-2 py-2 border-y border-white/5">
                                 <div className="flex items-center justify-between">
@@ -453,15 +468,30 @@ export default function UserManagement() {
                                 </select>
                             </div>
                             <div>
-                                <label className="text-xs font-medium text-muted-foreground uppercase">Assigned Site</label>
-                                <select
-                                    value={editingUser.siteId || ""}
-                                    onChange={e => setEditingUser({ ...editingUser!, siteId: e.target.value as Id<"sites"> || undefined })}
-                                    className="w-full mt-1 px-4 py-2 bg-neutral-900 border border-white/10 rounded-xl focus:outline-none focus:ring-1 focus:ring-primary/50"
-                                >
-                                    <option value="">No Specific Site</option>
-                                    {sites?.map(s => <option key={s._id} value={s._id}>{s.name}</option>)}
-                                </select>
+                                <label className="text-xs font-medium text-muted-foreground uppercase">Assigned Sites</label>
+                                <div className="mt-2 space-y-2 max-h-40 overflow-y-auto custom-scrollbar bg-neutral-900/50 p-3 rounded-xl border border-white/10">
+                                    {sites?.map(s => (
+                                        <label key={s._id} className="flex items-center gap-3 cursor-pointer group">
+                                            <input
+                                                type="checkbox"
+                                                checked={editingUser.siteIds?.includes(s._id) || false}
+                                                onChange={e => {
+                                                    const currentSiteIds = editingUser.siteIds || [];
+                                                    if (e.target.checked) {
+                                                        setEditingUser({ ...editingUser, siteIds: [...currentSiteIds, s._id] });
+                                                    } else {
+                                                        setEditingUser({ ...editingUser, siteIds: currentSiteIds.filter(id => id !== s._id) });
+                                                    }
+                                                }}
+                                                className="w-4 h-4 rounded border-white/20 bg-white/5 text-primary focus:ring-primary/50"
+                                            />
+                                            <span className="text-sm text-white/70 group-hover:text-white">{s.name}</span>
+                                        </label>
+                                    ))}
+                                    {(!sites || sites.length === 0) && (
+                                        <div className="text-xs text-muted-foreground italic">No sites available</div>
+                                    )}
+                                </div>
                             </div>
                             <div className="space-y-2 py-2 border-y border-white/5">
                                 <div className="flex items-center justify-between">

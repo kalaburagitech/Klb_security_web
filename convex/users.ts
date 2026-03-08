@@ -35,7 +35,7 @@ export const create = mutation({
             v.literal("SO")
         ),
         organizationId: v.id("organizations"),
-        siteId: v.optional(v.id("sites")),
+        siteIds: v.optional(v.array(v.id("sites"))),
         email: v.optional(v.string()),
         mobileNumber: v.optional(v.string()),
         permissions: v.optional(v.object({
@@ -55,7 +55,7 @@ export const create = mutation({
             name: args.name,
             role: args.role,
             organizationId: args.organizationId,
-            siteId: args.siteId,
+            siteIds: args.siteIds,
             email: args.email,
             mobileNumber: args.mobileNumber,
             permissions: args.permissions,
@@ -77,7 +77,7 @@ export const update = mutation({
             v.literal("SO")
         ),
         organizationId: v.optional(v.id("organizations")),
-        siteId: v.optional(v.id("sites")),
+        siteIds: v.optional(v.array(v.id("sites"))),
         email: v.optional(v.string()),
         mobileNumber: v.optional(v.string()),
         permissions: v.optional(v.object({
@@ -116,9 +116,16 @@ export const listByOrg = query({
 export const listBySite = query({
     args: { siteId: v.id("sites") },
     handler: async (ctx, args) => {
-        return await ctx.db
+        const site = await ctx.db.get(args.siteId);
+        if (!site) return [];
+
+        const users = await ctx.db
             .query("users")
-            .withIndex("by_site", (q) => q.eq("siteId", args.siteId))
+            .withIndex("by_org", (q) => q.eq("organizationId", site.organizationId))
             .collect();
+
+        return users.filter((user) =>
+            !user.siteIds || user.siteIds.includes(args.siteId)
+        );
     },
 });

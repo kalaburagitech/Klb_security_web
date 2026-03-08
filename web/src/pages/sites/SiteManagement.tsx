@@ -1,7 +1,8 @@
 import React, { useState } from "react";
 import { Layout } from "../../components/Layout";
-import { Plus, MapPin, Search, Loader2, Edit2, Trash2, X, Building, ChevronDown, ChevronRight, Clock, Users } from "lucide-react";
+import { Plus, MapPin, Search, Loader2, Edit2, Trash2, X, Building, ChevronDown, ChevronRight, Clock, Users, UserPlus, UserMinus } from "lucide-react";
 import { useQuery, useMutation } from "convex/react";
+import { MapPicker } from "../../components/MapPicker";
 import { api } from "../../../../convex/_generated/api";
 import { useUser } from "@clerk/clerk-react";
 import type { Id } from "../../../../convex/_generated/dataModel";
@@ -25,11 +26,17 @@ export default function SiteManagement() {
     const [selectedOrgId, setSelectedOrgId] = useState<string>("");
     const [isCreateOrgModalOpen, setIsCreateOrgModalOpen] = useState(false);
     const [newOrgName, setNewOrgName] = useState("");
+    const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
+    const [assigningSiteId, setAssigningSiteId] = useState<Id<"sites"> | null>(null);
+    const [assignSearchQuery, setAssignSearchQuery] = useState("");
+    const [showMapPicker, setShowMapPicker] = useState(false);
+    const [showEditMapPicker, setShowEditMapPicker] = useState(false);
 
     const createSite = useMutation(api.sites.createSite);
     const updateSite = useMutation(api.sites.updateSite);
     const removeSite = useMutation(api.sites.removeSite);
     const createOrg = useMutation(api.organizations.create);
+    const updateUser = useMutation(api.users.update);
 
     const currentUser = useQuery(api.users.getByClerkId,
         user?.id ? { clerkId: user.id } : "skip"
@@ -38,6 +45,9 @@ export default function SiteManagement() {
     const organizationId = currentUser?.organizationId;
     const orgs = useQuery(api.organizations.list);
     const sites = useQuery(api.sites.listSitesByOrg,
+        organizationId ? { organizationId } : "skip"
+    );
+    const users = useQuery(api.users.listByOrg,
         organizationId ? { organizationId } : "skip"
     );
 
@@ -93,6 +103,37 @@ export default function SiteManagement() {
             console.error("Failed to create organization:", error);
             toast.error(error.message || "Failed to create organization");
         }
+    };
+
+    const handleGetCurrentLocation = (target: "new" | "edit") => {
+        if (!navigator.geolocation) {
+            toast.error("Geolocation is not supported by your browser");
+            return;
+        }
+
+        const toastId = toast.loading("Fetching current location...");
+
+        navigator.geolocation.getCurrentPosition(
+            (position) => {
+                const { latitude, longitude } = position.coords;
+                if (target === "new") {
+                    setNewLat(latitude.toString());
+                    setNewLng(longitude.toString());
+                } else if (editingSite) {
+                    setEditingSite({
+                        ...editingSite,
+                        latitude,
+                        longitude
+                    });
+                }
+                toast.success("Location updated", { id: toastId });
+            },
+            (error) => {
+                console.error("Geolocation error:", error);
+                toast.error("Failed to get location: " + error.message, { id: toastId });
+            },
+            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+        );
     };
 
     const handleUpdateSite = async () => {
@@ -365,12 +406,43 @@ export default function SiteManagement() {
                                                             </div>
                                                         </div>
                                                         <div className="space-y-3">
-                                                            <h4 className="text-xs font-bold text-primary uppercase tracking-widest flex items-center gap-2">
-                                                                <Users className="w-3.5 h-3.5" />
-                                                                Assigned Officers
-                                                            </h4>
+                                                            <div className="flex items-center justify-between">
+                                                                <h4 className="text-xs font-bold text-primary uppercase tracking-widest flex items-center gap-2">
+                                                                    <Users className="w-3.5 h-3.5" />
+                                                                    Assigned Officers
+                                                                </h4>
+                                                                <button
+                                                                    onClick={() => {
+                                                                        setAssigningSiteId(site._id);
+                                                                        setIsAssignModalOpen(true);
+                                                                    }}
+                                                                    className="flex items-center gap-1 px-2 py-1 bg-primary/10 text-primary rounded-lg text-[10px] font-bold hover:bg-primary/20 transition-all border border-primary/20"
+                                                                >
+                                                                    <UserPlus className="w-3 h-3" />
+                                                                    Assign
+                                                                </button>
+                                                            </div>
                                                             <div className="glass rounded-xl p-4 border-white/5 min-h-[60px]">
-                                                                <SiteOfficersList siteId={site._id} />
+                                                                <SiteOfficersList siteId={site._id} onRemove={async (officerId) => {
+                                                                    const officer = users?.find(u => u._id === officerId);
+                                                                    if (!officer) return;
+                                                                    try {
+                                                                        await updateUser({
+                                                                            id: officer._id,
+                                                                            name: officer.name,
+                                                                            role: officer.role,
+                                                                            email: officer.email,
+                                                                            mobileNumber: officer.mobileNumber,
+                                                                            organizationId: officer.organizationId,
+                                                                            siteIds: officer.siteIds?.filter(id => id !== site._id),
+                                                                            permissions: officer.permissions
+                                                                        });
+                                                                        toast.success(`${officer.name} unassigned`);
+                                                                    } catch (error: any) {
+                                                                        console.error("Failed to unassign officer:", error);
+                                                                        toast.error(error.message || "Failed to unassign officer");
+                                                                    }
+                                                                }} />
                                                             </div>
                                                         </div>
                                                     </div>
@@ -391,6 +463,87 @@ export default function SiteManagement() {
                     </div>
                 </div>
             </div>
+
+            {/* Assign Officer Modal */}
+            {isAssignModalOpen && (
+                <div className="fixed inset-0 z-[70] flex items-center justify-center p-2 sm:p-4 bg-black/60 backdrop-blur-sm">
+                    <div className="glass w-full max-w-md max-h-[80vh] overflow-hidden rounded-2xl border border-white/10 flex flex-col">
+                        <div className="p-4 sm:p-6 border-b border-white/5 flex items-center justify-between">
+                            <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                                <UserPlus className="w-5 h-5 text-primary" />
+                                Assign Officer
+                            </h3>
+                            <button onClick={() => setIsAssignModalOpen(false)}><X className="w-5 h-5 text-muted-foreground" /></button>
+                        </div>
+
+                        <div className="p-4 border-b border-white/5">
+                            <div className="relative group">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
+                                <input
+                                    type="text"
+                                    value={assignSearchQuery}
+                                    onChange={(e) => setAssignSearchQuery(e.target.value)}
+                                    placeholder="Search officers..."
+                                    className="w-full pl-10 pr-4 py-2 bg-white/5 border border-white/10 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-primary/50 text-white"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar">
+                            {users?.filter(u =>
+                                (u.role === "Officer" || u.role === "Security Officer" || u.role === "SG" || u.role === "SO") &&
+                                !u.siteIds?.includes(assigningSiteId!) &&
+                                u.name.toLowerCase().includes(assignSearchQuery.toLowerCase())
+                            ).map(officer => (
+                                <button
+                                    key={officer._id}
+                                    onClick={async () => {
+                                        if (!assigningSiteId) return;
+                                        try {
+                                            const currentSiteIds = officer.siteIds || [];
+                                            await updateUser({
+                                                id: officer._id,
+                                                name: officer.name,
+                                                role: officer.role,
+                                                email: officer.email,
+                                                mobileNumber: officer.mobileNumber,
+                                                organizationId: officer.organizationId,
+                                                siteIds: [...currentSiteIds, assigningSiteId],
+                                                permissions: officer.permissions
+                                            });
+                                            toast.success(`${officer.name} assigned successfully`);
+                                            setIsAssignModalOpen(false);
+                                            setAssignSearchQuery("");
+                                        } catch (error: any) {
+                                            console.error("Failed to assign officer:", error);
+                                            toast.error(error.code === "ValidationFailed" ? "Invalid officer data" : (error.message || "Failed to assign officer"));
+                                        }
+                                    }}
+                                    className="w-full flex items-center gap-3 p-3 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-all group"
+                                >
+                                    <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center font-bold text-primary group-hover:scale-110 transition-transform">
+                                        {officer.name.charAt(0)}
+                                    </div>
+                                    <div className="text-left">
+                                        <div className="text-sm font-medium text-white">{officer.name}</div>
+                                        <div className="text-xs text-muted-foreground">{officer.role}</div>
+                                    </div>
+                                    <Plus className="w-4 h-4 ml-auto text-muted-foreground group-hover:text-primary transition-colors" />
+                                </button>
+                            ))}
+                            {users?.filter(u =>
+                                (u.role === "Officer" || u.role === "Security Officer" || u.role === "SG" || u.role === "SO") &&
+                                !u.siteIds?.includes(assigningSiteId!) &&
+                                u.name.toLowerCase().includes(assignSearchQuery.toLowerCase())
+                            ).length === 0 && (
+                                    <div className="text-center py-8 text-muted-foreground text-sm italic">
+                                        No available officers found
+                                    </div>
+                                )}
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {isAddModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/60 backdrop-blur-sm">
@@ -444,9 +597,26 @@ export default function SiteManagement() {
                                     <input value={newShiftEnd} onChange={e => setNewShiftEnd(e.target.value)} type="time" className="w-full mt-1 px-4 py-2 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:ring-1 focus:ring-primary/50" />
                                 </div>
                             </div>
-                            <div className="grid grid-cols-2 gap-3">
+                            <div className="grid grid-cols-2 gap-3 relative">
                                 <div>
-                                    <label className="text-xs font-medium text-muted-foreground uppercase">Latitude</label>
+                                    <div className="flex items-center justify-between">
+                                        <label className="text-xs font-medium text-muted-foreground uppercase">Latitude</label>
+                                        <div className="flex gap-2">
+                                            <button
+                                                onClick={() => handleGetCurrentLocation("new")}
+                                                className="text-[10px] text-primary hover:underline flex items-center gap-1"
+                                            >
+                                                <MapPin className="w-2.5 h-2.5" />
+                                                Current
+                                            </button>
+                                            <button
+                                                onClick={() => setShowMapPicker(!showMapPicker)}
+                                                className="text-[10px] text-primary hover:underline flex items-center gap-1"
+                                            >
+                                                Pick Map
+                                            </button>
+                                        </div>
+                                    </div>
                                     <input value={newLat} onChange={e => setNewLat(e.target.value)} type="number" step="any" className="w-full mt-1 px-4 py-2 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:ring-1 focus:ring-primary/50" />
                                 </div>
                                 <div>
@@ -454,6 +624,14 @@ export default function SiteManagement() {
                                     <input value={newLng} onChange={e => setNewLng(e.target.value)} type="number" step="any" className="w-full mt-1 px-4 py-2 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:ring-1 focus:ring-primary/50" />
                                 </div>
                             </div>
+                            {showMapPicker && (
+                                <MapPicker
+                                    onLocationSelect={(lat, lng) => {
+                                        setNewLat(lat.toString());
+                                        setNewLng(lng.toString());
+                                    }}
+                                />
+                            )}
                             <div>
                                 <label className="text-xs font-medium text-muted-foreground uppercase">Allowed Radius (m)</label>
                                 <input value={newRadius} onChange={e => setNewRadius(e.target.value)} type="number" className="w-full mt-1 px-4 py-2 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:ring-1 focus:ring-primary/50" />
@@ -490,9 +668,26 @@ export default function SiteManagement() {
                                     <input value={editingSite.shiftEnd} onChange={e => setEditingSite({ ...editingSite, shiftEnd: e.target.value })} type="time" className="w-full mt-1 px-4 py-2 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:ring-1 focus:ring-primary/50" />
                                 </div>
                             </div>
-                            <div className="grid grid-cols-2 gap-3">
+                            <div className="grid grid-cols-2 gap-3 relative">
                                 <div>
-                                    <label className="text-xs font-medium text-muted-foreground uppercase">Latitude</label>
+                                    <div className="flex items-center justify-between">
+                                        <label className="text-xs font-medium text-muted-foreground uppercase">Latitude</label>
+                                        <div className="flex gap-2">
+                                            <button
+                                                onClick={() => handleGetCurrentLocation("edit")}
+                                                className="text-[10px] text-primary hover:underline flex items-center gap-1"
+                                            >
+                                                <MapPin className="w-2.5 h-2.5" />
+                                                Current
+                                            </button>
+                                            <button
+                                                onClick={() => setShowEditMapPicker(!showEditMapPicker)}
+                                                className="text-[10px] text-primary hover:underline flex items-center gap-1"
+                                            >
+                                                Pick Map
+                                            </button>
+                                        </div>
+                                    </div>
                                     <input value={editingSite.latitude} onChange={e => setEditingSite({ ...editingSite, latitude: parseFloat(e.target.value) || 0 })} type="number" step="any" className="w-full mt-1 px-4 py-2 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:ring-1 focus:ring-primary/50" />
                                 </div>
                                 <div>
@@ -500,6 +695,15 @@ export default function SiteManagement() {
                                     <input value={editingSite.longitude} onChange={e => setEditingSite({ ...editingSite, longitude: parseFloat(e.target.value) || 0 })} type="number" step="any" className="w-full mt-1 px-4 py-2 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:ring-1 focus:ring-primary/50" />
                                 </div>
                             </div>
+                            {showEditMapPicker && (
+                                <MapPicker
+                                    initialLat={editingSite.latitude}
+                                    initialLng={editingSite.longitude}
+                                    onLocationSelect={(lat, lng) => {
+                                        setEditingSite({ ...editingSite, latitude: lat, longitude: lng });
+                                    }}
+                                />
+                            )}
                             <div>
                                 <label className="text-xs font-medium text-muted-foreground uppercase">Allowed Radius (m)</label>
                                 <input value={editingSite.allowedRadius} onChange={e => setEditingSite({ ...editingSite, allowedRadius: parseInt(e.target.value) || 0 })} type="number" className="w-full mt-1 px-4 py-2 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:ring-1 focus:ring-primary/50" />
@@ -565,8 +769,9 @@ export default function SiteManagement() {
     );
 }
 
-function SiteOfficersList({ siteId }: { siteId: Id<"sites"> }) {
-    const officers = useQuery(api.users.listBySite, { siteId });
+function SiteOfficersList({ siteId, onRemove }: { siteId: Id<"sites">, onRemove: (id: Id<"users">) => void }) {
+    const rawOfficers = useQuery(api.users.listBySite, { siteId });
+    const officers = rawOfficers?.filter(u => u.siteIds?.includes(siteId));
 
     if (officers === undefined) return <div className="text-xs text-muted-foreground italic">Loading officers...</div>;
     if (officers.length === 0) return <div className="text-xs text-muted-foreground italic">No officers assigned to this site.</div>;
@@ -574,7 +779,7 @@ function SiteOfficersList({ siteId }: { siteId: Id<"sites"> }) {
     return (
         <div className="flex flex-wrap gap-2">
             {officers.map(officer => (
-                <div key={officer._id} className="flex items-center gap-2 px-3 py-1.5 bg-white/5 rounded-lg border border-white/10">
+                <div key={officer._id} className="flex items-center gap-2 px-3 py-1.5 bg-white/5 rounded-lg border border-white/10 group/item">
                     <div className="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-bold text-primary">
                         {officer.name.charAt(0)}
                     </div>
@@ -582,6 +787,16 @@ function SiteOfficersList({ siteId }: { siteId: Id<"sites"> }) {
                         <div className="text-xs font-medium text-white">{officer.name}</div>
                         <div className="text-[10px] text-muted-foreground">{officer.role}</div>
                     </div>
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onRemove(officer._id);
+                        }}
+                        className="p-1 hover:bg-red-500/10 rounded text-muted-foreground hover:text-red-500 transition-colors opacity-0 group-hover/item:opacity-100"
+                        title="Remove Officer"
+                    >
+                        <UserMinus className="w-3 h-3" />
+                    </button>
                 </div>
             ))}
         </div>

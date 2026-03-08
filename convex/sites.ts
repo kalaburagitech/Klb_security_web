@@ -42,6 +42,18 @@ export const removeSite = mutation({
     },
 });
 
+export const listSitesByIds = query({
+    args: { ids: v.array(v.id("sites")) },
+    handler: async (ctx, args) => {
+        const sites = [];
+        for (const id of args.ids) {
+            const site = await ctx.db.get(id);
+            if (site) sites.push(site);
+        }
+        return sites;
+    },
+});
+
 export const listSitesByOrg = query({
     args: { organizationId: v.id("organizations") },
     handler: async (ctx, args) => {
