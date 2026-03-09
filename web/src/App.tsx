@@ -64,6 +64,7 @@ function App() {
                 <AuthHandler>
                   <Routes>
                     <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+                    <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
                     <Route path="/users" element={<ProtectedRoute permission="users"><UserManagement /></ProtectedRoute>} />
                     <Route path="/sites" element={<ProtectedRoute permission="sites"><SiteManagement /></ProtectedRoute>} />
                     <Route path="/patrol-logs" element={<ProtectedRoute permission="patrolLogs"><PatrolLogs /></ProtectedRoute>} />
