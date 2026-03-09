@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useUser, useClerk } from "@clerk/clerk-react";
 import { toast } from "sonner";
 import { useMutation, useAction } from "convex/react";
-import { api } from "../../../convex/_generated/api";
+import { api } from "../../convex/_generated/api";
 import { Loader2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 

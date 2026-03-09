@@ -3,9 +3,9 @@ import { Layout } from "../../components/Layout";
 import { AlertTriangle, Clock, MapPin, CheckCircle2, ShieldAlert, Loader2 } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { useQuery, useMutation } from "convex/react";
-import { api } from "../../../../convex/_generated/api";
+import { api } from "../../../convex/_generated/api";
 import { useUser } from "@clerk/clerk-react";
-import type { Id } from "../../../../convex/_generated/dataModel";
+import type { Id } from "../../../convex/_generated/dataModel";
 
 export default function IssueTracker() {
     const { user } = useUser();

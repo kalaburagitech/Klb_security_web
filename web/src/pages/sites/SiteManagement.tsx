@@ -3,9 +3,9 @@ import { Layout } from "../../components/Layout";
 import { Plus, MapPin, Search, Loader2, Edit2, Trash2, X, Building, ChevronDown, ChevronRight, Clock, Users, UserPlus, UserMinus } from "lucide-react";
 import { useQuery, useMutation } from "convex/react";
 import { MapPicker } from "../../components/MapPicker";
-import { api } from "../../../../convex/_generated/api";
+import { api } from "../../../convex/_generated/api";
 import { useUser } from "@clerk/clerk-react";
-import type { Id } from "../../../../convex/_generated/dataModel";
+import type { Id } from "../../../convex/_generated/dataModel";
 import { toast } from "sonner";
 
 export default function SiteManagement() {

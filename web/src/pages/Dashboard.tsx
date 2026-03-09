@@ -10,10 +10,10 @@ import {
 } from "lucide-react";
 import { cn } from "../lib/utils";
 import { useQuery } from "convex/react";
-import { api } from "../../../convex/_generated/api";
+import { api } from "../../convex/_generated/api";
 import { useUser } from "@clerk/clerk-react";
 import { useState } from "react";
-import type { Id } from "../../../convex/_generated/dataModel";
+import type { Id } from "../../convex/_generated/dataModel";
 
 export default function Dashboard() {
     const { user } = useUser();
