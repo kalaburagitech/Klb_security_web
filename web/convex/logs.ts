@@ -25,13 +25,13 @@ export const createPatrolLog = mutation({
             createdAt: Date.now(),
         });
 
-        // Auto-create issue if geo-fence violation (> 50m)
-        if (args.distance > 50) {
+        // Auto-create issue if geo-fence violation (> 100m)
+        if (args.distance > 100) {
             await ctx.db.insert("issues", {
                 siteId: args.siteId,
                 logId: logId,
                 title: "Geo-fence Violation",
-                description: `Patrol logged ${args.distance.toFixed(1)}m away from point.`,
+                description: `Patrol logged ${args.distance.toFixed(1)}m away from point. Allowed radius is 100m.`,
                 priority: "High",
                 status: "open",
                 timestamp: Date.now(),
@@ -58,7 +58,7 @@ export const createPatrolLog = mutation({
 });
 
 export const listPatrolLogs = query({
-    args: { organizationId: v.id("organizations"), siteId: v.optional(v.id("sites")) },
+    args: { organizationId: v.id("organizations"), siteId: v.optional(v.union(v.id("sites"), v.null())) },
     handler: async (ctx, args) => {
         let logs;
         if (args.siteId) {
@@ -90,6 +90,90 @@ export const listPatrolLogs = query({
             })
         );
     },
+});
+
+export const listLogsBySite = query({
+    args: { siteId: v.id("sites") },
+    handler: async (ctx, args) => {
+        const logs = await ctx.db
+            .query("patrolLogs")
+            .withIndex("by_site", (q) => q.eq("siteId", args.siteId))
+            .order("desc")
+            .take(5);
+
+        return await Promise.all(
+            logs.map(async (log) => {
+                const user = await ctx.db.get(log.userId);
+                const point = log.patrolPointId ? await ctx.db.get(log.patrolPointId) : null;
+                return {
+                    ...log,
+                    userName: user?.name || "Unknown",
+                    pointName: point?.name || "General Area",
+                };
+            })
+        );
+    },
+});
+
+export const validatePatrolPoint = query({
+    args: {
+        siteId: v.id("sites"),
+        qrCodeId: v.string(),
+        userLat: v.optional(v.number()),
+        userLon: v.optional(v.number()),
+        guardId: v.optional(v.id("users"))
+    },
+    handler: async (ctx, args) => {
+        const point = await ctx.db
+            .query("patrolPoints")
+            .withIndex("by_site", (q) => q.eq("siteId", args.siteId))
+            .filter((q) => q.eq(q.field("qrCode"), args.qrCodeId))
+            .unique();
+
+        if (!point) return { valid: false, message: "Point not found or doesn't belong to this site." };
+
+        // Check if already scanned in current session
+        if (args.guardId) {
+            const activeSession = await ctx.db
+                .query("patrolSessions")
+                .withIndex("by_guard", (q) => q.eq("guardId", args.guardId as any))
+                .filter((q) => q.eq(q.field("status"), "active"))
+                .unique();
+
+            if (activeSession && activeSession.scannedPoints?.includes(point._id)) {
+                return { valid: false, message: "This point has already been scanned during this patrol." };
+            }
+        }
+
+        let distance = 0;
+        if (args.userLat !== undefined && args.userLon !== undefined && point.latitude && point.longitude) {
+            distance = calculateDistance(args.userLat, args.userLon, point.latitude, point.longitude);
+        }
+
+        return {
+            valid: true,
+            point,
+            pointId: point._id,
+            distance
+        };
+    },
+});
+
+export const updateSessionPoints = mutation({
+    args: {
+        sessionId: v.id("patrolSessions"),
+        pointId: v.id("patrolPoints")
+    },
+    handler: async (ctx, args) => {
+        const session = await ctx.db.get(args.sessionId);
+        if (!session) throw new Error("Session not found");
+
+        const scannedPoints = session.scannedPoints || [];
+        if (!scannedPoints.includes(args.pointId)) {
+            scannedPoints.push(args.pointId);
+            await ctx.db.patch(args.sessionId, { scannedPoints });
+        }
+    }
 });
 
 export const createVisitLog = mutation({
@@ -165,7 +249,7 @@ export const listVisitLogs = query({
     },
 });
 
-export const listAllIssues = query({
+export const listIssues = query({
     handler: async (ctx) => {
         const issues = await ctx.db.query("issues").order("desc").collect();
         return await Promise.all(
@@ -205,13 +289,19 @@ export const listAllIssues = query({
 });
 
 export const listIssuesByOrg = query({
-    args: { organizationId: v.id("organizations") },
+    args: { 
+        organizationId: v.id("organizations"),
+        siteId: v.optional(v.id("sites"))
+    },
     handler: async (ctx, args) => {
-        const issues = await ctx.db
-            .query("issues")
-            .withIndex("by_org", (q) => q.eq("organizationId", args.organizationId))
-            .order("desc")
-            .collect();
+        let q;
+        if (args.siteId) {
+            q = ctx.db.query("issues").withIndex("by_site", (q) => q.eq("siteId", args.siteId as Id<"sites">));
+        } else {
+            q = ctx.db.query("issues").withIndex("by_org", (q) => q.eq("organizationId", args.organizationId));
+        }
+        
+        const issues = await q.order("desc").collect();
 
         const enrichedIssues = await Promise.all(
             issues.map(async (issue) => {
@@ -276,7 +366,7 @@ export const createDualLog = mutation({
         })),
     },
     handler: async (ctx, args) => {
-        const { patrolPointId, qrCode, ...rest } = args;
+        const { patrolPointId, qrCode, issueDetails, ...rest } = args;
         let finalPatrolPointId = patrolPointId;
 
         // 1. Try to find point if only QR was provided
@@ -287,6 +377,25 @@ export const createDualLog = mutation({
                 .filter((q) => q.eq(q.field("qrCode"), qrCode))
                 .first();
             if (point) finalPatrolPointId = point._id;
+        }
+
+        if (!finalPatrolPointId) throw new Error("Invalid Patrol Point or QR Code");
+
+        // 2. Duplicate Scan Prevention (5-minute rule)
+        const fiveMinutesAgo = Date.now() - 5 * 60 * 1000;
+        const recentLog = await ctx.db
+            .query("patrolLogs")
+            .withIndex("by_site", (q) => q.eq("siteId", args.siteId))
+            .filter((q) =>
+                q.and(
+                    q.eq(q.field("patrolPointId"), finalPatrolPointId),
+                    q.gte(q.field("createdAt"), fiveMinutesAgo)
+                )
+            )
+            .first();
+
+        if (recentLog) {
+            throw new Error("This point was already scanned within the last 5 minutes.");
         }
 
         const site = await ctx.db.get(args.siteId);
@@ -370,3 +479,51 @@ function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
 
     return R * c;
 }
+
+export const countByOrg = query({
+    args: { 
+        organizationId: v.optional(v.id("organizations")),
+        siteId: v.optional(v.id("sites"))
+    },
+    handler: async (ctx, args) => {
+        const orgId = args.organizationId;
+        const sId = args.siteId;
+
+        if (sId) {
+            const logs = await ctx.db
+                .query("patrolLogs")
+                .withIndex("by_site", (q) => q.eq("siteId", sId))
+                .collect();
+            return logs.length;
+        }
+
+        const q = orgId
+            ? ctx.db.query("patrolLogs").withIndex("by_org", (q) => q.eq("organizationId", orgId))
+            : ctx.db.query("patrolLogs");
+        const logs = await q.collect();
+        return logs.length;
+    },
+});
+
+export const countIssuesByOrg = query({
+    args: { 
+        organizationId: v.optional(v.id("organizations")),
+        siteId: v.optional(v.id("sites"))
+    },
+    handler: async (ctx, args) => {
+        const orgId = args.organizationId;
+        const sId = args.siteId;
+
+        let q;
+        if (sId) {
+            q = ctx.db.query("issues").withIndex("by_site", (q) => q.eq("siteId", sId));
+        } else if (orgId) {
+            q = ctx.db.query("issues").withIndex("by_org", (q) => q.eq("organizationId", orgId));
+        } else {
+            q = ctx.db.query("issues");
+        }
+
+        const issues = await q.collect();
+        return issues.filter(i => i.status === "open").length;
+    },
+});

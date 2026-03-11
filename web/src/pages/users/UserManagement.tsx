@@ -3,7 +3,7 @@ import { Layout } from "../../components/Layout";
 import { Plus, User, Mail, Shield, Search, Loader2, Edit2, Trash2, X, Building, Smartphone } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { useQuery, useMutation } from "convex/react";
-import { api } from "../../../convex/_generated/api";
+import { api } from "../../services/convex";
 import { useUser } from "@clerk/clerk-react";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { toast } from "sonner";
@@ -53,7 +53,7 @@ export default function UserManagement() {
     const sites = useQuery(api.sites.listSitesByOrg,
         activeOrgId ? { organizationId: activeOrgId as Id<"organizations"> } : "skip"
     );
-    const allUsers = useQuery((api.users as any).listAll);
+    const allUsers = useQuery(api.users.list);
     const orgUsers = useQuery((api.users as any).listByOrg,
         organizationId ? { organizationId } : "skip"
     );

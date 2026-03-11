@@ -10,14 +10,16 @@ import {
 } from "lucide-react";
 import { cn } from "../lib/utils";
 import { useQuery } from "convex/react";
-import { api } from "../../convex/_generated/api";
+import { api } from "../services/convex";
 import { useUser } from "@clerk/clerk-react";
 import { useState } from "react";
 import type { Id } from "../../convex/_generated/dataModel";
+import { SearchableSitePicker } from "../components/SearchableSitePicker";
 
 export default function Dashboard() {
     const { user } = useUser();
     const [selectedOrgId, setSelectedOrgId] = useState<string>("");
+    const [selectedSiteId, setSelectedSiteId] = useState<string>("all");
 
     // Fetch real data
     const currentUser = useQuery(api.users.getByClerkId,
@@ -26,47 +28,53 @@ export default function Dashboard() {
     const organizationId = currentUser?.organizationId;
     const orgs = useQuery(api.organizations.list);
 
-    const users = useQuery(api.users.listByOrg,
-        (organizationId || (selectedOrgId as Id<"organizations">)) ? { organizationId: (organizationId || selectedOrgId) as Id<"organizations"> } : "skip"
+    const orgIdToUse = (organizationId || selectedOrgId) as Id<"organizations">;
+    const siteIdToUse = selectedSiteId === "all" ? undefined : selectedSiteId as Id<"sites">;
+
+    const usersCount = useQuery(api.users.countByOrg,
+        orgIdToUse ? { organizationId: orgIdToUse, siteId: siteIdToUse } : "skip"
     );
-    const sites = useQuery(api.sites.listSitesByOrg,
-        (organizationId || (selectedOrgId as Id<"organizations">)) ? { organizationId: (organizationId || selectedOrgId) as Id<"organizations"> } : "skip"
+    const sitesCount = useQuery(api.sites.countByOrg,
+        orgIdToUse ? { organizationId: orgIdToUse } : "skip"
     );
-    const patrolLogs = useQuery(api.logs.listPatrolLogs,
-        (organizationId || (selectedOrgId as Id<"organizations">)) ? { organizationId: (organizationId || selectedOrgId) as Id<"organizations"> } : "skip"
+    const patrolLogsCount = useQuery(api.logs.countByOrg,
+        orgIdToUse ? { organizationId: orgIdToUse, siteId: siteIdToUse } : "skip"
+    );
+    const openIssuesCount = useQuery(api.logs.countIssuesByOrg,
+        orgIdToUse ? { organizationId: orgIdToUse, siteId: siteIdToUse } : "skip"
     );
     const issuesList = useQuery(api.logs.listIssuesByOrg,
-        (organizationId || (selectedOrgId as Id<"organizations">)) ? { organizationId: (organizationId || selectedOrgId) as Id<"organizations"> } : "skip"
+        orgIdToUse ? { organizationId: orgIdToUse, siteId: siteIdToUse } : "skip"
     );
 
     const stats = [
         {
             label: "Active Sites",
-            value: sites?.length?.toString() || "0",
+            value: sitesCount?.toString() || "0",
             icon: MapPin,
             color: "text-emerald-400",
-            trend: sites === undefined ? "Loading..." : "Live"
+            trend: sitesCount === undefined ? "Loading..." : "Live"
         },
         {
             label: "Total Users",
-            value: users?.length?.toString() || "0",
+            value: usersCount?.toString() || "0",
             icon: Users,
             color: "text-blue-400",
-            trend: users === undefined ? "Loading..." : `+${users?.length || 0}`
+            trend: usersCount === undefined ? "Loading..." : "Active"
         },
         {
             label: "Total Patrols",
-            value: patrolLogs?.length?.toString() || "0",
+            value: patrolLogsCount?.toString() || "0",
             icon: ShieldCheck,
             color: "text-amber-400",
-            trend: patrolLogs === undefined ? "Loading..." : "Updated"
+            trend: patrolLogsCount === undefined ? "Loading..." : "Updated"
         },
         {
             label: "Open Issues",
-            value: issuesList?.filter((i: any) => i.status === "open").length?.toString() || "0",
+            value: openIssuesCount?.toString() || "0",
             icon: AlertTriangle,
             color: "text-rose-500",
-            trend: issuesList === undefined ? "Loading..." : "Critical"
+            trend: openIssuesCount === undefined ? "Loading..." : "Critical"
         },
     ];
 
@@ -95,6 +103,25 @@ export default function Dashboard() {
                         </div>
                     </div>
                 )}
+
+                {/* Site Filter Bar */}
+                <div className="flex flex-col sm:flex-row sm:items-center gap-4 bg-white/5 border border-white/10 p-4 rounded-2xl">
+                    <div className="flex items-center gap-2">
+                        <MapPin className="w-4 h-4 text-primary" />
+                        <span className="text-sm font-semibold text-muted-foreground">Filter by Site:</span>
+                    </div>
+                    <div className="flex-1 max-w-sm">
+                        {orgIdToUse ? (
+                            <SearchableSitePicker
+                                organizationId={orgIdToUse}
+                                selectedSiteId={selectedSiteId}
+                                onSelect={setSelectedSiteId}
+                            />
+                        ) : (
+                            <div className="h-10 bg-white/5 border border-white/10 rounded-xl animate-pulse" />
+                        )}
+                    </div>
+                </div>
 
                 {/* Quick Actions Bar */}
                 <div className="flex flex-col sm:flex-row sm:items-center gap-4 bg-white/5 border border-white/10 p-4 rounded-2xl">

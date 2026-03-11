@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useUser, useClerk } from "@clerk/clerk-react";
 import { toast } from "sonner";
 import { useMutation, useAction } from "convex/react";
-import { api } from "../../convex/_generated/api";
+import { api } from "../services/convex";
 import { Loader2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
@@ -42,6 +42,7 @@ export default function AuthHandler({ children }: { children: React.ReactNode })
                         await logLogin({
                             userId: convexUser._id,
                             email: user.primaryEmailAddress?.emailAddress || "",
+                            organizationId: convexUser.organizationId,
                             sessionId: session?.id,
                             browserInfo: navigator.userAgent,
                             loginStatus: "success",

@@ -14,7 +14,7 @@ import Restricted from "./pages/auth/Restricted";
 import AuthHandler from "./components/AuthHandler";
 import { useUser, SignedIn, SignedOut } from "@clerk/clerk-react";
 import { useQuery } from "convex/react";
-import { api } from "../convex/_generated/api";
+import { api } from "./services/convex";
 import { Toaster } from "sonner";
 
 const Analytics = () => <Dashboard />;

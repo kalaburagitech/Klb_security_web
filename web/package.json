@@ -5,15 +5,20 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "api": "node api/server.js",
     "build": "npx convex codegen && tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview"
   },
   "dependencies": {
     "@clerk/clerk-react": "^5.61.3",
+    "@clerk/clerk-sdk-node": "^4.13.23",
     "@types/leaflet": "^1.9.21",
     "clsx": "^2.1.1",
     "convex": "^1.32.0",
+    "cors": "^2.8.6",
+    "dotenv": "^17.3.1",
+    "express": "^5.2.1",
     "framer-motion": "^12.35.0",
     "leaflet": "^1.9.4",
     "lucide-react": "^0.577.0",

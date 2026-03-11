@@ -1,5 +1,5 @@
 import { useQuery } from "convex/react";
-import { api } from "../../../convex/_generated/api";
+import { api } from "../../services/convex";
 import { Layout } from "../../components/Layout";
 import { Loader2 } from "lucide-react";
 import { cn } from "../../lib/utils";
@@ -8,7 +8,7 @@ import { useUser } from "@clerk/clerk-react";
 
 export default function PatrolLogs() {
     const { user } = useUser();
-    
+
     // Fetch user details to get organizationId
     const currentUser = useQuery(api.users.getByClerkId,
         user?.id ? { clerkId: user.id } : "skip"

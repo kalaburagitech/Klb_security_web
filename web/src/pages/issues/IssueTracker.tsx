@@ -3,7 +3,7 @@ import { Layout } from "../../components/Layout";
 import { AlertTriangle, Clock, MapPin, CheckCircle2, ShieldAlert, Loader2 } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { useQuery, useMutation } from "convex/react";
-import { api } from "../../../convex/_generated/api";
+import { api } from "../../services/convex";
 import { useUser } from "@clerk/clerk-react";
 import type { Id } from "../../../convex/_generated/dataModel";
 
@@ -20,7 +20,7 @@ export default function IssueTracker() {
     const orgIssues = useQuery((api.logs as any).listIssuesByOrg,
         (organizationId || (selectedOrgId as Id<"organizations">)) ? { organizationId: (organizationId || selectedOrgId) as Id<"organizations"> } : "skip"
     );
-    const allIssuesList = useQuery((api.logs as any).listAllIssues);
+    const allIssuesList = useQuery(api.logs.listIssues);
     const isSuperAdmin = currentUser?.role === "Owner" || currentUser?.role === "Deployment Manager";
     const issues = isSuperAdmin ? allIssuesList : orgIssues;
 

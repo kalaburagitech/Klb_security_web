@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "convex/react";
-import { api } from "../../../convex/_generated/api";
+import { api } from "../../services/convex";
 import { Layout } from "../../components/Layout";
 import {
     Plus,
@@ -19,8 +19,8 @@ import type { Id } from "../../../convex/_generated/dataModel";
 
 export default function OrganizationManagement() {
     const orgs = useQuery((api as any).organizations.list);
-    const allSites = useQuery((api as any).sites.listAll);
-    const allUsers = useQuery((api as any).users.listAll);
+    const allSites = useQuery(api.sites.list);
+    const allUsers = useQuery(api.users.list);
     const createOrg = useMutation((api as any).organizations.create);
     const updateOrg = useMutation((api as any).organizations.update);
     const removeOrg = useMutation((api as any).organizations.remove);

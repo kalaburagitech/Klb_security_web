@@ -3,7 +3,7 @@ import { Layout } from "../../components/Layout";
 import { Plus, MapPin, Search, Loader2, Edit2, Trash2, X, Building, ChevronDown, ChevronRight, Clock, Users, UserPlus, UserMinus } from "lucide-react";
 import { useQuery, useMutation } from "convex/react";
 import { MapPicker } from "../../components/MapPicker";
-import { api } from "../../../convex/_generated/api";
+import { api } from "../../services/convex";
 import { useUser } from "@clerk/clerk-react";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { toast } from "sonner";
@@ -56,7 +56,7 @@ export default function SiteManagement() {
     const orgs = useQuery(api.organizations.list);
 
     // Admins/Owners should see all sites, others only their org's sites
-    const allSites = useQuery(api.sites.listAll);
+    const allSites = useQuery(api.sites.list);
     const orgSites = useQuery(api.sites.listSitesByOrg,
         organizationId ? { organizationId } : "skip"
     );

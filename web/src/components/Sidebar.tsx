@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { useUser } from "@clerk/clerk-react";
 import { useQuery } from "convex/react";
-import { api } from "../../convex/_generated/api";
+import { api } from "../services/convex";
 
 const navItems = [
     { name: "Dashboard", icon: LayoutDashboard, href: "/", permission: "analytics" },
