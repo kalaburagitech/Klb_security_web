@@ -34,6 +34,8 @@ app.use("/api/users", usersRoutes);
 app.use("/api/sites", sitesRoutes);
 app.use("/api/points", pointsRoutes);
 app.use("/api/logs", logsRoutes);
+app.use("/api/issues", issuesRoutes);
+app.use("/api/incidents", incidentRoutes);
 
 // Health check
 app.get("/health", (req, res) => {

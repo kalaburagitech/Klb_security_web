@@ -112,4 +112,12 @@ router.get("/issues/org/:orgId", async (req, res) => {
     }
 });
 
+router.get("/patrol/user/:userId", async (req, res) => {
+    try {
+        const logs = await convex.query(api.logs.listPatrolLogsByUser, { userId: req.params.userId });
+        res.json(logs);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
 export default router;
