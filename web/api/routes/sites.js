@@ -13,6 +13,28 @@ router.get("/org/:orgId", async (req, res) => {
     }
 });
 
+router.get("/all", async (req, res) => {
+    try {
+        const sites = await convex.query(api.sites.listAll);
+        res.json(sites);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+router.post("/list", async (req, res) => {
+    try {
+        const { ids } = req.body;
+        if (!Array.isArray(ids)) {
+            return res.status(400).json({ error: "ids must be an array" });
+        }
+        const sites = await convex.query(api.sites.listSitesByIds, { ids });
+        res.json(sites);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 router.get("/user/:userId", async (req, res) => {
     try {
         const sites = await convex.query(api.sites.listSitesByUser, { userId: req.params.userId });
@@ -24,17 +46,8 @@ router.get("/user/:userId", async (req, res) => {
 
 router.get("/:id", async (req, res) => {
     try {
-        const site = await convex.query(api.sites.getSite, { siteId: req.params.id });
+        const site = await convex.query(api.sites.getSite, { id: req.params.id });
         res.json(site);
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-});
-
-router.get("/all", async (req, res) => {
-    try {
-        const sites = await convex.query(api.sites.listAll);
-        res.json(sites);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }

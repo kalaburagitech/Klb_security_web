@@ -31,4 +31,15 @@ router.post("/", async (req, res) => {
     }
 });
 
+router.put("/:id", async (req, res) => {
+    try {
+        const pointId = req.params.id;
+        const { id, ...updates } = req.body || {};
+        await convex.mutation(api.patrolPoints.updatePoint, { id: pointId, ...updates });
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 export default router;
