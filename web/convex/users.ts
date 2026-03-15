@@ -6,11 +6,13 @@ import { mutation, query } from "./_generated/server";
 /* ------------------------------------------------ */
 
 export const getByClerkId = query({
-    args: { clerkId: v.string() },
+    args: { clerkId: v.optional(v.string()) },
     handler: async (ctx, args) => {
+        const clerkId = args.clerkId;
+        if (!clerkId) return null;
         const user = await ctx.db
             .query("users")
-            .withIndex("by_clerkId", (q) => q.eq("clerkId", args.clerkId))
+            .withIndex("by_clerkId", (q) => q.eq("clerkId", clerkId))
             .first();
 
         return user ?? null;
@@ -83,10 +85,11 @@ export const create = mutation({
     handler: async (ctx, args) => {
         /* Prevent duplicate Clerk users */
 
-        if (args.clerkId) {
+        const clerkIdArg = args.clerkId;
+        if (clerkIdArg) {
             const existing = await ctx.db
                 .query("users")
-                .withIndex("by_clerkId", (q) => q.eq("clerkId", args.clerkId))
+                .withIndex("by_clerkId", (q) => q.eq("clerkId", clerkIdArg))
                 .first();
 
             if (existing) {
@@ -225,7 +228,8 @@ export const countByOrg = query({
             .collect();
 
         if (args.siteId) {
-            users = users.filter((user) => user.siteIds?.includes(args.siteId));
+            const siteId = args.siteId;
+            users = users.filter((user) => user.siteIds?.includes(siteId));
         }
 
         return users.length;

@@ -1,15 +1,17 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Layout } from "../../components/Layout";
 import { AlertTriangle, Clock, MapPin, CheckCircle2, ShieldAlert, Loader2 } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../services/convex";
 import { useUser } from "@clerk/clerk-react";
+import { toast } from "sonner";
 import type { Id } from "../../../convex/_generated/dataModel";
 
 export default function IssueTracker() {
     const { user } = useUser();
     const [selectedOrgId, setSelectedOrgId] = useState<string>("");
+    const [selectedIssue, setSelectedIssue] = useState<any | null>(null);
 
     const currentUser = useQuery(api.users.getByClerkId,
         user?.id ? { clerkId: user.id } : "skip"
@@ -20,7 +22,7 @@ export default function IssueTracker() {
     const orgIssues = useQuery((api.logs as any).listIssuesByOrg,
         (organizationId || (selectedOrgId as Id<"organizations">)) ? { organizationId: (organizationId || selectedOrgId) as Id<"organizations"> } : "skip"
     );
-    const allIssuesList = useQuery(api.logs.listIssues);
+    const allIssuesList = useQuery(api.logs.listAllIssues);
     const isSuperAdmin = currentUser?.role === "Owner" || currentUser?.role === "Deployment Manager";
     const issues = isSuperAdmin ? allIssuesList : orgIssues;
 
@@ -56,9 +58,75 @@ export default function IssueTracker() {
         }, { critical: 0, warnings: 0, resolvedToday: 0 });
     }, [issues]);
 
-    const activeIssues = React.useMemo(() => {
-        return issues?.filter((i: any) => i.status === "open") || [];
+    const criticalIssues = React.useMemo(() => {
+        return issues?.filter((i: any) => i.status === "open" && i.priority === "High") || [];
     }, [issues]);
+
+    const warningIssues = React.useMemo(() => {
+        return issues?.filter((i: any) => i.status === "open" && i.priority !== "High") || [];
+    }, [issues]);
+
+    const resolvedIssues = React.useMemo(() => {
+        return issues?.filter((i: any) => i.status === "closed") || [];
+    }, [issues]);
+
+    const renderIssueCard = (issue: any, isResolved = false) => (
+        <div key={issue._id} className="glass p-5 rounded-2xl border border-white/10 hover:border-white/20 transition-all">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-start gap-4 w-full">
+                    <div className={cn(
+                        "p-3 rounded-xl",
+                        issue.priority === "High" ? "bg-red-500/10" : "bg-amber-500/10"
+                    )}>
+                        <AlertTriangle className={cn(
+                            "w-6 h-6",
+                            issue.priority === "High" ? "text-red-500" : "text-amber-500"
+                        )} />
+                    </div>
+                    <div className="flex-1">
+                        <div className="flex items-center gap-3 mb-1">
+                            <h3 className="text-base font-bold text-white">{issue.title}</h3>
+                            <span className={cn(
+                                "px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border",
+                                issue.priority === "High" ? "bg-red-500/10 text-red-500 border-red-500/20" : "bg-amber-500/10 text-amber-500 border-amber-500/20"
+                            )}>
+                                {issue.priority}
+                            </span>
+                        </div>
+                        <p className="text-sm text-muted-foreground mb-2">{issue.description}</p>
+                        <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
+                            <div className="flex items-center gap-1">
+                                <MapPin className="w-3.5 h-3.5" />
+                                <span className="text-white font-medium">{issue.siteName}</span>
+                                <span className="mx-1 opacity-20">|</span>
+                                <span className="text-primary">{issue.locationContext}</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                                <Clock className="w-3.5 h-3.5" />
+                                {new Date(issue.timestamp).toLocaleString()}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div className="flex items-center gap-3">
+                    <button
+                        onClick={() => setSelectedIssue(issue)}
+                        className="px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-xs font-semibold hover:bg-white/10 transition-colors text-white"
+                    >
+                        View Details
+                    </button>
+                    {!isResolved && issue.status === "open" && (
+                        <button
+                            onClick={() => handleResolve(issue._id)}
+                            className="px-4 py-2 bg-primary/10 border border-primary/20 text-primary rounded-xl text-xs font-semibold hover:bg-primary hover:text-white transition-all shadow-sm active:scale-95"
+                        >
+                            Resolve
+                        </button>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
 
     if (currentUser === undefined || (organizationId && issues === undefined)) {
         return (
@@ -140,72 +208,57 @@ export default function IssueTracker() {
                     </div>
                 </div>
 
-                <div className="space-y-4">
-                    {activeIssues.map((issue: any) => (
-                        <div key={issue._id} className="glass p-5 rounded-2xl border border-white/10 hover:border-white/20 transition-all group">
-                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                                <div className="flex items-start gap-4">
-                                    <div className={cn(
-                                        "p-3 rounded-xl",
-                                        issue.priority === "High" ? "bg-red-500/10" : "bg-amber-500/10"
-                                    )}>
-                                        <AlertTriangle className={cn(
-                                            "w-6 h-6",
-                                            issue.priority === "High" ? "text-red-500" : "text-amber-500"
-                                        )} />
-                                    </div>
-                                    <div>
-                                        <div className="flex items-center gap-3 mb-1">
-                                            <h3 className="text-base font-bold text-white group-hover:text-primary transition-colors">{issue.title}</h3>
-                                            <span className={cn(
-                                                "px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border",
-                                                issue.priority === "High" ? "bg-red-500/10 text-red-500 border-red-500/20" : "bg-amber-500/10 text-amber-500 border-amber-500/20"
-                                            )}>
-                                                {issue.priority}
-                                            </span>
-                                        </div>
-                                        <p className="text-sm text-muted-foreground mb-3">{issue.description}</p>
-                                        <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
-                                            <div className="flex items-center gap-1">
-                                                <MapPin className="w-3.5 h-3.5" />
-                                                <span className="text-white font-medium">{issue.siteName}</span>
-                                                <span className="mx-1 opacity-20">|</span>
-                                                <span className="text-primary">{issue.locationContext}</span>
-                                            </div>
-                                            <div className="flex items-center gap-1">
-                                                <Clock className="w-3.5 h-3.5" />
-                                                {new Date(issue.timestamp).toLocaleString()}
-                                            </div>
-                                            <div className="flex items-center gap-1 ml-auto">
-                                                <div className="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center">
-                                                    <span className="text-[10px] font-bold text-primary">{issue.reporterName?.[0]}</span>
-                                                </div>
-                                                <span className="text-white ml-1">{issue.reporterName}</span>
-                                                <span className="text-[10px] bg-white/5 px-2 py-0.5 rounded-md border border-white/10 uppercase font-bold tracking-tighter">
-                                                    {issue.reporterRole}
-                                                </span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="flex items-center gap-3 self-end sm:self-center">
-                                    <button className="px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-xs font-semibold hover:bg-white/10 transition-colors text-white">
-                                        View Details
-                                    </button>
-                                    <button
-                                        onClick={() => handleResolve(issue._id)}
-                                        className="px-4 py-2 bg-primary/10 border border-primary/20 text-primary rounded-xl text-xs font-semibold hover:bg-primary hover:text-white transition-all shadow-sm active:scale-95"
-                                    >
-                                        Resolve
-                                    </button>
-                                </div>
+                <div className="space-y-6">
+                    <section>
+                        <div className="flex items-center justify-between mb-3">
+                            <h2 className="text-lg font-bold">Critical Active Issues</h2>
+                            <span className="text-xs text-muted-foreground">{criticalIssues.length} items</span>
+                        </div>
+                        {criticalIssues.length > 0 ? criticalIssues.map((issue: any) => renderIssueCard(issue, false)) : (
+                            <div className="text-center py-8 text-muted-foreground">No critical issues at the moment.</div>
+                        )}
+                    </section>
+
+                    <section>
+                        <div className="flex items-center justify-between mb-3">
+                            <h2 className="text-lg font-bold">Active Warnings</h2>
+                            <span className="text-xs text-muted-foreground">{warningIssues.length} items</span>
+                        </div>
+                        {warningIssues.length > 0 ? warningIssues.map((issue: any) => renderIssueCard(issue, false)) : (
+                            <div className="text-center py-8 text-muted-foreground">No active warnings at the moment.</div>
+                        )}
+                    </section>
+
+                    <section>
+                        <div className="flex items-center justify-between mb-3">
+                            <h2 className="text-lg font-bold">Resolved Issues</h2>
+                            <span className="text-xs text-muted-foreground">{resolvedIssues.length} items</span>
+                        </div>
+                        {resolvedIssues.length > 0 ? resolvedIssues.map((issue: any) => renderIssueCard(issue, true)) : (
+                            <div className="text-center py-8 text-muted-foreground">No resolved issues yet.</div>
+                        )}
+                    </section>
+                </div>
+
+                {selectedIssue && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+                        <div className="glass w-full max-w-lg rounded-2xl border border-white/10 p-6 space-y-4">
+                            <div className="flex items-center justify-between">
+                                <h3 className="text-lg font-bold">Issue Details</h3>
+                                <button onClick={() => setSelectedIssue(null)} className="text-muted-foreground">Close</button>
+                            </div>
+                            <div className="space-y-2">
+                                <div><strong>Title:</strong> {selectedIssue.title}</div>
+                                <div><strong>Description:</strong> {selectedIssue.description}</div>
+                                <div><strong>Status:</strong> {selectedIssue.status}</div>
+                                <div><strong>Priority:</strong> {selectedIssue.priority}</div>
+                                <div><strong>Location:</strong> {selectedIssue.siteName}</div>
+                                <div><strong>Reported by:</strong> {selectedIssue.reporterName} ({selectedIssue.reporterRole})</div>
+                                <div><strong>Timestamp:</strong> {new Date(selectedIssue.timestamp).toLocaleString()}</div>
                             </div>
                         </div>
-                    ))}
-                    {activeIssues.length === 0 && (
-                        <div className="text-center py-12 text-muted-foreground">No active issues found.</div>
-                    )}
-                </div>
+                    </div>
+                )}
             </div>
         </Layout>
     );

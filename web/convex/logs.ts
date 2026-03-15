@@ -398,13 +398,20 @@ export const countByOrg = query({
     },
 });
 export const countIssuesByOrg = query({
-    args: { organizationId: v.id("organizations") },
+    args: {
+        organizationId: v.id("organizations"),
+        siteId: v.optional(v.id("sites")),
+    },
 
     handler: async (ctx, args) => {
-        const logs = await ctx.db
+        let logs = await ctx.db
             .query("logs")
             .withIndex("by_org", (q) => q.eq("organizationId", args.organizationId))
             .collect();
+
+        if (args.siteId) {
+            logs = logs.filter((log) => log.siteId === args.siteId);
+        }
 
         const issues = logs.filter((log) => log.issue === true);
 

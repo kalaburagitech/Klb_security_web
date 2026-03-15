@@ -115,10 +115,24 @@ export default defineSchema({
         type: v.union(v.literal("patrol"), v.literal("visit"), v.literal("issue")),
         refId: v.union(v.id("patrolLogs"), v.id("visitLogs"), v.id("issues")),
         organizationId: v.id("organizations"),
-<<<<<<< HEAD
+        siteId: v.optional(v.id("sites")),
+        guardId: v.optional(v.id("users")),
+        status: v.optional(v.string()),
+        issue: v.optional(v.boolean()),
+        createdAt: v.optional(v.number()),
     }).index("by_org", ["organizationId"])
         .index("by_guard", ["guardId"])
         .index("by_org_status", ["organizationId", "status"]),
+
+    patrolSessions: defineTable({
+        guardId: v.id("users"),
+        siteId: v.id("sites"),
+        organizationId: v.id("organizations"),
+        status: v.union(v.literal("active"), v.literal("inactive"), v.literal("completed")),
+        startTime: v.number(),
+        endTime: v.optional(v.number()),
+        scannedPoints: v.optional(v.array(v.id("patrolPoints"))),
+    }).index("by_org_status", ["organizationId", "status"]),
 
     incidents: defineTable({
         guardId: v.id("users"),
@@ -131,8 +145,4 @@ export default defineSchema({
         timestamp: v.number(),
         organizationId: v.id("organizations"),
     }).index("by_org", ["organizationId"]).index("by_site", ["siteId"]),
-=======
-        createdAt: v.number(),
-    }).index("by_org", ["organizationId"]),
->>>>>>> 689b487 (code updated live working)
 });

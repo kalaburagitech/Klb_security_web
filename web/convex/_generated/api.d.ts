@@ -15,6 +15,7 @@ import type * as images from "../images.js";
 import type * as jwt from "../jwt.js";
 import type * as loginLogs from "../loginLogs.js";
 import type * as logs from "../logs.js";
+import type * as monitoring from "../monitoring.js";
 import type * as organizations from "../organizations.js";
 import type * as patrolPoints from "../patrolPoints.js";
 import type * as reports from "../reports.js";
@@ -35,6 +36,7 @@ declare const fullApi: ApiFromModules<{
   jwt: typeof jwt;
   loginLogs: typeof loginLogs;
   logs: typeof logs;
+  monitoring: typeof monitoring;
   organizations: typeof organizations;
   patrolPoints: typeof patrolPoints;
   reports: typeof reports;

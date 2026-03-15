@@ -56,11 +56,9 @@ export default function SiteManagement() {
     const orgs = useQuery(api.organizations.list);
 
     // Admins/Owners should see all sites, others only their org's sites
-<<<<<<< HEAD
-    const allSites = useQuery(api.sites.list, {});
-=======
+
     const allSites = useQuery(api.sites.listAll);
->>>>>>> 689b487 (code updated live working)
+
     const orgSites = useQuery(api.sites.listSitesByOrg,
         organizationId ? { organizationId } : "skip"
     );

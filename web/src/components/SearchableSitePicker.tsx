@@ -22,12 +22,15 @@ export function SearchableSitePicker({
     const [searchQuery, setSearchQuery] = useState("");
     const dropdownRef = useRef<HTMLDivElement>(null);
 
-    // Fetch sites by org first, fallback to all sites so no one is missed
+    // Fetch sites ordinarily by org and also all sites for global display.
     const orgSites = useQuery(api.sites.listSitesByOrg, {
         organizationId
     });
     const allSitesFallback = useQuery(api.sites.listAll);
-    const allSites = orgSites && orgSites.length > 0 ? orgSites : allSitesFallback;
+
+    // If we have all sites, we trust it for full visibility; otherwise, use org sites.
+    // This ensures the list shows everything from Site Management whenever possible.
+    const allSites = allSitesFallback || orgSites || [];
 
     // Debug: Log current state
     console.log("SearchableSitePicker - orgId:", organizationId, "orgSites:", orgSites?.length, "allSitesFallback:", allSitesFallback?.length, "allSites:", allSites?.length);

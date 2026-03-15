@@ -37,6 +37,37 @@ export const createPoint = mutation({
     },
 });
 
+export const createBatchPoints = mutation({
+    args: {
+        baseName: v.string(),
+        count: v.number(),
+        siteId: v.id("sites"),
+        latitude: v.number(),
+        longitude: v.number(),
+        organizationId: v.id("organizations"),
+        imageId: v.optional(v.string()),
+    },
+    handler: async (ctx, args) => {
+        const generatedIds = [] as string[];
+        for (let i = 1; i <= Math.min(Math.max(args.count, 1), 100); i++) {
+            const name = `${args.baseName}-${i}`;
+            const qrCode = `${args.siteId.slice(0, 4)}-${name.replace(/\s+/g, '-').toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+            const record = await ctx.db.insert("patrolPoints", {
+                siteId: args.siteId,
+                name,
+                latitude: args.latitude,
+                longitude: args.longitude,
+                organizationId: args.organizationId,
+                imageId: args.imageId,
+                qrCode,
+                createdAt: Date.now(),
+            });
+            generatedIds.push(record);
+        }
+        return generatedIds;
+    },
+});
+
 export const listAll = query({
     handler: async (ctx) => {
         return await ctx.db.query("patrolPoints").collect();
@@ -100,56 +131,23 @@ export const searchPoints = query({
         siteId: v.optional(v.id("sites")),
         searchQuery: v.optional(v.string()),
         paginationOpts: v.object({
-            cursor: v.optional(v.union(v.string(), v.null())),
+            cursor: v.union(v.string(), v.null()),
             numItems: v.float64(),
             id: v.optional(v.float64()), // now allowed
         }),
     },
     handler: async (ctx, args) => {
-        // Fetch patrol points for org (and optionally site)
+        // Fetch patrol points for org (and optionally site), then apply optional search filter.
         let points = await ctx.db
             .query("patrolPoints")
             .withIndex("by_org", (q) => q.eq("organizationId", args.organizationId))
             .collect();
 
-
-        let paginatedResults: any;
-        if (args.searchQuery.trim()) {
-            const searchQ = ctx.db
-                .query("patrolPoints")
-                .withSearchIndex("search_name", (q) => {
-                    let search = q.search("name", args.searchQuery);
-                    if (orgId) search = search.eq("organizationId", orgId);
-                    if (sId) search = search.eq("siteId", sId);
-                    return search;
-                });
-            paginatedResults = await searchQ.paginate(args.paginationOpts);
-        } else {
-            let regularQ = ctx.db.query("patrolPoints") as any;
-            if (sId) {
-                regularQ = regularQ.withIndex("by_site", (q: any) => q.eq("siteId", sId));
-            } else if (orgId) {
-                regularQ = regularQ.withIndex("by_org", (q: any) => q.eq("organizationId", orgId));
-            }
-            paginatedResults = await regularQ.order("desc").paginate(args.paginationOpts);
-        }
-
-        // Enrich with site names
-        const enrichedPage = await Promise.all(
-            paginatedResults.page.map(async (point: any) => {
-                const site = await ctx.db.get(point.siteId) as any;
-                return {
-                    ...point,
-                    siteName: site?.name || "Unknown Site"
-                };
-            })
-        );
-
         if (args.siteId) {
             points = points.filter((p) => p.siteId === args.siteId);
         }
 
-        if (args.searchQuery) {
+        if (args.searchQuery && args.searchQuery.trim()) {
             const lower = args.searchQuery.toLowerCase();
             points = points.filter((p) => p.name.toLowerCase().includes(lower));
         }
@@ -161,7 +159,6 @@ export const searchPoints = query({
 
         const isDone = start + paginated.length >= points.length;
         const continueCursor = isDone ? "" : (start + paginated.length).toString();
-      
 
         return {
             page: paginated,
