@@ -1,6 +1,9 @@
 import { useState } from "react";
 import { Sidebar } from "./Sidebar";
 import { Bell, Search, UserCircle, Menu } from "lucide-react";
+import { useUser } from "@clerk/clerk-react";
+import { useQuery } from "convex/react";
+import { api } from "../services/convex";
 
 interface LayoutProps {
     children: React.ReactNode;
@@ -9,6 +12,15 @@ interface LayoutProps {
 
 export function Layout({ children, title = "Security Dashboard" }: LayoutProps) {
     const [isMobileOpen, setIsMobileOpen] = useState(false);
+    const { user } = useUser();
+    
+    const currentUser = useQuery(api.users.getByClerkId, 
+        user?.id ? { clerkId: user.id } : "skip"
+    );
+    
+    const organization = useQuery(api.organizations.get, 
+        currentUser?.organizationId ? { id: currentUser.organizationId } : "skip"
+    );
 
     return (
         <div className="flex h-screen bg-background overflow-hidden relative">
@@ -42,17 +54,25 @@ export function Layout({ children, title = "Security Dashboard" }: LayoutProps) 
 
                     <div className="flex items-center gap-4">
                         <button className="relative w-8 h-8 flex items-center justify-center rounded-full hover:bg-white/10 transition-colors text-muted-foreground hover:text-white">
-                            <Bell className="w-4 h-4" />
+                            < Bell className="w-4 h-4" />
                             <span className="absolute top-1 right-1 w-2 h-2 bg-primary rounded-full border border-background shadow-[0_0_10px_rgba(37,99,235,0.5)]" />
                         </button>
                         <div className="h-8 w-px bg-white/10" />
                         <div className="flex items-center gap-3 pl-2 cursor-pointer group">
                             <div className="text-right hidden sm:block leading-none">
-                                <p className="text-xs font-semibold text-white/90 group-hover:text-white transition-colors">Admin Manager</p>
-                                <p className="text-[10px] text-muted-foreground mt-0.5">Secure Corp</p>
+                                <p className="text-xs font-semibold text-white/90 group-hover:text-white transition-colors">
+                                    {currentUser?.name || user?.fullName || "User"}
+                                </p>
+                                <p className="text-[10px] text-muted-foreground mt-0.5">
+                                    {organization?.name || "No Organization"}
+                                </p>
                             </div>
                             <div className="w-8 h-8 rounded-full border border-white/10 flex items-center justify-center bg-white/5 overflow-hidden group-hover:border-primary/50 transition-all">
-                                <UserCircle className="w-5 h-5 text-muted-foreground" />
+                                {user?.imageUrl ? (
+                                    <img src={user.imageUrl} alt="Avatar" className="w-full h-full object-cover" />
+                                ) : (
+                                    <UserCircle className="w-5 h-5 text-muted-foreground" />
+                                )}
                             </div>
                         </div>
                     </div>

@@ -3,7 +3,7 @@ import { Platform } from 'react-native';
 
 // Update this single URL to your production endpoint (e.g. Render) before building
 // For local development, use your computer's local IP address.
-export const API_URL = 'https://rahulsecurityapp.vercel.app/api';
+export const API_URL = 'http://10.133.65.251:3000/api';
 
 const api = axios.create({
     baseURL: API_URL,
@@ -13,8 +13,8 @@ const api = axios.create({
 });
 
 export const authService = {
-    sendOtp: (mobileNumber: string) => api.post('/auth/send-otp', { mobileNumber }),
-    verifyOtp: (mobileNumber: string, otp: string) => api.post('/auth/verify-otp', { mobileNumber, otp }),
+    sendOtp: (mobileNumber: string) => api.post('/auth/otp', { mobileNumber }),
+    verifyOtp: (mobileNumber: string, otp: string) => api.post('/auth/verify', { mobileNumber, otp }),
 };
 
 export const userService = {
@@ -26,6 +26,7 @@ export const userService = {
 export const siteService = {
     getSitesByOrg: (orgId: string) => api.get(`/sites/org/${orgId}`),
     getSitesByIds: (ids: string[]) => api.post('/sites/list', { ids }),
+    getSitesByUser: (userId: string) => api.get(`/sites/user/${userId}`),
     getAllSites: () => api.get('/sites/all'),
     getSiteById: (id: string) => api.get(`/sites/${id}`),
 };
@@ -49,6 +50,21 @@ export const logService = {
         api.post('/logs/validate-point', { siteId, qrCodeId, userLat, userLon, guardId }),
     updateSessionPoints: (sessionId: string, pointId: string) => api.post('/logs/session/points/update', { sessionId, pointId }),
     endSession: (sessionId: string) => api.post(`/logs/session/${sessionId}/end`),
+};
+
+/**
+ * Helper to convert a Convex storageId (assetId) to a public display URL.
+ * Returns null if storageId is falsy or on error.
+ */
+export const uploadService = {
+    getImageUrl: async (storageId: string): Promise<string | null> => {
+        try {
+            const res = await api.get(`/upload/url/${encodeURIComponent(storageId)}`);
+            return res.data?.url ?? null;
+        } catch {
+            return null;
+        }
+    },
 };
 
 export default api;

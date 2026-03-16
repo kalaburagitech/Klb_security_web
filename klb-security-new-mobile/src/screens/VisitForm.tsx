@@ -4,11 +4,9 @@ import { ClipboardList, MapPin, CheckCircle, ChevronLeft, Camera, Check, ShieldA
 import * as Location from 'expo-location';
 import * as ImagePicker from 'expo-image-picker';
 import { useCustomAuth } from '../context/AuthContext';
-import { cn } from '../lib/utils';
-// import { useMutation } from 'convex/react';
-// import { api } from '../services/convex';
 import { logService } from '../services/api';
 import { uploadImage } from '../services/upload';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function VisitForm({ route, navigation }: any) {
     const { customUser } = useCustomAuth();
@@ -22,7 +20,7 @@ export default function VisitForm({ route, navigation }: any) {
     const [reportIssue, setReportIssue] = useState(false);
     const [issueTitle, setIssueTitle] = useState('');
     const [priority, setPriority] = useState<'Low' | 'Medium' | 'High'>('Medium');
-    const generateUploadUrl = async () => { console.log("Mocked upload url"); return ""; };
+    
     const createDualLog = async (data: any) => { return logService.createDualLog(data); };
 
     useEffect(() => {
@@ -62,36 +60,39 @@ export default function VisitForm({ route, navigation }: any) {
             return;
         }
 
+        if (!remark && !image) {
+            Alert.alert("Evidence Required", "Please provide notes or a photo.");
+            return;
+        }
+
         setLoading(true);
         try {
-            const userToUse = currentUser;
-            if (!userToUse || !userToUse.organizationId) {
-                Alert.alert("Error", "User profile not loaded. Please re-login.");
-                setLoading(false);
+            if (!currentUser?._id) {
+                Alert.alert("Error", "User not found. Please log in again.");
                 return;
             }
 
             let storageId = undefined;
             if (image) {
-                storageId = await uploadImage(image, generateUploadUrl);
+                storageId = await uploadImage(image);
             }
 
             await createDualLog({
-                userId: currentUser._id as any,
-                siteId: siteId as any,
-                qrCode: isManual ? "MANUAL_VISIT" : qrCode,
+                userId: currentUser._id,
+                siteId: siteId,
+                qrCode: isManual ? "MANUAL_VISIT" : (qrCode || "QR_VISIT"),
                 comment: remark,
                 latitude: location.coords.latitude,
                 longitude: location.coords.longitude,
-                organizationId: organizationId as any,
+                organizationId: organizationId || currentUser.organizationId,
                 imageId: storageId,
                 issueDetails: reportIssue ? { title: issueTitle || "Visit Issue", priority } : undefined,
             });
 
-            Alert.alert("Success", "Visit and Patrol logs submitted successfully!");
+            Alert.alert("Success", "Visit logged successfully!");
             navigation.navigate("MainTabs");
         } catch (error) {
-            Alert.alert("Error", "Failed to submit visit log. Please try again.");
+            Alert.alert("Error", "Failed to submit visit log.");
             console.error(error);
         } finally {
             setLoading(false);
@@ -99,173 +100,183 @@ export default function VisitForm({ route, navigation }: any) {
     };
 
     return (
-        <ScrollView className="flex-1 bg-background">
-            <View className="px-6 pt-12 pb-8">
-                <TouchableOpacity onPress={() => navigation.goBack()} className="mb-6">
+        <SafeAreaView style={styles.container}>
+            <View style={styles.header}>
+                <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
                     <ChevronLeft color="white" size={24} />
                 </TouchableOpacity>
-
-                <Text style={styles.headerLabel}>Submit Visit Log</Text>
-                <Text style={styles.headerTitle}>{isManual ? "Manual Visit" : "Officer Visit"}</Text>
-                <Text style={styles.siteSubtitle}>{siteName}</Text>
+                <View>
+                    <Text style={styles.headerLabel}>Submit Visit Log</Text>
+                    <Text style={styles.headerTitle}>{isManual ? "Manual Visit" : "Officer Visit"}</Text>
+                    <Text style={styles.siteSubtitle}>{siteName}</Text>
+                </View>
             </View>
 
-            <View className="px-6 space-y-6">
-                {/* Photo Capture Area */}
-                <View className="bg-card rounded-3xl border border-white/10 overflow-hidden">
-                    <TouchableOpacity
-                        onPress={handleImageCapture}
-                        className="items-center justify-center min-h-[160px]"
-                    >
+            <ScrollView contentContainerStyle={styles.scrollContent}>
+                <View style={styles.card}>
+                    <TouchableOpacity onPress={handleImageCapture} style={styles.imageContainer}>
                         {image ? (
-                            <View className="w-full h-[200px] relative">
-                                <Image source={{ uri: image }} className="w-full h-full" resizeMode="cover" />
-                                <View className="absolute top-3 right-3 bg-emerald-500 w-8 h-8 rounded-full items-center justify-center shadow-lg">
-                                    <Check color="white" size={16} />
+                            <View style={styles.previewWrapper}>
+                                <Image source={{ uri: image }} style={styles.previewImage} />
+                                <View style={styles.checkBadge}>
+                                    <Check color="white" size={14} />
                                 </View>
-                                <View className="absolute bottom-3 left-3 bg-black/60 px-3 py-1.5 rounded-xl border border-white/10">
-                                    <Text className="text-white text-[10px] font-bold uppercase">Change Photo</Text>
+                                <View style={styles.changeLabel}>
+                                    <Text style={styles.changeText}>Change Photo</Text>
                                 </View>
                             </View>
                         ) : (
-                            <>
-                                <View className="w-16 h-16 bg-white/5 rounded-2xl items-center justify-center mb-3">
+                            <View style={styles.placeholderWrapper}>
+                                <View style={styles.iconBox}>
                                     <Camera color="#64748b" size={32} />
                                 </View>
-                                <Text className="text-muted text-xs font-semibold">Capture Photo Proof</Text>
-                            </>
+                                <Text style={styles.placeholderText}>Capture Photo Proof</Text>
+                            </View>
                         )}
                     </TouchableOpacity>
                 </View>
 
-                {/* QR Data Info */}
-                <View className="bg-card p-5 rounded-3xl border border-white/5 flex-row items-center">
-                    <ClipboardList color="#3b82f6" size={20} className="mr-3" />
-                    <View>
-                        <Text className="text-white font-bold text-sm">QR Validated</Text>
-                        <Text className="text-muted text-[10px] uppercase">{qrCode}</Text>
+                <View style={[styles.infoRow, styles.card]}>
+                    <ClipboardList color="#3b82f6" size={20} />
+                    <View style={styles.infoTextContainer}>
+                        <Text style={styles.infoLabel}>QR Identifier</Text>
+                        <Text style={styles.infoValue}>{qrCode || (isManual ? "Manual Entry" : "Scanned")}</Text>
                     </View>
                 </View>
 
-                {/* GPS Status */}
-                <View className="bg-card p-5 rounded-3xl border border-white/5 flex-row items-center justify-between">
-                    <View className="flex-row items-center">
-                        <MapPin color={location ? "#10b981" : "#64748b"} size={18} className="mr-2" />
-                        <Text className="text-white font-bold text-sm">Location Capture</Text>
+                <View style={[styles.infoRow, styles.card, { justifyContent: 'space-between' }]}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                        <MapPin color={location ? "#10b981" : "#64748b"} size={20} />
+                        <Text style={styles.infoLabel}>GPS Coordinates</Text>
                     </View>
-                    <Text className="text-emerald-500 text-[10px] uppercase font-bold">
+                    <Text style={[styles.statusTag, location ? styles.statusCaptured : styles.statusLocating]}>
                         {location ? "Captured" : "Locating..."}
                     </Text>
                 </View>
 
-                {/* Remark Input */}
-                <View className="bg-card p-5 rounded-3xl border border-white/10">
-                    <Text className="text-muted text-[10px] uppercase font-bold mb-3 tracking-widest">Remarks / Observations</Text>
+                <View style={[styles.card, styles.inputSection]}>
+                    <Text style={styles.sectionTitle}>Notes / Observations</Text>
                     <TextInput
                         multiline
                         numberOfLines={4}
-                        placeholder="Add visit notes..."
+                        placeholder="Add visit notes here..."
                         placeholderTextColor="#475569"
-                        className="text-white text-sm min-h-[100px]"
+                        style={styles.textInput}
                         value={remark}
                         onChangeText={setRemark}
                     />
                 </View>
 
-                {/* Report Issue Toggle */}
-                <View className="bg-card p-5 rounded-3xl border border-white/10">
-                    <View className="flex-row items-center justify-between mb-4">
-                        <View className="flex-row items-center">
+                <View style={[styles.card, styles.issueSection]}>
+                    <View style={styles.issueHeader}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                             <ShieldAlert color={reportIssue ? "#f43f5e" : "#64748b"} size={20} />
-                            <Text className="text-white font-bold text-sm ml-2">Report an Issue</Text>
+                            <Text style={styles.infoLabel}>Report an Issue?</Text>
                         </View>
                         <TouchableOpacity
                             onPress={() => setReportIssue(!reportIssue)}
-                            className={cn(
-                                "w-12 h-6 rounded-full px-1 justify-center",
-                                reportIssue ? "bg-red-500" : "bg-zinc-800"
-                            )}
+                            style={[styles.switch, reportIssue && styles.switchActive]}
                         >
-                            <View className={cn(
-                                "w-4 h-4 rounded-full bg-white",
-                                reportIssue ? "ml-auto" : "ml-0"
-                            )} />
+                            <View style={[styles.thumb, reportIssue && styles.thumbActive]} />
                         </TouchableOpacity>
                     </View>
 
                     {reportIssue && (
-                        <View className="space-y-4 pt-2 border-t border-white/5">
-                            <View>
-                                <Text className="text-muted text-[10px] uppercase font-bold mb-2 tracking-widest">Issue Title</Text>
-                                <TextInput
-                                    placeholder="e.g. Broken Gate, Water Leak"
-                                    placeholderTextColor="#475569"
-                                    className="text-white text-sm bg-black/20 p-3 rounded-xl border border-white/5"
-                                    value={issueTitle}
-                                    onChangeText={setIssueTitle}
-                                />
-                            </View>
+                        <View style={styles.issueDetails}>
+                            <Text style={styles.sectionTitle}>Issue Title</Text>
+                            <TextInput
+                                placeholder="Broken CCTV, Door Unlocked etc."
+                                placeholderTextColor="#475569"
+                                style={styles.innerInput}
+                                value={issueTitle}
+                                onChangeText={setIssueTitle}
+                            />
 
-                            <View>
-                                <Text className="text-muted text-[10px] uppercase font-bold mb-2 tracking-widest">Priority</Text>
-                                <View className="flex-row gap-2">
-                                    {["Low", "Medium", "High"].map((p: any) => (
-                                        <TouchableOpacity
-                                            key={p}
-                                            onPress={() => setPriority(p)}
-                                            className={cn(
-                                                "flex-1 py-2 rounded-xl items-center border",
-                                                priority === p
-                                                    ? (p === 'High' ? "bg-red-500/20 border-red-500" : "bg-primary/20 border-primary")
-                                                    : "bg-black/20 border-white/5"
-                                            )}
-                                        >
-                                            <Text className={cn(
-                                                "text-[10px] font-bold",
-                                                priority === p ? (p === 'High' ? "text-red-500" : "text-primary") : "text-muted"
-                                            )}>{p}</Text>
-                                        </TouchableOpacity>
-                                    ))}
-                                </View>
+                            <Text style={[styles.sectionTitle, { marginTop: 16 }]}>Priority</Text>
+                            <View style={styles.priorityGrid}>
+                                {["Low", "Medium", "High"].map((p: any) => (
+                                    <TouchableOpacity
+                                        key={p}
+                                        onPress={() => setPriority(p)}
+                                        style={[
+                                            styles.priorityBtn,
+                                            priority === p && styles.priorityBtnActive,
+                                            priority === p && p === 'High' && styles.priorityBtnHigh
+                                        ]}
+                                    >
+                                        <Text style={[
+                                            styles.priorityText,
+                                            priority === p && styles.priorityTextActive
+                                        ]}>{p}</Text>
+                                    </TouchableOpacity>
+                                ))}
                             </View>
                         </View>
                     )}
                 </View>
 
-                {/* Submit Button */}
                 <TouchableOpacity
                     onPress={handleSubmit}
                     disabled={loading}
-                    style={{
-                        backgroundColor: '#2563eb',
-                        padding: 20,
-                        borderRadius: 24,
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        marginTop: 20,
-                        marginBottom: 40
-                    }}
+                    style={[styles.submitBtn, loading && styles.submitBtnDisabled]}
                 >
                     {loading ? (
                         <ActivityIndicator color="white" />
                     ) : (
                         <>
-                            <CheckCircle color="white" size={20} style={{ marginRight: 8 }} />
-                            <Text className="text-white font-bold text-lg">Submit Visit</Text>
+                            <CheckCircle color="white" size={22} />
+                            <Text style={styles.submitBtnText}>Submit Visit Log</Text>
                         </>
                     )}
                 </TouchableOpacity>
-            </View>
-        </ScrollView>
+            </ScrollView>
+        </SafeAreaView>
     );
 }
 
 const styles = StyleSheet.create({
-    header: { paddingHorizontal: 24, paddingTop: 48, paddingBottom: 32, backgroundColor: '#020617' },
-    backBtn: { marginBottom: 24 },
-    headerLabel: { color: '#64748b', fontSize: 10, fontWeight: 'bold' as const, textTransform: 'uppercase', letterSpacing: 2 },
-    headerTitle: { color: 'white', fontSize: 24, fontWeight: 'bold' as const },
-    siteSubtitle: { color: '#3b82f6', fontSize: 14, fontWeight: '600' as const, marginTop: 4 },
     container: { flex: 1, backgroundColor: '#020617' },
+    header: { padding: 24, flexDirection: 'row', gap: 16, alignItems: 'flex-start' },
+    backBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#0f172a', justifyContent: 'center', alignItems: 'center' },
+    headerLabel: { color: '#64748b', fontSize: 10, fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: 2 },
+    headerTitle: { color: 'white', fontSize: 24, fontWeight: 'bold' },
+    siteSubtitle: { color: '#3b82f6', fontSize: 14, fontWeight: '600', marginTop: 4 },
+    scrollContent: { padding: 24, gap: 16, paddingBottom: 60 },
+    card: { backgroundColor: '#0f172a', borderRadius: 24, borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)', overflow: 'hidden' },
+    imageContainer: { minHeight: 160, justifyContent: 'center', alignItems: 'center' },
+    previewWrapper: { width: '100%', height: 200, position: 'relative' },
+    previewImage: { width: '100%', height: '100%' },
+    checkBadge: { position: 'absolute', top: 12, right: 12, width: 28, height: 28, borderRadius: 14, backgroundColor: '#10b981', justifyContent: 'center', alignItems: 'center' },
+    changeLabel: { position: 'absolute', bottom: 12, left: 12, backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
+    changeText: { color: 'white', fontSize: 10, fontWeight: 'bold' },
+    placeholderWrapper: { alignItems: 'center' },
+    iconBox: { width: 64, height: 64, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.03)', justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
+    placeholderText: { color: '#64748b', fontSize: 12, fontWeight: '600' },
+    infoRow: { padding: 20, flexDirection: 'row', alignItems: 'center', gap: 12 },
+    infoTextContainer: { flex: 1 },
+    infoLabel: { color: 'white', fontSize: 14, fontWeight: 'bold' },
+    infoValue: { color: '#64748b', fontSize: 10, textTransform: 'uppercase', marginTop: 2 },
+    statusTag: { fontSize: 10, fontWeight: '800', textTransform: 'uppercase' },
+    statusCaptured: { color: '#10b981' },
+    statusLocating: { color: '#64748b' },
+    inputSection: { padding: 20 },
+    sectionTitle: { color: '#64748b', fontSize: 10, fontWeight: 'bold', textTransform: 'uppercase', marginBottom: 12, letterSpacing: 1 },
+    textInput: { color: 'white', fontSize: 16, minHeight: 100, textAlignVertical: 'top' },
+    issueSection: { padding: 20 },
+    issueHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+    switch: { width: 44, height: 24, borderRadius: 12, backgroundColor: '#1e293b', padding: 2 },
+    switchActive: { backgroundColor: '#f43f5e' },
+    thumb: { width: 20, height: 20, borderRadius: 10, backgroundColor: 'white' },
+    thumbActive: { alignSelf: 'flex-end' },
+    issueDetails: { marginTop: 20, paddingTop: 20, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.05)' },
+    innerInput: { color: 'white', fontSize: 14, backgroundColor: 'rgba(0,0,0,0.2)', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' },
+    priorityGrid: { flexDirection: 'row', gap: 8 },
+    priorityBtn: { flex: 1, paddingVertical: 10, borderRadius: 12, backgroundColor: 'rgba(0,0,0,0.2)', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' },
+    priorityBtnActive: { backgroundColor: 'rgba(59, 130, 246, 0.15)', borderColor: '#3b82f6' },
+    priorityBtnHigh: { backgroundColor: 'rgba(244, 63, 94, 0.15)', borderColor: '#f43f5e' },
+    priorityText: { color: '#64748b', fontSize: 12, fontWeight: 'bold' },
+    priorityTextActive: { color: 'white' },
+    submitBtn: { backgroundColor: '#2563eb', height: 64, borderRadius: 24, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, marginTop: 12 },
+    submitBtnDisabled: { backgroundColor: '#1e293b', opacity: 0.5 },
+    submitBtnText: { color: 'white', fontSize: 18, fontWeight: 'bold' },
 });

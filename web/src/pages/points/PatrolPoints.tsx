@@ -35,10 +35,12 @@ export default function PatrolPoints() {
 
     const orgIdToUse = organizationId || selectedOrgId;
 
+    const isOwner = currentUser?.role === "Owner";
+
     const { results: points, status, loadMore } = usePaginatedQuery(
         api.patrolPoints.searchPoints,
-        orgIdToUse ? {
-            organizationId: orgIdToUse,
+        (isOwner || orgIdToUse) ? {
+            organizationId: isOwner ? undefined : (orgIdToUse as Id<"organizations">),
             siteId: selectedSiteId === "all" ? undefined : selectedSiteId as Id<"sites">,
             searchQuery: searchQuery
         } : "skip",

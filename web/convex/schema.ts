@@ -86,7 +86,7 @@ export default defineSchema({
         distance: v.number(), // distance from site
         createdAt: v.number(),
         organizationId: v.id("organizations"),
-    }).index("by_org", ["organizationId"]).index("by_site", ["siteId"]),
+    }).index("by_org", ["organizationId"]).index("by_site", ["siteId"]).index("by_user", ["userId"]),
 
     visitLogs: defineTable({
         userId: v.id("users"),

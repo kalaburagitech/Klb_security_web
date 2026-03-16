@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import { Id } from "./_generated/dataModel";
 
 export const createPoint = mutation({
     args: {
@@ -127,7 +128,7 @@ export const removePoint = mutation({
 });
 export const searchPoints = query({
     args: {
-        organizationId: v.id("organizations"),
+        organizationId: v.optional(v.id("organizations")),
         siteId: v.optional(v.id("sites")),
         searchQuery: v.optional(v.string()),
         paginationOpts: v.object({
@@ -138,10 +139,15 @@ export const searchPoints = query({
     },
     handler: async (ctx, args) => {
         // Fetch patrol points for org (and optionally site), then apply optional search filter.
-        let points = await ctx.db
-            .query("patrolPoints")
-            .withIndex("by_org", (q) => q.eq("organizationId", args.organizationId))
-            .collect();
+        let points;
+        if (args.organizationId) {
+            points = await ctx.db
+                .query("patrolPoints")
+                .withIndex("by_org", (q) => q.eq("organizationId", args.organizationId as Id<"organizations">))
+                .collect();
+        } else {
+            points = await ctx.db.query("patrolPoints").collect();
+        }
 
         if (args.siteId) {
             points = points.filter((p) => p.siteId === args.siteId);

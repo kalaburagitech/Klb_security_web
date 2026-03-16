@@ -11,21 +11,17 @@ import { useCustomAuth } from '../context/AuthContext';
 
 export default function SiteSelection() {
     const navigation = useNavigation<any>();
-    const route = useRoute<any>();
-    const { userId } = useCustomAuth();
+    const route = useRoute<any>();    const { userId, customUser } = useCustomAuth();
     const [sites, setSites] = useState<any[]>([]);
 
     React.useEffect(() => {
         if (userId) {
-            // Depending on how organizationId vs userId is handled in your REST backend,
-            // we will fetch all sites for now and filter by the correct field or use the getSitesByOrg endpoint.
-            // Using a hardcoded standard route or querying /sites/all if the admin gets everything.
-            // For now, assuming you need to fetch all sites for the org
             const fetchSites = async () => {
                 try {
-                    // Let's use getAllSites temporarily if orgId isn't easily available here,
-                    // or assume the backend correctly filters. We'll try getAllSites first.
-                    const response = await siteService.getAllSites();
+                    // SGs only see their assigned sites, SOs see all (or by org)
+                    const response = customUser?.role === 'SG' 
+                        ? await siteService.getSitesByUser(userId)
+                        : await siteService.getAllSites();
                     setSites(response.data);
                 } catch (error) {
                     console.error("Error fetching sites:", error);
@@ -33,7 +29,7 @@ export default function SiteSelection() {
             };
             fetchSites();
         }
-    }, [userId]);
+    }, [userId, customUser?.role]);
     const [searchQuery, setSearchQuery] = useState('');
     const setCurrentSite = usePatrolStore((state) => state.setCurrentSite);
 
@@ -46,11 +42,10 @@ export default function SiteSelection() {
 
     const handleSelectSite = (site: any) => {
         setCurrentSite(site);
-        if (isVisit) {
-            navigation.navigate('QRScanner', { isVisit: true, siteId: site._id, siteName: site.name });
-        } else {
-            navigation.navigate('PatrolStart');
-        }
+        navigation.navigate('PatrolStart', { 
+            isVisit: isVisit,
+            selectedSite: site 
+        });
     };
 
     return (

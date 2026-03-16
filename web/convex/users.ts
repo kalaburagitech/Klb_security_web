@@ -177,6 +177,13 @@ export const listAll = query({
     },
 });
 
+export const countAll = query({
+    handler: async (ctx) => {
+        const users = await ctx.db.query("users").collect();
+        return users.length;
+    },
+});
+
 /* ------------------------------------------------ */
 /* LIST USERS BY ORGANIZATION */
 /* ------------------------------------------------ */

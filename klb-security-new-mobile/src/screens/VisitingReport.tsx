@@ -18,23 +18,20 @@ export default function VisitingReport() {
     
     React.useEffect(() => {
         if (userId) {
-            siteService.getAllSites()
+            siteService.getSitesByUser(userId)
                 .then(res => setSites(res.data))
                 .catch(err => console.error("Error fetching sites:", err));
         }
     }, [userId]);
-
     const filteredSites = sites?.filter(s =>
         s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         s.locationName.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
     const handleSiteSelect = (site: any) => {
-        navigation.navigate('VisitForm', {
-            siteId: site._id,
-            siteName: site.name,
-            organizationId: site.organizationId,
-            isManual: true // To indicate it wasn't a QR scan
+        navigation.navigate('PatrolStart', {
+            isVisit: true,
+            selectedSite: site // Pass the site data to PatrolStart
         });
     };
 

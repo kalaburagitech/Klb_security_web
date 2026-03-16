@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import { Id } from "./_generated/dataModel";
 
 // Site Management
 export const createSite = mutation({
@@ -61,6 +62,13 @@ export const listAll = query({
     },
 });
 
+export const countAll = query({
+    handler: async (ctx) => {
+        const sites = await ctx.db.query("sites").collect();
+        return sites.length;
+    },
+});
+
 export const listSitesByOrg = query({
     args: { organizationId: v.id("organizations") },
     handler: async (ctx, args) => {
@@ -78,17 +86,29 @@ export const listSitesByUser = query({
         if (!user) return [];
 
         const ids = new Set<string>();
-        if ((user as any).siteId) ids.add((user as any).siteId as string);
+        if ((user as any).siteId) {
+            const sid = (user as any).siteId.toString();
+            if (sid && sid !== "undefined") ids.add(sid);
+        }
         if (Array.isArray((user as any).siteIds)) {
-            for (const id of (user as any).siteIds as string[]) {
-                if (id) ids.add(id);
+            for (const id of (user as any).siteIds) {
+                if (id) {
+                    const sid = id.toString();
+                    if (sid && sid !== "undefined") ids.add(sid);
+                }
             }
         }
 
+        console.log(`[Convex] Resolving sites for user ${args.userId}. IDs:`, Array.from(ids));
+
         const sites = [];
         for (const id of ids) {
-            const site = await ctx.db.get(id as any);
-            if (site) sites.push(site);
+            try {
+                const site = await ctx.db.get(id as Id<"sites">);
+                if (site) sites.push(site);
+            } catch (err) {
+                console.error(`[Convex] Error fetching site ${id}:`, err);
+            }
         }
         return sites;
     },
@@ -168,8 +188,8 @@ export const searchSites = query({
         // Apply search filter if provided and not empty
         if (args.searchQuery && args.searchQuery.trim()) {
             const lower = args.searchQuery.toLowerCase().trim();
-            sites = sites.filter((s) => 
-                s.name.toLowerCase().includes(lower) || 
+            sites = sites.filter((s) =>
+                s.name.toLowerCase().includes(lower) ||
                 s.locationName?.toLowerCase().includes(lower)
             );
         }

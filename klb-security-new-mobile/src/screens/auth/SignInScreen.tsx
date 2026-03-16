@@ -23,14 +23,20 @@ export default function SignInScreen() {
 
         setLoading(true);
         try {
+            console.log(`[SignIn] Sending OTP to ${mobileNumber}...`);
             const response = await authService.sendOtp(mobileNumber);
-            if (response.data.success) {
+            console.log(`[SignIn] Server response:`, response.data);
+            
+            if (response.data && response.data.success) {
                 setIsOtpSent(true);
                 // Auto-fill OTP for development as requested
                 if (response.data.otp) {
                     setOtp(response.data.otp);
                 }
                 Alert.alert("OTP Sent", "A 6-digit code has been sent to your number.");
+            } else {
+                console.error("[SignIn] Server returned success:false or malformed response");
+                Alert.alert("Error", "Server failed to process OTP request. Please try again.");
             }
         } catch (err: any) {
             console.error(err);
@@ -49,9 +55,16 @@ export default function SignInScreen() {
 
         setLoading(true);
         try {
+            console.log(`[SignIn] Verifying OTP for ${mobileNumber} with code: ${codeToVerify}`);
             const response = await authService.verifyOtp(mobileNumber, codeToVerify);
-            if (response.data.success) {
+            console.log(`[SignIn] Verification response status:`, response.status);
+            console.log(`[SignIn] Verification response data:`, response.data);
+            
+            if (response.data && response.data.success) {
                 await login(response.data.user);
+            } else {
+                console.error("[SignIn] Verification failed or malformed response");
+                Alert.alert("Verification Failed", response.data?.error || "Invalid OTP");
             }
         } catch (err: any) {
             console.error(err);

@@ -26,25 +26,31 @@ export default function Dashboard() {
         user?.id ? { clerkId: user.id } : "skip"
     );
     const organizationId = currentUser?.organizationId;
+    const isOwner = currentUser?.role === "Owner";
     const orgs = useQuery(api.organizations.list);
 
     const orgIdToUse = (organizationId || selectedOrgId) as Id<"organizations">;
     const siteIdToUse = selectedSiteId === "all" ? undefined : selectedSiteId as Id<"sites">;
 
-    const usersCount = useQuery(api.users.countByOrg,
-        orgIdToUse ? { organizationId: orgIdToUse, siteId: siteIdToUse } : "skip"
+    const usersCount = useQuery(
+        isOwner ? api.users.countAll : api.users.countByOrg,
+        isOwner ? {} : (orgIdToUse ? { organizationId: orgIdToUse, siteId: siteIdToUse } : "skip")
     );
-    const sitesCount = useQuery(api.sites.countByOrg,
-        orgIdToUse ? { organizationId: orgIdToUse } : "skip"
+    const sitesCount = useQuery(
+        isOwner ? api.sites.countAll : api.sites.countByOrg,
+        isOwner ? {} : (orgIdToUse ? { organizationId: orgIdToUse } : "skip")
     );
-    const patrolLogsCount = useQuery(api.logs.countByOrg,
-        orgIdToUse ? { organizationId: orgIdToUse, siteId: siteIdToUse } : "skip"
+    const patrolLogsCount = useQuery(
+        isOwner ? api.logs.countAllPatrolLogs : api.logs.countByOrg,
+        isOwner ? {} : (orgIdToUse ? { organizationId: orgIdToUse, siteId: siteIdToUse } : "skip")
     );
-    const openIssuesCount = useQuery(api.logs.countIssuesByOrg,
-        orgIdToUse ? { organizationId: orgIdToUse, siteId: siteIdToUse } : "skip"
+    const openIssuesCount = useQuery(
+        isOwner ? api.logs.countAllIssues : api.logs.countIssuesByOrg,
+        isOwner ? {} : (orgIdToUse ? { organizationId: orgIdToUse, siteId: siteIdToUse } : "skip")
     );
-    const issuesList = useQuery(api.logs.listIssuesByOrg,
-        orgIdToUse ? { organizationId: orgIdToUse, siteId: siteIdToUse } : "skip"
+    const issuesList = useQuery(
+        isOwner ? api.logs.listAllIssues : api.logs.listIssuesByOrg,
+        isOwner ? {} : (orgIdToUse ? { organizationId: orgIdToUse, siteId: siteIdToUse } : "skip")
     );
 
     const stats = [

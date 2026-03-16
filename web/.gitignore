@@ -27,3 +27,10 @@ dist-ssr
 .env
 .env.local
 .env.*
+
+# Next.js
+.next/
+out/
+build/
+.next-env.d.ts
+tsconfig.tsbuildinfo

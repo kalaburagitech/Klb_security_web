@@ -3,20 +3,22 @@ import { MapContainer, TileLayer, Marker, useMapEvents } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
-// Fix for default marker icons in Leaflet
 import markerIcon from "leaflet/dist/images/marker-icon.png";
 import markerIconRetina from "leaflet/dist/images/marker-icon-2x.png";
 import markerShadow from "leaflet/dist/images/marker-shadow.png";
 
-const DefaultIcon = L.icon({
-    iconUrl: markerIcon,
-    iconRetinaUrl: markerIconRetina,
-    shadowUrl: markerShadow,
-    iconSize: [25, 41],
-    iconAnchor: [12, 41],
-});
+// Fix for default marker icons in Leaflet
+if (typeof window !== "undefined") {
+    const DefaultIcon = L.icon({
+        iconUrl: (markerIcon as any).src || markerIcon,
+        iconRetinaUrl: (markerIconRetina as any).src || markerIconRetina,
+        shadowUrl: (markerShadow as any).src || markerShadow,
+        iconSize: [25, 41],
+        iconAnchor: [12, 41],
+    });
 
-L.Marker.prototype.options.icon = DefaultIcon;
+    L.Marker.prototype.options.icon = DefaultIcon;
+}
 
 interface MapPickerProps {
     initialLat?: number;

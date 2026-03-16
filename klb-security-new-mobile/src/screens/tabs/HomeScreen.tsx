@@ -156,15 +156,15 @@ export default function HomeScreen() {
                     <View style={styles.actionContainer}>
                         {customUser?.role === 'SG' ? (
                             <TouchableOpacity
-                                style={styles.startPatrolBar}
-                                onPress={() => navigation.navigate('SiteSelection')}
+                                style={[styles.startPatrolBar, { backgroundColor: '#0f172a' }]}
+                                onPress={() => { /* Static button for enrollment */ }}
                             >
-                                <View style={styles.startIcon}>
-                                    <Scan color="white" size={24} />
+                                <View style={[styles.startIcon, { backgroundColor: '#3b82f6' }]}>
+                                    <Building2 color="white" size={24} />
                                 </View>
                                 <View>
-                                    <Text style={styles.startTitle}>Start New Patrol</Text>
-                                    <Text style={styles.startSub}>Select a site to begin scanning</Text>
+                                    <Text style={styles.startTitle}>New Enrollment</Text>
+                                    <Text style={styles.startSub}>Register new site or equipment</Text>
                                 </View>
                             </TouchableOpacity>
                         ) : (
@@ -203,34 +203,38 @@ export default function HomeScreen() {
                     </View>
                 </View>
 
-                {/* Sites List */}
-                <Text style={styles.sectionTitle}>Your Assigned Sites</Text>
-                {sites?.map((site) => (
-                    <TouchableOpacity
-                        key={site._id}
-                        onPress={() => navigation.navigate('SiteSelection', { selectedSiteId: site._id })}
-                    >
-                        <View style={styles.siteCard}>
-                            <View style={styles.siteMain}>
-                                <View style={styles.siteIcon}>
-                                    <Building2 color="#64748b" size={24} />
-                                </View>
-                                <View style={styles.siteInfo}>
-                                    <Text style={styles.siteName}>{site.name}</Text>
-                                    <View style={styles.locationRow}>
-                                        <MapPin color="#94a3b8" size={14} />
-                                        <Text style={styles.locationText}>{site.locationName}</Text>
+                {/* Sites List - Only for non-SG */}
+                {customUser?.role !== 'SG' && (
+                    <>
+                        <Text style={styles.sectionTitle}>Your Assigned Sites</Text>
+                        {sites?.map((site) => (
+                            <TouchableOpacity
+                                key={site._id}
+                                onPress={() => navigation.navigate('SiteSelection', { selectedSiteId: site._id })}
+                            >
+                                <View style={styles.siteCard}>
+                                    <View style={styles.siteMain}>
+                                        <View style={styles.siteIcon}>
+                                            <Building2 color="#64748b" size={24} />
+                                        </View>
+                                        <View style={styles.siteInfo}>
+                                            <Text style={styles.siteName}>{site.name}</Text>
+                                            <View style={styles.locationRow}>
+                                                <MapPin color="#94a3b8" size={14} />
+                                                <Text style={styles.locationText}>{site.locationName}</Text>
+                                            </View>
+                                        </View>
+                                        <View style={styles.siteBadge}>
+                                            <CheckCircle color="#10b981" size={14} />
+                                            <Text style={styles.siteBadgeText}>Ready</Text>
+                                        </View>
                                     </View>
+                                    <SiteHistoryPreview siteId={site._id} />
                                 </View>
-                                <View style={styles.siteBadge}>
-                                    <CheckCircle color="#10b981" size={14} />
-                                    <Text style={styles.siteBadgeText}>Ready</Text>
-                                </View>
-                            </View>
-                            <SiteHistoryPreview siteId={site._id} />
-                        </View>
-                    </TouchableOpacity>
-                ))}
+                            </TouchableOpacity>
+                        ))}
+                    </>
+                )}
             </ScrollView>
         </SafeAreaView >
     );

@@ -80,12 +80,51 @@ export const listPatrolLogs = query({
                 const user = await ctx.db.get(log.userId);
                 const site = await ctx.db.get(log.siteId);
                 const point = log.patrolPointId ? await ctx.db.get(log.patrolPointId) : null;
+                let imageUrl: string | null = null;
+                if (log.imageId) {
+                    try {
+                        imageUrl = await ctx.storage.getUrl(log.imageId as any);
+                    } catch {
+                        imageUrl = null;
+                    }
+                }
                 return {
                     ...log,
                     userName: user?.name || "Unknown",
                     userRole: user?.role || "SG",
                     siteName: site?.name || "Unknown",
                     pointName: point?.name || "General Area",
+                    imageUrl,
+                };
+            })
+        );
+    },
+});
+
+export const listAllPatrolLogs = query({
+    handler: async (ctx) => {
+        const logs = await ctx.db.query("patrolLogs").order("desc").collect();
+
+        return await Promise.all(
+            logs.map(async (log) => {
+                const user = await ctx.db.get(log.userId);
+                const site = await ctx.db.get(log.siteId);
+                const point = log.patrolPointId ? await ctx.db.get(log.patrolPointId) : null;
+                let imageUrl: string | null = null;
+                if (log.imageId) {
+                    try {
+                        imageUrl = await ctx.storage.getUrl(log.imageId as any);
+                    } catch {
+                        imageUrl = null;
+                    }
+                }
+                return {
+                    ...log,
+                    userName: user?.name || "Unknown",
+                    userRole: user?.role || "SG",
+                    siteName: site?.name || "Unknown",
+                    pointName: point?.name || "General Area",
+                    imageUrl,
                 };
             })
         );
@@ -153,12 +192,60 @@ export const listVisitLogs = query({
                     .filter((q) => q.eq(q.field("qrCode"), log.qrData))
                     .first();
 
+                let imageUrl: string | null = null;
+                if (log.imageId) {
+                    try {
+                        imageUrl = await ctx.storage.getUrl(log.imageId as any);
+                    } catch {
+                        imageUrl = null;
+                    }
+                }
+
                 return {
                     ...log,
                     userName: user?.name || "Unknown",
                     userRole: user?.role || "Officer",
                     siteName: site?.name || "Unknown",
                     pointName: site ? `${site.name}_${point?.name || "General Scan"}` : (point?.name || "General Scan"),
+                    imageUrl,
+                };
+            })
+        );
+    },
+});
+
+export const listAllVisitLogs = query({
+    handler: async (ctx) => {
+        const logs = await ctx.db.query("visitLogs").order("desc").collect();
+
+        return await Promise.all(
+            logs.map(async (log) => {
+                const user = await ctx.db.get(log.userId);
+                const site = await ctx.db.get(log.siteId);
+
+                // Lookup the point by qrCode to get the name
+                const point = await ctx.db
+                    .query("patrolPoints")
+                    .withIndex("by_org", (q) => q.eq("organizationId", log.organizationId))
+                    .filter((q) => q.eq(q.field("qrCode"), log.qrData))
+                    .first();
+
+                let imageUrl: string | null = null;
+                if (log.imageId) {
+                    try {
+                        imageUrl = await ctx.storage.getUrl(log.imageId as any);
+                    } catch {
+                        imageUrl = null;
+                    }
+                }
+
+                return {
+                    ...log,
+                    userName: user?.name || "Unknown",
+                    userRole: user?.role || "Officer",
+                    siteName: site?.name || "Unknown",
+                    pointName: site ? `${site.name}_${point?.name || "General Scan"}` : (point?.name || "General Scan"),
+                    imageUrl,
                 };
             })
         );
@@ -378,6 +465,47 @@ function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
     return R * c;
 }
 
+export const countAll = query({
+    handler: async (ctx) => {
+        const logs = await ctx.db.query("logs").collect();
+        return logs.length;
+    },
+});
+
+export const countAllPatrolLogs = query({
+    handler: async (ctx) => {
+        const logs = await ctx.db.query("patrolLogs").collect();
+        return logs.length;
+    },
+});
+
+export const countIssuesByOrg = query({
+    args: {
+        organizationId: v.id("organizations"),
+        siteId: v.optional(v.id("sites")),
+    },
+
+    handler: async (ctx, args) => {
+        let logs = await ctx.db
+            .query("issues")
+            .withIndex("by_org", (q) => q.eq("organizationId", args.organizationId))
+            .collect();
+
+        if (args.siteId) {
+            logs = logs.filter((log) => log.siteId === args.siteId);
+        }
+
+        return logs.length;
+    },
+});
+
+export const countAllIssues = query({
+    handler: async (ctx) => {
+        const issues = await ctx.db.query("issues").collect();
+        return issues.length;
+    },
+});
+
 export const countByOrg = query({
     args: {
         organizationId: v.id("organizations"),
@@ -397,24 +525,94 @@ export const countByOrg = query({
         return logs.length;
     },
 });
-export const countIssuesByOrg = query({
-    args: {
-        organizationId: v.id("organizations"),
-        siteId: v.optional(v.id("sites")),
-    },
-
+export const getLogsByUser = query({
+    args: { userId: v.id("users") },
     handler: async (ctx, args) => {
-        let logs = await ctx.db
-            .query("logs")
-            .withIndex("by_org", (q) => q.eq("organizationId", args.organizationId))
+        const patrolLogs = await ctx.db
+            .query("patrolLogs")
+            .withIndex("by_user", (q) => q.eq("userId", args.userId))
+            .order("desc")
             .collect();
 
-        if (args.siteId) {
-            logs = logs.filter((log) => log.siteId === args.siteId);
+        const visitLogs = await ctx.db
+            .query("visitLogs")
+            .filter((q) => q.eq(q.field("userId"), args.userId))
+            .order("desc")
+            .collect();
+
+        return { patrolLogs, visitLogs };
+    },
+});
+
+export const listPatrolLogsByUser = query({
+    args: { userId: v.id("users") },
+    handler: async (ctx, args) => {
+        const logs = await ctx.db
+            .query("patrolLogs")
+            .withIndex("by_user", (q) => q.eq("userId", args.userId))
+            .order("desc")
+            .collect();
+
+        return await Promise.all(
+            logs.map(async (log) => {
+                const site = await ctx.db.get(log.siteId);
+                const point = log.patrolPointId ? await ctx.db.get(log.patrolPointId) : null;
+                return {
+                    ...log,
+                    siteName: site?.name || "Unknown",
+                    pointName: point?.name || "General Area",
+                };
+            })
+        );
+    },
+});
+
+export const listVisitLogsByUser = query({
+    args: { userId: v.id("users") },
+    handler: async (ctx, args) => {
+        const logs = await ctx.db
+            .query("visitLogs")
+            .filter((q) => q.eq(q.field("userId"), args.userId))
+            .order("desc")
+            .collect();
+
+        return await Promise.all(
+            logs.map(async (log) => {
+                const site = await ctx.db.get(log.siteId);
+                return {
+                    ...log,
+                    siteName: site?.name || "Unknown",
+                };
+            })
+        );
+    },
+});
+
+export const validatePatrolPoint = mutation({
+    args: {
+        pointId: v.id("patrolPoints"),
+        latitude: v.number(),
+        longitude: v.number(),
+        qrCode: v.string(),
+    },
+    handler: async (ctx, args) => {
+        const point = await ctx.db.get(args.pointId);
+        if (!point) return { success: false, error: "Point not found" };
+
+        if (point.qrCode !== args.qrCode) {
+            return { success: false, error: "QR Code mismatch" };
         }
 
-        const issues = logs.filter((log) => log.issue === true);
+        const site = await ctx.db.get(point.siteId);
+        if (!site) return { success: false, error: "Site not found" };
 
-        return issues.length;
+        const allowedRadius = site.allowedRadius || 100;
+
+        // Calculate distance logic here or just return coordinates for client
+        return {
+            success: true,
+            point,
+            allowedRadius
+        };
     },
 });

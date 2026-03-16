@@ -54,7 +54,6 @@ export default function PatrolForm() {
         return logService.createPatrolLog(data);
     };
     const updateSessionPoints = async (data: any) => { console.log("Mocked updateSessionPoints", data); };
-    const generateUploadUrl = async () => { console.log("Mocked upload url"); return ""; };
 
     useEffect(() => {
         let subscription: Location.LocationSubscription | null = null;
@@ -110,17 +109,13 @@ export default function PatrolForm() {
             Alert.alert("Evidence Required", "Please provide a comment or a photo.");
             return;
         }
-        if (!validation?.valid || (validation?.distance ?? 999) > 100) {
-            Alert.alert("Invalid Scan", "Please scan a valid patrol point inside 100m.");
-            return;
-        }
 
         setLoading(true);
         try {
             let storageId = undefined;
             if (image) {
                 try {
-                    storageId = await uploadImage(image, generateUploadUrl);
+                    storageId = await uploadImage(image);
                 } catch (uploadErr: any) {
                     console.error("Image upload failed:", uploadErr);
                     if (!comment) {
@@ -284,9 +279,9 @@ export default function PatrolForm() {
                 </View>
 
                 <TouchableOpacity
-                    style={[styles.submitBtn, (!validation?.valid || (validation?.distance ?? 999) > 100 || loading) && styles.submitBtnDisabled]}
+                    style={[styles.submitBtn, (loading || (!comment && !image)) && styles.submitBtnDisabled]}
                     onPress={handleSubmit}
-                    disabled={!validation?.valid || (validation?.distance ?? 999) > 100 || loading}
+                    disabled={loading || (!comment && !image)}
                 >
                     {loading ? (
                         <ActivityIndicator color="white" />

@@ -1,8 +1,9 @@
 import React, { useState } from "react";
+import dynamic from "next/dynamic";
 import { Layout } from "../../components/Layout";
 import { Plus, MapPin, Search, Loader2, Edit2, Trash2, X, Building, ChevronDown, ChevronRight, Clock, Users, UserPlus, UserMinus } from "lucide-react";
 import { useQuery, useMutation } from "convex/react";
-import { MapPicker } from "../../components/MapPicker";
+const MapPicker = dynamic(() => import("../../components/MapPicker").then(mod => mod.MapPicker), { ssr: false });
 import { api } from "../../services/convex";
 import { useUser } from "@clerk/clerk-react";
 import type { Id } from "../../../convex/_generated/dataModel";

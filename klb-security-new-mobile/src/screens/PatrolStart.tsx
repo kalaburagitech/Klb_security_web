@@ -5,12 +5,17 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 // import { api } from '../services/convex';
 import { usePatrolStore } from '../store/usePatrolStore';
 import { Play, ArrowLeft, Shield, MapPin, Clock } from 'lucide-react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { useCustomAuth } from '../context/AuthContext';
 
 export default function PatrolStart() {
     const navigation = useNavigation<any>();
-    const currentSite = usePatrolStore((state) => state.currentSite);
+    const route = useRoute<any>();
+    const storeSite = usePatrolStore((state) => state.currentSite);
+    const { isVisit, selectedSite } = route.params || {};
+    
+    // Use site from params if available (from VisitingReport), otherwise from store
+    const currentSite = selectedSite || storeSite;
     const { userId } = useCustomAuth();
     // const startSession = useMutation(api.patrolSessions.startSession);
     const startSession = async (data: any) => { console.log('Mocked startSession', data); };
@@ -21,12 +26,22 @@ export default function PatrolStart() {
     const handleStart = async () => {
         setLoading(true);
         try {
-            await startSession({
-                siteId: currentSite._id,
-                organizationId: currentSite.organizationId,
-                userId: userId as any,
-            });
-            navigation.navigate('QRScanner');
+            // If it's a visit, we don't necessarily need a whole session object on backend if it's handled differently,
+            // but for consistency with existing scanner logic, we navigate to QRScanner.
+            if (isVisit) {
+                 navigation.navigate('QRScanner', { 
+                     isVisit: true, 
+                     siteId: currentSite._id, 
+                     siteName: currentSite.name 
+                 });
+            } else {
+                await startSession({
+                    siteId: currentSite._id,
+                    organizationId: currentSite.organizationId,
+                    userId: userId as any,
+                });
+                navigation.navigate('QRScanner');
+            }
         } catch (error) {
             console.error(error);
         } finally {
@@ -40,7 +55,7 @@ export default function PatrolStart() {
                 <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
                     <ArrowLeft color="white" size={24} />
                 </TouchableOpacity>
-                <Text style={styles.title}>Confirm Patrol</Text>
+                <Text style={styles.title}>{isVisit ? "Confirm Visit" : "Confirm Patrol"}</Text>
             </View>
 
             <View style={styles.content}>
@@ -48,9 +63,9 @@ export default function PatrolStart() {
                     <View style={styles.shieldDecoration}>
                         <Shield color="#3b82f6" size={80} />
                     </View>
-                    <Text style={styles.readyText}>Ready to start duty?</Text>
+                    <Text style={styles.readyText}>{isVisit ? "Ready to start visit?" : "Ready to start duty?"}</Text>
                     <Text style={styles.descText}>
-                        You are about to begin a patrol session at {currentSite.name}.
+                        You are about to begin a {isVisit ? "visiting report" : "patrol session"} at {currentSite.name}.
                     </Text>
                 </View>
 
@@ -66,7 +81,7 @@ export default function PatrolStart() {
                         <Clock color="#64748b" size={24} />
                         <View>
                             <Text style={styles.detailLabel}>Type</Text>
-                            <Text style={styles.detailValue}>Standard Patrol Session</Text>
+                            <Text style={styles.detailValue}>{isVisit ? "Training & Visit Report" : "Standard Patrol Session"}</Text>
                         </View>
                     </View>
                 </View>
@@ -82,7 +97,7 @@ export default function PatrolStart() {
                         ) : (
                             <>
                                 <Play color="white" size={24} fill="white" />
-                                <Text style={styles.startText}>START PATROL NOW</Text>
+                                <Text style={styles.startText}>{isVisit ? "START VISIT NOW" : "START PATROL NOW"}</Text>
                             </>
                         )}
                     </TouchableOpacity>
