@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, Dimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 // import { useQuery } from 'convex/react';
 // import { api } from '../../services/convex';
@@ -10,6 +10,9 @@ import { useNavigation } from '@react-navigation/native';
 import { useCustomAuth } from '../../context/AuthContext';
 import { SiteHistoryPreview } from '../../components/SiteHistoryPreview';
 import { useMutation } from 'convex/react';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const isSmallScreen = SCREEN_WIDTH < 375;
 
 export default function HomeScreen() {
     const navigation = useNavigation<any>();
@@ -91,19 +94,17 @@ export default function HomeScreen() {
                 refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#2563eb" />}
             >
                 <View style={styles.header}>
-                    <View>
-                        <Text style={styles.greeting}>Security Dashboard</Text>
-                        <Text style={styles.subGreeting}>Monitor and manage patrols</Text>
+                    <View style={styles.headerLeft}>
+                        <Text style={styles.greeting} numberOfLines={1} adjustsFontSizeToFit>Security Dashboard</Text>
+                        <Text style={styles.subGreeting} numberOfLines={1}>Monitor and manage patrols</Text>
                     </View>
                     <View style={styles.headerRight}>
-                        <View style={styles.profileBadge}>
-                            <Building2 color="#2563eb" size={20} />
-                        </View>
                         <TouchableOpacity
                             onPress={() => logout()}
                             style={styles.logoutBtn}
                         >
-                            <Text style={styles.logoutText}>Log Out</Text>
+                            <LogOut color="#ef4444" size={16} />
+                            {!isSmallScreen && <Text style={styles.logoutText}>Log Out</Text>}
                         </TouchableOpacity>
                     </View>
                 </View>
@@ -154,33 +155,44 @@ export default function HomeScreen() {
                     </View>
                 ) : (
                     <View style={styles.actionContainer}>
-                        {customUser?.role === 'SG' ? (
-                            <TouchableOpacity
-                                style={[styles.startPatrolBar, { backgroundColor: '#0f172a' }]}
-                                onPress={() => { /* Static button for enrollment */ }}
-                            >
-                                <View style={[styles.startIcon, { backgroundColor: '#3b82f6' }]}>
-                                    <Building2 color="white" size={24} />
-                                </View>
-                                <View>
-                                    <Text style={styles.startTitle}>New Enrollment</Text>
-                                    <Text style={styles.startSub}>Register new site or equipment</Text>
-                                </View>
-                            </TouchableOpacity>
-                        ) : (
-                            <TouchableOpacity
-                                style={[styles.startPatrolBar, { backgroundColor: '#1e1b4b', borderColor: '#312e81' }]}
-                                onPress={() => navigation.navigate('SiteSelection', { isVisit: true })}
-                            >
-                                <View style={[styles.startIcon, { backgroundColor: '#4338ca' }]}>
-                                    <CheckCircle color="white" size={24} />
-                                </View>
-                                <View>
-                                    <Text style={styles.startTitle}>Training Visit</Text>
-                                    <Text style={[styles.startSub, { color: '#818cf8' }]}>Submit officer training & visit report</Text>
-                                </View>
-                            </TouchableOpacity>
-                        )}
+                        <TouchableOpacity
+                            style={[styles.startPatrolBar, { backgroundColor: '#0f172a', marginBottom: 12 }]}
+                            onPress={() => navigation.navigate('Enrollment')}
+                        >
+                            <View style={[styles.startIcon, { backgroundColor: '#3b82f6' }]}>
+                                <Building2 color="white" size={isSmallScreen ? 20 : 24} />
+                            </View>
+                            <View style={styles.startPatrolContent}>
+                                <Text style={styles.startTitle} numberOfLines={1}>Enrollment</Text>
+                                <Text 
+                                    style={styles.startSub} 
+                                    numberOfLines={3}
+                                    ellipsizeMode="tail"
+                                    allowFontScaling={false}
+                                >
+                                    {isSmallScreen ? 'Register person with face recognition' : 'Register new person with face recognition'}
+                                </Text>
+                            </View>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={[styles.startPatrolBar, { backgroundColor: '#1e1b4b', borderColor: '#312e81' }]}
+                            onPress={() => navigation.navigate('MarkAttendance')}
+                        >
+                            <View style={[styles.startIcon, { backgroundColor: '#4338ca' }]}>
+                                <CheckCircle color="white" size={isSmallScreen ? 20 : 24} />
+                            </View>
+                            <View style={styles.startPatrolContent}>
+                                <Text style={styles.startTitle} numberOfLines={1}>Mark Attendance</Text>
+                                <Text 
+                                    style={[styles.startSub, { color: '#818cf8' }]} 
+                                    numberOfLines={3}
+                                    ellipsizeMode="tail"
+                                    allowFontScaling={false}
+                                >
+                                    {isSmallScreen ? 'Check in or check out' : 'Check in or check out using face recognition'}
+                                </Text>
+                            </View>
+                        </TouchableOpacity>
                     </View>
                 )}
 
@@ -277,22 +289,31 @@ const styles = StyleSheet.create({
         left: 40,
     },
     scrollContent: {
-        padding: 24,
+        padding: isSmallScreen ? 16 : 24,
+        paddingBottom: 40,
     },
     header: {
         flexDirection: 'row',
         justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 32,
+        alignItems: 'flex-start',
+        marginBottom: isSmallScreen ? 24 : 32,
+        gap: 12,
+    },
+    headerLeft: {
+        flex: 1,
+        minWidth: 0,
     },
     headerRight: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 12,
+        flexShrink: 0,
     },
     logoutBtn: {
-        paddingHorizontal: 12,
-        paddingVertical: 6,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        paddingHorizontal: isSmallScreen ? 8 : 12,
+        paddingVertical: isSmallScreen ? 6 : 8,
         borderRadius: 8,
         backgroundColor: 'rgba(239, 68, 68, 0.1)',
         borderWidth: 1,
@@ -300,58 +321,60 @@ const styles = StyleSheet.create({
     },
     logoutText: {
         color: '#ef4444',
-        fontSize: 11,
+        fontSize: isSmallScreen ? 10 : 11,
         fontWeight: 'bold',
         textTransform: 'uppercase',
     },
     greeting: {
-        fontSize: 28,
+        fontSize: isSmallScreen ? 22 : 28,
         fontWeight: 'bold',
         color: 'white',
     },
     subGreeting: {
-        fontSize: 16,
+        fontSize: isSmallScreen ? 13 : 16,
         color: '#64748b',
         marginTop: 4,
     },
-    profileBadge: {
-        width: 48,
-        height: 48,
-        borderRadius: 24,
-        backgroundColor: 'rgba(37, 99, 235, 0.1)',
-        justifyContent: 'center',
-        alignItems: 'center',
-        borderWidth: 1,
-        borderColor: 'rgba(37, 99, 235, 0.2)',
-    },
     startPatrolBar: {
         flexDirection: 'row',
-        alignItems: 'center',
+        alignItems: 'flex-start',
         backgroundColor: 'rgba(15, 23, 42, 0.9)',
-        padding: 20,
-        borderRadius: 24,
-        marginBottom: 32,
+        padding: isSmallScreen ? 12 : 20,
+        borderRadius: 20,
         borderWidth: 1,
         borderColor: 'rgba(255, 255, 255, 0.08)',
-        gap: 16,
+        gap: isSmallScreen ? 10 : 16,
+        minHeight: isSmallScreen ? 70 : 80,
+        width: '100%',
+        maxWidth: '100%',
     },
     startIcon: {
-        width: 56,
-        height: 56,
-        borderRadius: 28,
+        width: isSmallScreen ? 44 : 56,
+        height: isSmallScreen ? 44 : 56,
+        borderRadius: isSmallScreen ? 22 : 28,
         backgroundColor: '#2563eb',
         justifyContent: 'center',
         alignItems: 'center',
+        flexShrink: 0,
+        marginTop: 2,
+    },
+    startPatrolContent: {
+        flex: 1,
+        minWidth: 0,
+        paddingRight: 0,
+        overflow: 'hidden',
     },
     startTitle: {
-        fontSize: 18,
+        fontSize: isSmallScreen ? 15 : 18,
         fontWeight: 'bold',
         color: 'white',
     },
     startSub: {
-        fontSize: 14,
+        fontSize: isSmallScreen ? 10 : 13,
         color: '#64748b',
-        marginTop: 2,
+        marginTop: 4,
+        lineHeight: isSmallScreen ? 14 : 18,
+        width: '100%',
     },
     activeSessionCard: {
         backgroundColor: 'rgba(15, 23, 42, 0.92)',
@@ -489,35 +512,38 @@ const styles = StyleSheet.create({
         gap: 16,
     },
     actionContainer: {
-        marginBottom: 32,
+        marginBottom: isSmallScreen ? 24 : 32,
+        width: '100%',
     },
     statsGrid: {
         flexDirection: 'row',
-        gap: 12,
-        marginBottom: 32,
+        gap: isSmallScreen ? 8 : 12,
+        marginBottom: isSmallScreen ? 24 : 32,
     },
     statCard: {
         flex: 1,
         backgroundColor: '#0f172a',
-        padding: 16,
-        borderRadius: 24,
+        padding: isSmallScreen ? 12 : 16,
+        borderRadius: 20,
         borderWidth: 1,
         borderColor: 'rgba(255, 255, 255, 0.05)',
         alignItems: 'center',
-        gap: 8,
+        gap: isSmallScreen ? 6 : 8,
+        minWidth: 0,
     },
     statValue: {
-        fontSize: 20,
+        fontSize: isSmallScreen ? 18 : 20,
         fontWeight: 'bold',
         color: 'white',
     },
     statLabel: {
-        fontSize: 11,
+        fontSize: isSmallScreen ? 10 : 11,
         color: '#64748b',
         fontWeight: '600',
+        textAlign: 'center',
     },
     sectionTitle: {
-        fontSize: 18,
+        fontSize: isSmallScreen ? 16 : 18,
         fontWeight: 'bold',
         color: 'white',
         marginBottom: 16,
@@ -526,12 +552,12 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         backgroundColor: 'rgba(15, 23, 42, 0.9)',
-        padding: 16,
+        padding: isSmallScreen ? 12 : 16,
         borderRadius: 20,
         marginBottom: 12,
         borderWidth: 1,
         borderColor: 'rgba(255, 255, 255, 0.08)',
-        gap: 16,
+        gap: isSmallScreen ? 12 : 16,
     },
     siteIcon: {
         width: 48,

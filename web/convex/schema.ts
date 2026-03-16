@@ -145,4 +145,43 @@ export default defineSchema({
         timestamp: v.number(),
         organizationId: v.id("organizations"),
     }).index("by_org", ["organizationId"]).index("by_site", ["siteId"]),
+
+    regions: defineTable({
+        regionId: v.string(),
+        regionName: v.string(),
+        createdAt: v.number(),
+    }).index("by_regionId", ["regionId"]),
+
+    enrolledPersons: defineTable({
+        name: v.string(),
+        empId: v.string(),
+        empCode: v.optional(v.string()),
+        empRank: v.string(),
+        region: v.string(),
+        description: v.optional(v.string()),
+        faceEncodingIds: v.array(v.number()),
+        enrolledAt: v.number(),
+        organizationId: v.optional(v.id("organizations")),
+    }).index("by_org", ["organizationId"])
+        .index("by_empId", ["empId"])
+        .index("by_region", ["region"]),
+
+    attendanceRecords: defineTable({
+        personId: v.optional(v.string()), // Reference to person (can be emp_id or face_encoding_id)
+        empId: v.string(),
+        name: v.string(),
+        date: v.string(), // YYYY-MM-DD format
+        checkInTime: v.optional(v.number()),
+        checkOutTime: v.optional(v.number()),
+        status: v.union(v.literal("present"), v.literal("absent")),
+        latitude: v.optional(v.number()),
+        longitude: v.optional(v.number()),
+        locationAccuracy: v.optional(v.number()),
+        region: v.string(),
+        organizationId: v.optional(v.id("organizations")),
+    }).index("by_org", ["organizationId"])
+        .index("by_empId", ["empId"])
+        .index("by_date", ["date"])
+        .index("by_region", ["region"])
+        .index("by_empId_date", ["empId", "date"]),
 });

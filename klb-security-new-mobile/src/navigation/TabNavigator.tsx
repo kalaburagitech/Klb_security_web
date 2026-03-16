@@ -2,11 +2,12 @@ import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import HomeScreen from '../screens/tabs/HomeScreen';
 import HistoryScreen from '../screens/tabs/HistoryScreen';
+import AttendanceHistoryScreen from '../screens/tabs/AttendanceHistoryScreen';
 import OfficerDashboard from '../screens/OfficerDashboard';
 import QRManagement from '../screens/QRManagement';
 import IssueReview from '../screens/IssueReview';
 import VisitingReport from '../screens/VisitingReport';
-import { Home, Scan, History, ShieldAlert, Settings, ClipboardList } from 'lucide-react-native';
+import { Home, Scan, History, ShieldAlert, Settings, ClipboardList, Calendar } from 'lucide-react-native';
 import { View, TouchableOpacity, Text } from 'react-native';
 import { useCustomAuth } from '../context/AuthContext';
 
@@ -80,6 +81,14 @@ export default function TabNavigator({ navigation }: any) {
                 options={{
                     tabBarIcon: ({ color }) => <History color={color} size={24} />,
                     tabBarLabel: "History"
+                }}
+            />
+            <Tab.Screen
+                name="Attendance"
+                component={AttendanceHistoryScreen}
+                options={{
+                    tabBarIcon: ({ color }) => <Calendar color={color} size={24} />,
+                    tabBarLabel: "Attendance"
                 }}
             />
         </Tab.Navigator>

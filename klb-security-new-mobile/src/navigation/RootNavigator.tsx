@@ -14,6 +14,8 @@ import IssueReview from '../screens/IssueReview';
 import OfficerDashboard from '../screens/OfficerDashboard';
 import QRManagement from '../screens/QRManagement';
 import VisitingReport from '../screens/VisitingReport';
+import EnrollmentScreen from '../screens/EnrollmentScreen';
+import MarkAttendanceScreen from '../screens/MarkAttendanceScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -46,6 +48,8 @@ export default function RootNavigator() {
                     <Stack.Screen name="QRManagement" component={QRManagement} />
                     <Stack.Screen name="VisitingReport" component={VisitingReport} />
                     <Stack.Screen name="IssueReview" component={IssueReview} />
+                    <Stack.Screen name="Enrollment" component={EnrollmentScreen} />
+                    <Stack.Screen name="MarkAttendance" component={MarkAttendanceScreen} />
                 </>
             ) : (
                 <>

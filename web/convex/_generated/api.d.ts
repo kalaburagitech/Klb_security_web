@@ -8,9 +8,11 @@
  * @module
  */
 
+import type * as attendance from "../attendance.js";
 import type * as auth from "../auth.js";
 import type * as crons from "../crons.js";
 import type * as debug from "../debug.js";
+import type * as enrollment from "../enrollment.js";
 import type * as images from "../images.js";
 import type * as jwt from "../jwt.js";
 import type * as loginLogs from "../loginLogs.js";
@@ -18,6 +20,7 @@ import type * as logs from "../logs.js";
 import type * as monitoring from "../monitoring.js";
 import type * as organizations from "../organizations.js";
 import type * as patrolPoints from "../patrolPoints.js";
+import type * as regions from "../regions.js";
 import type * as reports from "../reports.js";
 import type * as sites from "../sites.js";
 import type * as users from "../users.js";
@@ -29,9 +32,11 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  attendance: typeof attendance;
   auth: typeof auth;
   crons: typeof crons;
   debug: typeof debug;
+  enrollment: typeof enrollment;
   images: typeof images;
   jwt: typeof jwt;
   loginLogs: typeof loginLogs;
@@ -39,6 +44,7 @@ declare const fullApi: ApiFromModules<{
   monitoring: typeof monitoring;
   organizations: typeof organizations;
   patrolPoints: typeof patrolPoints;
+  regions: typeof regions;
   reports: typeof reports;
   sites: typeof sites;
   users: typeof users;

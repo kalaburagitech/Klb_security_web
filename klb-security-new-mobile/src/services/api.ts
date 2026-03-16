@@ -5,10 +5,21 @@ import { Platform } from 'react-native';
 // For local development, use your computer's local IP address.
 export const API_URL = 'http://10.133.65.251:3000/api';
 
+// Face Recognition API URL
+export const FACE_RECOGNITION_API_URL = 'https://rawly-unmeditative-isaura.ngrok-free.dev/api';
+
 const api = axios.create({
     baseURL: API_URL,
     headers: {
         'Content-Type': 'application/json',
+    },
+});
+
+// Face Recognition API client (uses multipart/form-data)
+const faceRecognitionApi = axios.create({
+    baseURL: FACE_RECOGNITION_API_URL,
+    headers: {
+        'accept': 'application/json',
     },
 });
 
@@ -65,6 +76,69 @@ export const uploadService = {
             return null;
         }
     },
+};
+
+export const faceRecognitionService = {
+    batchEnroll: (formData: FormData) => faceRecognitionApi.post('/batch_enroll', formData, {
+        headers: {
+            'Content-Type': 'multipart/form-data',
+        },
+    }),
+    recognize: (formData: FormData) => faceRecognitionApi.post('/recognize', formData, {
+        headers: {
+            'Content-Type': 'multipart/form-data',
+        },
+    }),
+    checkAttendance: (params: { person_id?: number; emp_id?: string; name?: string; date?: string }) => {
+        const queryParams = new URLSearchParams();
+        if (params.person_id !== undefined) queryParams.append('person_id', params.person_id.toString());
+        if (params.emp_id) queryParams.append('emp_id', params.emp_id);
+        if (params.name) queryParams.append('name', params.name);
+        if (params.date) queryParams.append('date', params.date);
+        return faceRecognitionApi.get(`/attendance/check?${queryParams.toString()}`);
+    },
+    markAttendance: (data: {
+        person_id?: number;
+        emp_id?: string;
+        name?: string;
+        date?: string;
+        status: 'present' | 'absent';
+        action: 'check_in' | 'check_out';
+        latitude?: number;
+        longitude?: number;
+        location_accuracy?: number;
+    }) => {
+        const formData = new URLSearchParams();
+        if (data.person_id !== undefined) formData.append('person_id', data.person_id.toString());
+        if (data.emp_id) formData.append('emp_id', data.emp_id);
+        if (data.name) formData.append('name', data.name);
+        if (data.date) formData.append('date', data.date);
+        formData.append('status', data.status);
+        formData.append('action', data.action);
+        if (data.latitude !== undefined) formData.append('latitude', data.latitude.toString());
+        if (data.longitude !== undefined) formData.append('longitude', data.longitude.toString());
+        if (data.location_accuracy !== undefined) formData.append('location_accuracy', data.location_accuracy.toString());
+        
+        return faceRecognitionApi.post('/attendance/mark', formData, {
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+        });
+    },
+};
+
+export const regionService = {
+    getRegions: () => api.get('/regions'),
+};
+
+export const enrollmentService = {
+    create: (enrollmentData: any) => api.post('/enrollment', enrollmentData),
+    list: (filters?: any) => api.get('/enrollment', { params: filters }),
+};
+
+export const attendanceService = {
+    create: (attendanceData: any) => api.post('/attendance', attendanceData),
+    list: (filters?: any) => api.get('/attendance', { params: filters }),
 };
 
 export default api;
