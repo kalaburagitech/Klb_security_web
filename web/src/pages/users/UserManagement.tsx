@@ -14,7 +14,7 @@ type Role = typeof ROLES[number];
 export default function UserManagement() {
     const { user } = useUser();
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-    const [editingUser, setEditingUser] = useState<{ id: Id<"users">; name: string; email?: string; mobileNumber?: string; role: Role; siteIds?: Id<"sites">[]; organizationId: Id<"organizations">; permissions?: any } | null>(null);
+    const [editingUser, setEditingUser] = useState<{ id: Id<"users">; name: string; email?: string; mobileNumber?: string; role: Role; siteIds?: Id<"sites">[]; organizationId: Id<"organizations">; regionId?: string; permissions?: any } | null>(null);
     const [isDeletingId, setIsDeletingId] = useState<Id<"users"> | null>(null);
     const [searchQuery, setSearchQuery] = useState("");
     const [selectedSiteIds, setSelectedSiteIds] = useState<Id<"sites">[]>([]);
@@ -24,6 +24,7 @@ export default function UserManagement() {
     const [newEmail, setNewEmail] = useState("");
     const [newMobile, setNewMobile] = useState("");
     const [newRole, setNewRole] = useState<Role>("SO");
+    const [newRegionId, setNewRegionId] = useState("");
     const [selectedOrgId, setSelectedOrgId] = useState<string>("");
     const [isCreateOrgModalOpen, setIsCreateOrgModalOpen] = useState(false);
     const [newOrgName, setNewOrgName] = useState("");
@@ -49,6 +50,7 @@ export default function UserManagement() {
 
     const organizationId = currentUser?.organizationId;
     const orgs = useQuery(api.organizations.list);
+    const regions = useQuery(api.regions.list);
     const activeOrgId = editingUser?.organizationId || selectedOrgId || organizationId;
     const sites = useQuery(api.sites.listSitesByOrg,
         activeOrgId ? { organizationId: activeOrgId as Id<"organizations"> } : "skip"
@@ -80,6 +82,7 @@ export default function UserManagement() {
                 mobileNumber: newMobile || undefined,
                 role: newRole as any,
                 organizationId: orgIdToUse as Id<"organizations">,
+                regionId: newRegionId || undefined,
                 siteIds: selectedSiteIds.length > 0 ? selectedSiteIds : undefined,
                 permissions: newPermissions
             });
@@ -89,6 +92,7 @@ export default function UserManagement() {
             setNewEmail("");
             setNewMobile("");
             setNewRole("SO");
+            setNewRegionId("");
             setSelectedSiteIds([]);
             toast.success("User added successfully");
         } catch (error: any) {
@@ -125,6 +129,7 @@ export default function UserManagement() {
                 role: editingUser.role as any,
                 siteIds: editingUser.siteIds,
                 organizationId: editingUser.organizationId,
+                regionId: editingUser.regionId,
                 permissions: (editingUser as any).permissions
             });
             setEditingUser(null);
@@ -286,6 +291,7 @@ export default function UserManagement() {
                                                                 role: u.role as Role,
                                                                 siteIds: u.siteIds,
                                                                 organizationId: u.organizationId,
+                                                                regionId: u.regionId,
                                                                 permissions: u.permissions || newPermissions
                                                             })}
                                                             className="p-1.5 sm:p-2 hover:bg-white/5 rounded-lg text-muted-foreground hover:text-primary transition-colors"
@@ -368,6 +374,17 @@ export default function UserManagement() {
                                         </button>
                                     )}
                                 </div>
+                            </div>
+                            <div>
+                                <label className="text-xs font-medium text-muted-foreground uppercase">Region</label>
+                                <select
+                                    value={newRegionId}
+                                    onChange={e => setNewRegionId(e.target.value)}
+                                    className="w-full mt-1 px-4 py-2 bg-neutral-900 border border-white/10 rounded-xl focus:outline-none focus:ring-1 focus:ring-primary/50 text-white"
+                                >
+                                    <option value="">Select Region (Optional)</option>
+                                    {regions?.map(r => <option key={r._id} value={r.regionId}>{r.regionName} ({r.regionId})</option>)}
+                                </select>
                             </div>
                             <div>
                                 <label className="text-xs font-medium text-muted-foreground uppercase">Role</label>
@@ -464,6 +481,17 @@ export default function UserManagement() {
                                     className="w-full mt-1 px-4 py-2 bg-neutral-900 border border-white/10 rounded-xl focus:outline-none focus:ring-1 focus:ring-primary/50"
                                 >
                                     {orgs?.map(o => <option key={o._id} value={o._id}>{o.name}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="text-xs font-medium text-muted-foreground uppercase">Region</label>
+                                <select
+                                    value={editingUser.regionId || ""}
+                                    onChange={e => setEditingUser({ ...editingUser, regionId: e.target.value })}
+                                    className="w-full mt-1 px-4 py-2 bg-neutral-900 border border-white/10 rounded-xl focus:outline-none focus:ring-1 focus:ring-primary/50 text-white"
+                                >
+                                    <option value="">Select Region (Optional)</option>
+                                    {regions?.map(r => <option key={r._id} value={r.regionId}>{r.regionName} ({r.regionId})</option>)}
                                 </select>
                             </div>
                             <div>

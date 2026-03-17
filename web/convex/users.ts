@@ -69,6 +69,7 @@ export const create = mutation({
         siteIds: v.optional(v.array(v.id("sites"))),
         email: v.optional(v.string()),
         mobileNumber: v.optional(v.string()),
+        regionId: v.optional(v.string()),
         permissions: v.optional(
             v.object({
                 users: v.boolean(),
@@ -109,6 +110,7 @@ export const create = mutation({
             siteIds: args.siteIds,
             email: args.email,
             mobileNumber: args.mobileNumber,
+            regionId: args.regionId,
             permissions: args.permissions,
         });
     },
@@ -136,6 +138,7 @@ export const update = mutation({
         siteIds: v.optional(v.array(v.id("sites"))),
         email: v.optional(v.string()),
         mobileNumber: v.optional(v.string()),
+        regionId: v.optional(v.string()),
         permissions: v.optional(
             v.object({
                 users: v.boolean(),

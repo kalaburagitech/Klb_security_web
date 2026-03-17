@@ -24,7 +24,8 @@ export default defineSchema({
             v.literal("NEW_USER")
         ),
         organizationId: v.id("organizations"),
-        siteId: v.optional(v.id("sites")), // Legacy field for migration
+        regionId: v.optional(v.string()),
+        siteId: v.optional(v.id("sites")), 
         siteIds: v.optional(v.array(v.id("sites"))),
         permissions: v.optional(v.object({
             users: v.boolean(),
@@ -60,6 +61,7 @@ export default defineSchema({
         longitude: v.number(),
         allowedRadius: v.number(), // in meters
         organizationId: v.id("organizations"),
+        regionId: v.optional(v.string()), // Optional for existing sites
         shiftStart: v.optional(v.string()), // e.g. "08:00"
         shiftEnd: v.optional(v.string()),   // e.g. "20:00"
     }).index("by_org", ["organizationId"]),

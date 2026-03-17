@@ -22,6 +22,7 @@ export default function SiteManagement() {
         shiftStart: string;
         shiftEnd: string;
         organizationId: Id<"organizations">;
+        regionId?: string;
     } | null>(null);
     const [isDeletingId, setIsDeletingId] = useState<Id<"sites"> | null>(null);
     const [searchQuery, setSearchQuery] = useState("");
@@ -33,6 +34,7 @@ export default function SiteManagement() {
     const [newRadius, setNewRadius] = useState("100");
     const [newShiftStart, setNewShiftStart] = useState("08:00");
     const [newShiftEnd, setNewShiftEnd] = useState("20:00");
+    const [newRegionId, setNewRegionId] = useState("");
     const [expandedSiteId, setExpandedSiteId] = useState<Id<"sites"> | null>(null);
     const [selectedOrgId, setSelectedOrgId] = useState<string>("");
     const [isCreateOrgModalOpen, setIsCreateOrgModalOpen] = useState(false);
@@ -55,6 +57,7 @@ export default function SiteManagement() {
 
     const organizationId = currentUser?.organizationId;
     const orgs = useQuery(api.organizations.list);
+    const regions = useQuery(api.regions.list);
 
     // Admins/Owners should see all sites, others only their org's sites
 
@@ -89,6 +92,7 @@ export default function SiteManagement() {
                 longitude: parseFloat(newLng) || 0,
                 allowedRadius: parseInt(newRadius) || 100,
                 organizationId: orgIdToUse as Id<"organizations">,
+                regionId: newRegionId || undefined,
                 shiftStart: newShiftStart,
                 shiftEnd: newShiftEnd
             });
@@ -100,6 +104,7 @@ export default function SiteManagement() {
             setNewRadius("100");
             setNewShiftStart("08:00");
             setNewShiftEnd("20:00");
+            setNewRegionId("");
             toast.success("Site created successfully");
         } catch (error: any) {
             console.error("Failed to create site:", error);
@@ -166,6 +171,7 @@ export default function SiteManagement() {
                 longitude: editingSite.longitude,
                 allowedRadius: editingSite.allowedRadius,
                 organizationId: editingSite.organizationId,
+                regionId: editingSite.regionId,
                 shiftStart: editingSite.shiftStart,
                 shiftEnd: editingSite.shiftEnd
             });
@@ -406,7 +412,8 @@ export default function SiteManagement() {
                                                             allowedRadius: site.allowedRadius,
                                                             shiftStart: site.shiftStart || "08:00",
                                                             shiftEnd: site.shiftEnd || "20:00",
-                                                            organizationId: site.organizationId
+                                                            organizationId: site.organizationId,
+                                                            regionId: site.regionId
                                                         })}
                                                         className="p-1.5 sm:p-2 hover:bg-white/5 rounded-lg text-muted-foreground hover:text-primary transition-colors"
                                                     >
@@ -622,6 +629,17 @@ export default function SiteManagement() {
                                     )}
                                 </div>
                             </div>
+                            <div>
+                                <label className="text-xs font-medium text-muted-foreground uppercase">Region</label>
+                                <select
+                                    value={newRegionId}
+                                    onChange={e => setNewRegionId(e.target.value)}
+                                    className="w-full mt-1 px-4 py-2 bg-neutral-900 border border-white/10 rounded-xl focus:outline-none focus:ring-1 focus:ring-primary/50 text-white"
+                                >
+                                    <option value="">Select Region (Optional)</option>
+                                    {((regions as any) || [])?.map((r: any) => <option key={r._id} value={r.regionId}>{r.regionName} ({r.regionId})</option>)}
+                                </select>
+                            </div>
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
                                     <label className="text-xs font-medium text-muted-foreground uppercase">Shift Start</label>
@@ -711,6 +729,17 @@ export default function SiteManagement() {
                                     className="w-full mt-1 px-4 py-2 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:ring-1 focus:ring-primary/50"
                                 >
                                     {orgs?.map(o => <option key={o._id} value={o._id}>{o.name}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="text-xs font-medium text-muted-foreground uppercase">Region</label>
+                                <select
+                                    value={editingSite.regionId || ""}
+                                    onChange={e => setEditingSite({ ...editingSite, regionId: e.target.value })}
+                                    className="w-full mt-1 px-4 py-2 bg-neutral-900 border border-white/10 rounded-xl focus:outline-none focus:ring-1 focus:ring-primary/50 text-white"
+                                >
+                                    <option value="">Select Region (Optional)</option>
+                                    {((regions as any) || [])?.map((r: any) => <option key={r._id} value={r.regionId}>{r.regionName} ({r.regionId})</option>)}
                                 </select>
                             </div>
                             <div className="grid grid-cols-2 gap-3 relative">

@@ -101,7 +101,7 @@ export function SearchableSitePicker({
                         </div>
                     </div>
 
-                    <div className="max-h-[600px] overflow-y-auto custom-scrollbar p-1">
+                    <div className="max-h-60 overflow-y-auto custom-scrollbar p-1">
                         {allSites === undefined ? (
                             <div className="flex items-center justify-center py-8">
                                 <Loader2 className="w-5 h-5 text-primary animate-spin" />
@@ -114,12 +114,20 @@ export function SearchableSitePicker({
                                         setIsOpen(false);
                                     }}
                                     className={cn(
-                                        "w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-colors mb-1",
-                                        selectedSiteId === "all" ? "bg-primary/20 text-primary font-medium" : "text-white/70 hover:bg-white/5 hover:text-white"
+                                        "w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-all mb-0.5",
+                                        selectedSiteId === "all" 
+                                            ? "bg-primary/20 text-primary font-semibold shadow-[inset_0_0_10px_rgba(37,99,235,0.1)]" 
+                                            : "text-white/70 hover:bg-white/5 hover:text-white"
                                     )}
                                 >
-                                    <span>All Sites</span>
-                                    {selectedSiteId === "all" && <Check className="w-4 h-4" />}
+                                    <div className="flex items-center gap-2">
+                                        <div className={cn(
+                                            "w-1.5 h-1.5 rounded-full",
+                                            selectedSiteId === "all" ? "bg-primary shadow-[0_0_8px_rgba(37,99,235,0.8)]" : "bg-white/20"
+                                        )} />
+                                        <span>All Sites</span>
+                                    </div>
+                                    {selectedSiteId === "all" && <Check className="w-3.5 h-3.5" />}
                                 </button>
 
                                 {filteredSites.length > 0 ? (
@@ -131,20 +139,26 @@ export function SearchableSitePicker({
                                                 setIsOpen(false);
                                             }}
                                             className={cn(
-                                                "w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-colors mb-1",
-                                                selectedSiteId === site._id ? "bg-primary/20 text-primary font-medium" : "text-white/70 hover:bg-white/5 hover:text-white"
+                                                "w-full flex items-center justify-between px-3 py-1.5 rounded-lg text-sm transition-all mb-0.5 group",
+                                                selectedSiteId === site._id 
+                                                    ? "bg-primary/20 text-primary font-semibold shadow-[inset_0_0_10px_rgba(37,99,235,0.1)]" 
+                                                    : "text-white/70 hover:bg-white/5 hover:text-white"
                                             )}
                                         >
-                                            <div className="flex flex-col items-start translate-x-0">
-                                                <span className="truncate">{site.name}</span>
-                                                <span className="text-[10px] text-muted-foreground truncate">{site.locationName}</span>
+                                            <div className="flex flex-col items-start min-w-0">
+                                                <span className="truncate w-full text-left font-medium">{site.name}</span>
+                                                {site.locationName && (
+                                                    <span className="text-[10px] text-muted-foreground truncate w-full text-left group-hover:text-muted-foreground/80">
+                                                        {site.locationName}
+                                                    </span>
+                                                )}
                                             </div>
-                                            {selectedSiteId === site._id && <Check className="w-4 h-4" />}
+                                            {selectedSiteId === site._id && <Check className="w-3.5 h-3.5 flex-shrink-0" />}
                                         </button>
                                     ))
                                 ) : (
                                     searchQuery && (
-                                        <div className="text-center py-6 text-sm text-muted-foreground">
+                                        <div className="text-center py-6 text-xs text-muted-foreground italic">
                                             No sites found matching "{searchQuery}"
                                         </div>
                                     )

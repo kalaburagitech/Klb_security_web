@@ -9,6 +9,7 @@ import {
     BarChart3,
     Settings,
     Building2,
+    Globe,
     X
 } from "lucide-react";
 import { useUser } from "@clerk/clerk-react";
@@ -19,6 +20,7 @@ const navItems = [
     { name: "Dashboard", icon: LayoutDashboard, href: "/", permission: "analytics" },
     { name: "Users", icon: Users, href: "/users", permission: "users" },
     { name: "Organizations", icon: Building2, href: "/organizations", permission: "sites" },
+    { name: "Regions", icon: Globe, href: "/regions", permission: "sites" },
     { name: "Sites", icon: MapPin, href: "/sites", permission: "sites" },
     { name: "Patrol Points", icon: QrCode, href: "/patrol-points", permission: "patrolPoints" },
     { name: "Patrol Logs", icon: ClipboardList, href: "/patrol-logs", permission: "patrolLogs" },

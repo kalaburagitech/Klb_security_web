@@ -3,7 +3,7 @@ import { Platform } from 'react-native';
 
 // Update this single URL to your production endpoint (e.g. Render) before building
 // For local development, use your computer's local IP address.
-export const API_URL = 'http://10.133.65.251:3000/api';
+export const API_URL = 'http://192.168.0.108:3000/api';
 
 // Face Recognition API URL
 export const FACE_RECOGNITION_API_URL = 'https://rawly-unmeditative-isaura.ngrok-free.dev/api';
@@ -118,7 +118,7 @@ export const faceRecognitionService = {
         if (data.latitude !== undefined) formData.append('latitude', data.latitude.toString());
         if (data.longitude !== undefined) formData.append('longitude', data.longitude.toString());
         if (data.location_accuracy !== undefined) formData.append('location_accuracy', data.location_accuracy.toString());
-        
+
         return faceRecognitionApi.post('/attendance/mark', formData, {
             headers: {
                 'Content-Type': 'application/x-www-form-urlencoded',
