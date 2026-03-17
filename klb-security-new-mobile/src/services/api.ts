@@ -3,7 +3,7 @@ import { Platform } from 'react-native';
 
 // Update this single URL to your production endpoint (e.g. Render) before building
 // For local development, use your computer's local IP address.
-export const API_URL = 'http://192.168.0.108:3000/api';
+export const API_URL = 'http://localhost:3000/api';
 
 // Face Recognition API URL
 export const FACE_RECOGNITION_API_URL = 'https://rawly-unmeditative-isaura.ngrok-free.dev/api';
