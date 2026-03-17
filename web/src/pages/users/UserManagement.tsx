@@ -14,7 +14,8 @@ type Role = typeof ROLES[number];
 export default function UserManagement() {
     const { user } = useUser();
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-    const [editingUser, setEditingUser] = useState<{ id: Id<"users">; name: string; email?: string; mobileNumber?: string; role: Role; siteIds?: Id<"sites">[]; organizationId: Id<"organizations">; regionId?: string; permissions?: any } | null>(null);
+    const [editingUser, setEditingUser] = useState<{ id: Id<"users">; name: string; email?: string; mobileNumber?: string; role: Role; siteIds?: Id<"sites">[]; organizationId: Id<"organizations">; regionId?: string; city?: string; permissions?: any } | null>(null);
+    const [showEditCityList, setShowEditCityList] = useState(false);
     const [isDeletingId, setIsDeletingId] = useState<Id<"users"> | null>(null);
     const [searchQuery, setSearchQuery] = useState("");
     const [selectedSiteIds, setSelectedSiteIds] = useState<Id<"sites">[]>([]);
@@ -25,6 +26,8 @@ export default function UserManagement() {
     const [newMobile, setNewMobile] = useState("");
     const [newRole, setNewRole] = useState<Role>("SO");
     const [newRegionId, setNewRegionId] = useState("");
+    const [newCity, setNewCity] = useState("");
+    const [showNewCityList, setShowNewCityList] = useState(true);
     const [selectedOrgId, setSelectedOrgId] = useState<string>("");
     const [isCreateOrgModalOpen, setIsCreateOrgModalOpen] = useState(false);
     const [newOrgName, setNewOrgName] = useState("");
@@ -83,6 +86,7 @@ export default function UserManagement() {
                 role: newRole as any,
                 organizationId: orgIdToUse as Id<"organizations">,
                 regionId: newRegionId || undefined,
+                city: newCity || undefined,
                 siteIds: selectedSiteIds.length > 0 ? selectedSiteIds : undefined,
                 permissions: newPermissions
             });
@@ -93,6 +97,7 @@ export default function UserManagement() {
             setNewMobile("");
             setNewRole("SO");
             setNewRegionId("");
+            setNewCity("");
             setSelectedSiteIds([]);
             toast.success("User added successfully");
         } catch (error: any) {
@@ -130,6 +135,7 @@ export default function UserManagement() {
                 siteIds: editingUser.siteIds,
                 organizationId: editingUser.organizationId,
                 regionId: editingUser.regionId,
+                city: editingUser.city,
                 permissions: (editingUser as any).permissions
             });
             setEditingUser(null);
@@ -260,19 +266,27 @@ export default function UserManagement() {
                                                     </div>
                                                 </td>
                                                 <td className="px-4 sm:px-6 py-4">
-                                                    <span className={cn(
-                                                        "inline-flex items-center px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-bold uppercase tracking-wider border whitespace-nowrap",
-                                                        u.role === "Owner" ? "bg-red-500/10 text-red-500 border-red-500/20" :
-                                                            u.role === "Deployment Manager" ? "bg-purple-500/10 text-purple-500 border-purple-500/20" :
-                                                                u.role === "Manager" ? "bg-primary/10 text-primary border-primary/20" :
-                                                                    u.role === "Officer" ? "bg-blue-500/10 text-blue-500 border-blue-500/20" :
-                                                                        u.role === "Security Officer" ? "bg-amber-500/10 text-amber-500 border-amber-500/20" :
-                                                                            u.role === "NEW_USER" ? "bg-gray-500/10 text-gray-500 border-gray-500/20" :
-                                                                                "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
-                                                    )}>
-                                                        <Shield className="w-2.5 h-2.5 sm:w-3 h-3 mr-1" />
-                                                        {u.role}
-                                                    </span>
+                                                    <div className="flex flex-col gap-1">
+                                                        <span className={cn(
+                                                            "inline-flex items-center px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-bold uppercase tracking-wider border whitespace-nowrap",
+                                                            u.role === "Owner" ? "bg-red-500/10 text-red-500 border-red-500/20" :
+                                                                u.role === "Deployment Manager" ? "bg-purple-500/10 text-purple-500 border-purple-500/20" :
+                                                                    u.role === "Manager" ? "bg-primary/10 text-primary border-primary/20" :
+                                                                        u.role === "Officer" ? "bg-blue-500/10 text-blue-500 border-blue-500/20" :
+                                                                            u.role === "Security Officer" ? "bg-amber-500/10 text-amber-500 border-amber-500/20" :
+                                                                                u.role === "NEW_USER" ? "bg-gray-500/10 text-gray-500 border-gray-500/20" :
+                                                                                    "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
+                                                        )}>
+                                                            <Shield className="w-2.5 h-2.5 sm:w-3 h-3 mr-1" />
+                                                            {u.role}
+                                                        </span>
+                                                        {u.regionId && (
+                                                            <div className="text-[10px] text-muted-foreground flex flex-wrap gap-1">
+                                                                <span className="font-semibold text-primary/70">{u.regionId}:</span>
+                                                                <span className="text-white/80">{u.city || "No City Selected"}</span>
+                                                            </div>
+                                                        )}
+                                                    </div>
                                                 </td>
                                                 <td className="px-4 sm:px-6 py-4">
                                                     <div className="flex items-center gap-2">
@@ -385,6 +399,49 @@ export default function UserManagement() {
                                     <option value="">Select Region (Optional)</option>
                                     {regions?.map(r => <option key={r._id} value={r.regionId}>{r.regionName} ({r.regionId})</option>)}
                                 </select>
+                                {newRegionId && regions?.find(r => r.regionId === newRegionId) && (
+                                    <div className="mt-2 space-y-2">
+                                        {(!showNewCityList && newCity) ? (
+                                            <div className="flex items-center justify-between bg-neutral-900/50 p-3 rounded-xl border border-white/10">
+                                                <div className="flex flex-col">
+                                                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Selected City</span>
+                                                    <span className="text-sm text-primary font-medium">{newCity}</span>
+                                                </div>
+                                                <button 
+                                                    onClick={() => setShowNewCityList(true)}
+                                                    className="px-3 py-1 bg-white/5 hover:bg-white/10 rounded-lg text-xs font-medium text-white transition-colors border border-white/10"
+                                                >
+                                                    Change
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <div className="max-h-40 overflow-y-auto custom-scrollbar bg-neutral-900/50 p-3 rounded-xl border border-white/10">
+                                                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest block mb-2">Select City</label>
+                                                <div className="grid grid-cols-1 gap-2">
+                                                    {regions.find(r => r.regionId === newRegionId)?.cities?.map(city => (
+                                                        <label key={city} className="flex items-center gap-3 cursor-pointer group p-2 hover:bg-white/5 rounded-lg transition-colors">
+                                                            <input
+                                                                type="radio"
+                                                                name="newCity"
+                                                                value={city}
+                                                                checked={newCity === city}
+                                                                onChange={e => {
+                                                                    setNewCity(e.target.value);
+                                                                    setShowNewCityList(false);
+                                                                }}
+                                                                className="w-4 h-4 border-white/20 bg-white/5 text-primary focus:ring-primary/50"
+                                                            />
+                                                            <span className={cn(
+                                                                "text-sm transition-colors",
+                                                                newCity === city ? "text-primary font-medium" : "text-white/70 group-hover:text-white"
+                                                            )}>{city}</span>
+                                                        </label>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                             <div>
                                 <label className="text-xs font-medium text-muted-foreground uppercase">Role</label>
@@ -493,6 +550,49 @@ export default function UserManagement() {
                                     <option value="">Select Region (Optional)</option>
                                     {regions?.map(r => <option key={r._id} value={r.regionId}>{r.regionName} ({r.regionId})</option>)}
                                 </select>
+                                {editingUser.regionId && regions?.find(r => r.regionId === editingUser.regionId) && (
+                                    <div className="mt-2 space-y-2">
+                                        {(!showEditCityList && editingUser.city) ? (
+                                            <div className="flex items-center justify-between bg-neutral-900/50 p-3 rounded-xl border border-white/10">
+                                                <div className="flex flex-col">
+                                                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Selected City</span>
+                                                    <span className="text-sm text-primary font-medium">{editingUser.city}</span>
+                                                </div>
+                                                <button 
+                                                    onClick={() => setShowEditCityList(true)}
+                                                    className="px-3 py-1 bg-white/5 hover:bg-white/10 rounded-lg text-xs font-medium text-white transition-colors border border-white/10"
+                                                >
+                                                    Change
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <div className="max-h-40 overflow-y-auto custom-scrollbar bg-neutral-900/50 p-3 rounded-xl border border-white/10">
+                                                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest block mb-2">Select City</label>
+                                                <div className="grid grid-cols-1 gap-2">
+                                                    {regions.find(r => r.regionId === editingUser.regionId)?.cities?.map(city => (
+                                                        <label key={city} className="flex items-center gap-3 cursor-pointer group p-2 hover:bg-white/5 rounded-lg transition-colors">
+                                                            <input
+                                                                type="radio"
+                                                                name="editCity"
+                                                                value={city}
+                                                                checked={editingUser.city === city}
+                                                                onChange={e => {
+                                                                    setEditingUser({ ...editingUser, city: e.target.value });
+                                                                    setShowEditCityList(false);
+                                                                }}
+                                                                className="w-4 h-4 border-white/20 bg-white/5 text-primary focus:ring-primary/50"
+                                                            />
+                                                            <span className={cn(
+                                                                "text-sm transition-colors",
+                                                                editingUser.city === city ? "text-primary font-medium" : "text-white/70 group-hover:text-white"
+                                                            )}>{city}</span>
+                                                        </label>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                             <div>
                                 <label className="text-xs font-medium text-muted-foreground uppercase">Role</label>

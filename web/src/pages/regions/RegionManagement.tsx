@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Layout } from "../../components/Layout";
 import { Plus, Globe, Search, Loader2, Edit2, Trash2, X, Hash } from "lucide-react";
+import { cn } from "../../lib/utils";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../services/convex";
 import { useUser } from "@clerk/nextjs";
@@ -10,12 +11,26 @@ import { toast } from "sonner";
 export default function RegionManagement() {
     const { user } = useUser();
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-    const [editingRegion, setEditingRegion] = useState<{ id: Id<"regions">; regionId: string; regionName: string } | null>(null);
+    const [editingRegion, setEditingRegion] = useState<{ 
+        id: Id<"regions">; 
+        regionId: string; 
+        regionName: string;
+        country: string;
+        cities: string[];
+        isActive: boolean;
+    } | null>(null);
     const [isDeletingId, setIsDeletingId] = useState<Id<"regions"> | null>(null);
     const [searchQuery, setSearchQuery] = useState("");
 
-    const [newRegionId, setNewRegionId] = useState("");
-    const [newRegionName, setNewRegionName] = useState("");
+    const [newRegion, setNewRegion] = useState({
+        regionId: "",
+        regionName: "",
+        country: "India",
+        cities: [] as string[],
+        isActive: true
+    });
+
+    const [cityInput, setCityInput] = useState("");
 
     const regions = useQuery(api.regions.list);
     const createRegion = useMutation(api.regions.create);
@@ -30,22 +45,28 @@ export default function RegionManagement() {
 
     const filteredRegions = regions?.filter(r =>
         r.regionName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        r.regionId.toLowerCase().includes(searchQuery.toLowerCase())
+        r.regionId.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        r.country.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
     const handleAddRegion = async () => {
-        if (!newRegionId || !newRegionName) {
-            toast.error("Please fill in all fields");
+        if (!newRegion.regionId || !newRegion.regionName || !newRegion.country) {
+            toast.error("Please fill in required fields");
             return;
         }
         try {
             await createRegion({
-                regionId: newRegionId,
-                regionName: newRegionName,
+                ...newRegion,
             });
             setIsAddModalOpen(false);
-            setNewRegionId("");
-            setNewRegionName("");
+            setNewRegion({
+                regionId: "",
+                regionName: "",
+                country: "India",
+                cities: [],
+                isActive: true
+            });
+            setCityInput("");
             toast.success("Region created successfully");
         } catch (error: any) {
             console.error("Failed to create region:", error);
@@ -60,6 +81,9 @@ export default function RegionManagement() {
                 id: editingRegion.id,
                 regionId: editingRegion.regionId,
                 regionName: editingRegion.regionName,
+                country: editingRegion.country,
+                cities: editingRegion.cities,
+                isActive: editingRegion.isActive,
             });
             setEditingRegion(null);
             toast.success("Region updated successfully");
@@ -77,6 +101,37 @@ export default function RegionManagement() {
         } catch (error) {
             console.error("Failed to delete region:", error);
             toast.error("Failed to delete region");
+        }
+    };
+
+    const addCity = (isEdit: boolean) => {
+        if (!cityInput.trim()) return;
+        const cities = cityInput.split(",").map(c => c.trim()).filter(c => c !== "");
+        if (isEdit && editingRegion) {
+            setEditingRegion({
+                ...editingRegion,
+                cities: Array.from(new Set([...editingRegion.cities, ...cities]))
+            });
+        } else {
+            setNewRegion({
+                ...newRegion,
+                cities: Array.from(new Set([...newRegion.cities, ...cities]))
+            });
+        }
+        setCityInput("");
+    };
+
+    const removeCity = (cityToRemove: string, isEdit: boolean) => {
+        if (isEdit && editingRegion) {
+            setEditingRegion({
+                ...editingRegion,
+                cities: editingRegion.cities.filter(c => c !== cityToRemove)
+            });
+        } else {
+            setNewRegion({
+                ...newRegion,
+                cities: newRegion.cities.filter(c => c !== cityToRemove)
+            });
         }
     };
 
@@ -111,7 +166,7 @@ export default function RegionManagement() {
                                 type="text"
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
-                                placeholder="Search regions..."
+                                placeholder="Search regions, country..."
                                 className="pl-10 pr-4 py-2 bg-white/5 border border-white/10 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-primary/50 w-full sm:w-64 text-white"
                             />
                         </div>
@@ -127,30 +182,57 @@ export default function RegionManagement() {
 
                 <div className="glass rounded-2xl border border-white/10 overflow-hidden">
                     <div className="overflow-x-auto custom-scrollbar">
-                        <table className="w-full text-left">
+                        <table className="w-full text-left border-collapse">
                             <thead>
                                 <tr className="border-b border-white/5 bg-white/[0.02]">
-                                    <th className="px-6 py-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Region ID</th>
-                                    <th className="px-6 py-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Region Name</th>
+                                    <th className="px-6 py-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Region Info</th>
+                                    <th className="px-6 py-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Country</th>
+                                    <th className="px-6 py-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Cities</th>
+                                    <th className="px-6 py-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider text-center">Status</th>
                                     <th className="px-6 py-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider text-right">Actions</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-white/5">
-                                {((filteredRegions as any[]) || [])?.map((region: any) => (
+                                {(filteredRegions || [])?.map((region: any) => (
                                     <tr key={region._id} className="hover:bg-white/[0.02] transition-colors group">
                                         <td className="px-6 py-4">
                                             <div className="flex items-center gap-3">
-                                                <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                                                    <Hash className="w-4 h-4 text-primary" />
+                                                <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+                                                    <Globe className="w-5 h-5 text-primary" />
                                                 </div>
-                                                <span className="text-sm font-medium text-white/90">{region.regionId}</span>
+                                                <div>
+                                                    <span className="block text-sm font-semibold text-white/90">{region.regionName}</span>
+                                                    <span className="text-[10px] text-muted-foreground font-mono uppercase tracking-widest">{region.regionId}</span>
+                                                </div>
                                             </div>
                                         </td>
                                         <td className="px-6 py-4">
-                                            <div className="flex items-center gap-3">
-                                                <Globe className="w-4 h-4 text-muted-foreground" />
-                                                <span className="text-sm text-white/90">{region.regionName}</span>
+                                            <span className="text-sm text-white/70">{region.country}</span>
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            <div className="flex flex-wrap gap-1 max-w-xs">
+                                                {(region.cities || []).slice(0, 3).map((city: string) => (
+                                                    <span key={city} className="px-2 py-0.5 bg-white/5 border border-white/10 rounded text-[10px] text-muted-foreground">
+                                                        {city}
+                                                    </span>
+                                                ))}
+                                                {region.cities?.length > 3 && (
+                                                    <span className="text-[10px] text-primary font-medium pl-1">+{region.cities.length - 3} more</span>
+                                                )}
+                                                {(!region.cities || region.cities.length === 0) && (
+                                                    <span className="text-xs text-muted-foreground/30 italic">No cities added</span>
+                                                )}
                                             </div>
+                                        </td>
+                                        <td className="px-6 py-4 text-center">
+                                            <span className={cn(
+                                                "px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider",
+                                                region.isActive 
+                                                    ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20" 
+                                                    : "bg-red-500/10 text-red-500 border border-red-500/20"
+                                            )}>
+                                                {region.isActive ? "Active" : "Inactive"}
+                                            </span>
                                         </td>
                                         <td className="px-6 py-4 text-right">
                                             <div className="flex items-center justify-end gap-2">
@@ -158,7 +240,10 @@ export default function RegionManagement() {
                                                     onClick={() => setEditingRegion({
                                                         id: region._id,
                                                         regionId: region.regionId,
-                                                        regionName: region.regionName
+                                                        regionName: region.regionName,
+                                                        country: region.country || "India",
+                                                        cities: region.cities || [],
+                                                        isActive: region.isActive ?? true,
                                                     })}
                                                     className="p-2 hover:bg-white/5 rounded-lg text-muted-foreground hover:text-primary transition-colors"
                                                 >
@@ -176,7 +261,7 @@ export default function RegionManagement() {
                                 ))}
                                 {filteredRegions?.length === 0 && (
                                     <tr>
-                                        <td colSpan={3} className="px-6 py-12 text-center text-muted-foreground text-sm">
+                                        <td colSpan={5} className="px-6 py-12 text-center text-muted-foreground text-sm">
                                             No regions found.
                                         </td>
                                     </tr>
@@ -189,68 +274,215 @@ export default function RegionManagement() {
 
             {/* Add Modal */}
             {isAddModalOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-                    <div className="glass w-full max-w-md rounded-2xl border border-white/10 p-6 space-y-4">
-                        <div className="flex items-center justify-between">
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm overflow-y-auto">
+                    <div className="glass w-full max-w-lg rounded-2xl border border-white/10 p-6 my-8 animate-in fade-in zoom-in duration-200">
+                        <div className="flex items-center justify-between mb-6">
                             <h3 className="text-lg font-semibold text-white">Add New Region</h3>
-                            <button onClick={() => setIsAddModalOpen(false)}><X className="w-5 h-5 text-muted-foreground" /></button>
+                            <button onClick={() => setIsAddModalOpen(false)} className="p-1 hover:bg-white/10 rounded-lg transition-colors">
+                                <X className="w-5 h-5 text-muted-foreground" />
+                            </button>
                         </div>
-                        <div className="space-y-4">
-                            <div>
-                                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Region ID (e.g. KA, MH)</label>
-                                <input
-                                    value={newRegionId}
-                                    onChange={e => setNewRegionId(e.target.value.toUpperCase())}
-                                    type="text"
-                                    className="w-full mt-1 px-4 py-2 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:ring-1 focus:ring-primary/50 text-white"
-                                    placeholder="Enter short ID"
-                                />
+                        
+                        <div className="space-y-5">
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest pl-1">Region ID</label>
+                                    <input
+                                        value={newRegion.regionId}
+                                        onChange={e => setNewRegion({ ...newRegion, regionId: e.target.value.toUpperCase() })}
+                                        type="text"
+                                        className="w-full mt-1.5 px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:ring-1 focus:ring-primary/50 text-white text-sm"
+                                        placeholder="e.g. KA"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest pl-1">Status</label>
+                                    <button 
+                                        onClick={() => setNewRegion({ ...newRegion, isActive: !newRegion.isActive })}
+                                        className={cn(
+                                            "w-full mt-1.5 px-4 py-2.5 rounded-xl border text-sm font-semibold transition-all",
+                                            newRegion.isActive 
+                                                ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-500" 
+                                                : "bg-red-500/10 border-red-500/30 text-red-500"
+                                        )}
+                                    >
+                                        {newRegion.isActive ? "ACTIVE" : "INACTIVE"}
+                                    </button>
+                                </div>
                             </div>
+
                             <div>
-                                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Region Name</label>
+                                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest pl-1">Region Name</label>
                                 <input
-                                    value={newRegionName}
-                                    onChange={e => setNewRegionName(e.target.value)}
+                                    value={newRegion.regionName}
+                                    onChange={e => setNewRegion({ ...newRegion, regionName: e.target.value })}
                                     type="text"
-                                    className="w-full mt-1 px-4 py-2 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:ring-1 focus:ring-primary/50 text-white"
+                                    className="w-full mt-1.5 px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:ring-1 focus:ring-primary/50 text-white text-sm"
                                     placeholder="e.g. Karnataka"
                                 />
                             </div>
+
+                            <div>
+                                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest pl-1">Country</label>
+                                <input
+                                    value={newRegion.country}
+                                    onChange={e => setNewRegion({ ...newRegion, country: e.target.value })}
+                                    type="text"
+                                    className="w-full mt-1.5 px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:ring-1 focus:ring-primary/50 text-white text-sm"
+                                    placeholder="Enter country"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest pl-1">Cities</label>
+                                <div className="flex gap-2 mt-1.5">
+                                    <div className="relative flex-1">
+                                        <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                                        <input
+                                            value={cityInput}
+                                            onChange={e => setCityInput(e.target.value)}
+                                            onKeyDown={(e) => {
+                                                if (e.key === "Enter") {
+                                                    e.preventDefault();
+                                                    addCity(false);
+                                                }
+                                            }}
+                                            type="text"
+                                            className="w-full pl-10 pr-4 py-2 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:ring-1 focus:ring-primary/50 text-white text-sm"
+                                            placeholder="Enter city and press Enter..."
+                                        />
+                                    </div>
+                                    <button 
+                                        onClick={() => addCity(false)}
+                                        className="h-10 w-10 shrink-0 flex items-center justify-center bg-white/10 hover:bg-white/20 rounded-xl transition-all"
+                                    >
+                                        <Plus className="w-5 h-5 text-white" />
+                                    </button>
+                                </div>
+                                <div className="flex flex-wrap gap-2 mt-3 p-3 bg-white/[0.02] border border-white/5 rounded-xl min-h-[44px]">
+                                    {newRegion.cities.map(city => (
+                                        <span key={city} className="flex items-center gap-1.5 px-2.5 py-1 bg-primary/10 border border-primary/20 rounded-lg text-xs text-primary font-medium animate-in fade-in slide-in-from-top-1">
+                                            {city}
+                                            <button onClick={() => removeCity(city, false)} className="hover:text-red-400 transition-colors">
+                                                <X className="w-3 h-3" />
+                                            </button>
+                                        </span>
+                                    ))}
+                                    {newRegion.cities.length === 0 && <span className="text-xs text-muted-foreground/40 italic">No cities added yet</span>}
+                                </div>
+                            </div>
                         </div>
-                        <button onClick={handleAddRegion} className="w-full py-2 bg-primary text-primary-foreground rounded-xl font-semibold hover:bg-primary/90 transition-all">Create Region</button>
+
+                        <div className="pt-4 flex gap-3">
+                            <button onClick={() => setIsAddModalOpen(false)} className="flex-1 py-3 bg-white/5 border border-white/10 rounded-xl text-sm font-semibold hover:bg-white/10 transition-colors text-white">Cancel</button>
+                            <button onClick={handleAddRegion} className="flex-1 py-3 bg-primary text-primary-foreground rounded-xl font-semibold hover:bg-primary/90 transition-all shadow-xl shadow-primary/20">Create Region</button>
+                        </div>
                     </div>
                 </div>
             )}
 
             {/* Edit Modal */}
             {editingRegion && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-                    <div className="glass w-full max-w-md rounded-2xl border border-white/10 p-6 space-y-4">
-                        <div className="flex items-center justify-between">
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm overflow-y-auto">
+                    <div className="glass w-full max-w-lg rounded-2xl border border-white/10 p-6 my-8 animate-in fade-in zoom-in duration-200">
+                        <div className="flex items-center justify-between mb-6">
                             <h3 className="text-lg font-semibold text-white">Edit Region</h3>
-                            <button onClick={() => setEditingRegion(null)}><X className="w-5 h-5 text-muted-foreground" /></button>
+                            <button onClick={() => setEditingRegion(null)} className="p-1 hover:bg-white/10 rounded-lg transition-colors">
+                                <X className="w-5 h-5 text-muted-foreground" />
+                            </button>
                         </div>
-                        <div className="space-y-4">
-                            <div>
-                                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Region ID</label>
-                                <input
-                                    value={editingRegion.regionId}
-                                    onChange={e => setEditingRegion({ ...editingRegion, regionId: e.target.value.toUpperCase() })}
-                                    type="text"
-                                    className="w-full mt-1 px-4 py-2 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:ring-1 focus:ring-primary/50 text-white"
-                                />
+
+                        <div className="space-y-5">
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest pl-1">Region ID</label>
+                                    <input
+                                        value={editingRegion.regionId}
+                                        onChange={e => setEditingRegion({ ...editingRegion, regionId: e.target.value.toUpperCase() })}
+                                        type="text"
+                                        className="w-full mt-1.5 px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:ring-1 focus:ring-primary/50 text-white text-sm"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest pl-1">Status</label>
+                                    <button 
+                                        onClick={() => setEditingRegion({ ...editingRegion, isActive: !editingRegion.isActive })}
+                                        className={cn(
+                                            "w-full mt-1.5 px-4 py-2.5 rounded-xl border text-sm font-semibold transition-all",
+                                            editingRegion.isActive 
+                                                ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-500" 
+                                                : "bg-red-500/10 border-red-500/30 text-red-500"
+                                        )}
+                                    >
+                                        {editingRegion.isActive ? "ACTIVE" : "INACTIVE"}
+                                    </button>
+                                </div>
                             </div>
+
                             <div>
-                                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Region Name</label>
+                                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest pl-1">Region Name</label>
                                 <input
                                     value={editingRegion.regionName}
                                     onChange={e => setEditingRegion({ ...editingRegion, regionName: e.target.value })}
                                     type="text"
-                                    className="w-full mt-1 px-4 py-2 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:ring-1 focus:ring-primary/50 text-white"
+                                    className="w-full mt-1.5 px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:ring-1 focus:ring-primary/50 text-white text-sm"
                                 />
                             </div>
+
+                            <div>
+                                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest pl-1">Country</label>
+                                <input
+                                    value={editingRegion.country}
+                                    onChange={e => setEditingRegion({ ...editingRegion, country: e.target.value })}
+                                    type="text"
+                                    className="w-full mt-1.5 px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:ring-1 focus:ring-primary/50 text-white text-sm"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest pl-1">Cities</label>
+                                <div className="flex gap-2 mt-1.5">
+                                    <div className="relative flex-1">
+                                        <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                                        <input
+                                            value={cityInput}
+                                            onChange={e => setCityInput(e.target.value)}
+                                            onKeyDown={(e) => {
+                                                if (e.key === "Enter") {
+                                                    e.preventDefault();
+                                                    addCity(true);
+                                                }
+                                            }}
+                                            type="text"
+                                            className="w-full pl-10 pr-4 py-2 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:ring-1 focus:ring-primary/50 text-white text-sm"
+                                            placeholder="Add city..."
+                                        />
+                                    </div>
+                                    <button 
+                                        onClick={() => addCity(true)}
+                                        className="h-10 w-10 shrink-0 flex items-center justify-center bg-white/10 hover:bg-white/20 rounded-xl transition-all"
+                                    >
+                                        <Plus className="w-5 h-5 text-white" />
+                                    </button>
+                                </div>
+                                <div className="flex flex-wrap gap-2 mt-3 p-3 bg-white/[0.02] border border-white/5 rounded-xl min-h-[44px]">
+                                    {editingRegion.cities.map(city => (
+                                        <span key={city} className="flex items-center gap-1.5 px-2.5 py-1 bg-primary/10 border border-primary/20 rounded-lg text-xs text-primary font-medium">
+                                            {city}
+                                            <button onClick={() => removeCity(city, true)} className="hover:text-red-400 transition-colors">
+                                                <X className="w-3 h-3" />
+                                            </button>
+                                        </span>
+                                    ))}
+                                    {editingRegion.cities.length === 0 && <span className="text-xs text-muted-foreground/40 italic">No cities added yet</span>}
+                                </div>
+                            </div>
                         </div>
-                        <button onClick={handleUpdateRegion} className="w-full py-2 bg-primary text-primary-foreground rounded-xl font-semibold hover:bg-primary/90 transition-all">Save Changes</button>
+
+                        <div className="pt-4 flex gap-3">
+                            <button onClick={() => setEditingRegion(null)} className="flex-1 py-3 bg-white/5 border border-white/10 rounded-xl text-sm font-semibold hover:bg-white/10 transition-colors text-white">Cancel</button>
+                            <button onClick={handleUpdateRegion} className="flex-1 py-3 bg-primary text-primary-foreground rounded-xl font-semibold hover:bg-primary/90 transition-all shadow-xl shadow-primary/20">Save Changes</button>
+                        </div>
                     </div>
                 </div>
             )}
@@ -258,7 +490,7 @@ export default function RegionManagement() {
             {/* Delete Confirmation */}
             {isDeletingId && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-                    <div className="glass w-full max-w-sm rounded-2xl border border-white/10 p-6 space-y-4 text-center">
+                    <div className="glass w-full max-w-sm rounded-2xl border border-white/10 p-6 space-y-4 text-center animate-in fade-in slide-in-from-bottom-2">
                         <div className="w-12 h-12 bg-red-500/10 rounded-full flex items-center justify-center mx-auto">
                             <Trash2 className="w-6 h-6 text-red-500" />
                         </div>

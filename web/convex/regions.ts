@@ -4,12 +4,7 @@ import { v } from "convex/values";
 export const list = query({
     args: {},
     handler: async (ctx) => {
-        const regions = await ctx.db.query("regions").collect();
-        return regions.map((region) => ({
-            regionId: region.regionId,
-            regionName: region.regionName,
-            createdAt: region.createdAt,
-        }));
+        return await ctx.db.query("regions").collect();
     },
 });
 
@@ -17,6 +12,9 @@ export const create = mutation({
     args: {
         regionId: v.string(),
         regionName: v.string(),
+        country: v.string(),
+        cities: v.array(v.string()),
+        isActive: v.boolean(),
     },
     handler: async (ctx, args) => {
         // Check if region already exists
@@ -30,8 +28,7 @@ export const create = mutation({
         }
 
         const id = await ctx.db.insert("regions", {
-            regionId: args.regionId,
-            regionName: args.regionName,
+            ...args,
             createdAt: Date.now(),
         });
 
@@ -61,6 +58,9 @@ export const update = mutation({
         id: v.id("regions"),
         regionId: v.string(),
         regionName: v.string(),
+        country: v.string(),
+        cities: v.array(v.string()),
+        isActive: v.boolean(),
     },
     handler: async (ctx, args) => {
         const { id, ...data } = args;

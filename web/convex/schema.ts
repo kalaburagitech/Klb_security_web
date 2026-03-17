@@ -25,7 +25,8 @@ export default defineSchema({
         ),
         organizationId: v.id("organizations"),
         regionId: v.optional(v.string()),
-        siteId: v.optional(v.id("sites")), 
+        city: v.optional(v.string()),
+        siteId: v.optional(v.id("sites")),
         siteIds: v.optional(v.array(v.id("sites"))),
         permissions: v.optional(v.object({
             users: v.boolean(),
@@ -39,7 +40,8 @@ export default defineSchema({
         creationTime: v.optional(v.number()),
     }).index("by_clerkId", ["clerkId"])
         .index("by_org", ["organizationId"])
-        .index("by_email", ["email"]),
+        .index("by_email", ["email"])
+        .index("by_region", ["regionId"]),
 
     loginLogs: defineTable({
         userId: v.id("users"),
@@ -62,9 +64,11 @@ export default defineSchema({
         allowedRadius: v.number(), // in meters
         organizationId: v.id("organizations"),
         regionId: v.optional(v.string()), // Optional for existing sites
+        city: v.optional(v.string()),
         shiftStart: v.optional(v.string()), // e.g. "08:00"
         shiftEnd: v.optional(v.string()),   // e.g. "20:00"
-    }).index("by_org", ["organizationId"]),
+    }).index("by_org", ["organizationId"])
+        .index("by_region", ["regionId"]),
 
     patrolPoints: defineTable({
         siteId: v.id("sites"),
@@ -149,10 +153,14 @@ export default defineSchema({
     }).index("by_org", ["organizationId"]).index("by_site", ["siteId"]),
 
     regions: defineTable({
+        cities: v.array(v.string()),
+        country: v.string(),
+        createdAt: v.float64(),
+        isActive: v.boolean(),
+        regionName: v.string(), // ✅ changed
         regionId: v.string(),
-        regionName: v.string(),
-        createdAt: v.number(),
-    }).index("by_regionId", ["regionId"]),
+    })
+        .index("by_regionId", ["regionId"]),
 
     enrolledPersons: defineTable({
         name: v.string(),

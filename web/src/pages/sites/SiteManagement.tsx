@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import dynamic from "next/dynamic";
 import { Layout } from "../../components/Layout";
 import { Plus, MapPin, Search, Loader2, Edit2, Trash2, X, Building, ChevronDown, ChevronRight, Clock, Users, UserPlus, UserMinus } from "lucide-react";
+import { cn } from "../../lib/utils";
 import { useQuery, useMutation } from "convex/react";
 const MapPicker = dynamic(() => import("../../components/MapPicker").then(mod => mod.MapPicker), { ssr: false });
 import { api } from "../../services/convex";
@@ -23,7 +24,9 @@ export default function SiteManagement() {
         shiftEnd: string;
         organizationId: Id<"organizations">;
         regionId?: string;
+        city?: string;
     } | null>(null);
+    const [showEditCityList, setShowEditCityList] = useState(false);
     const [isDeletingId, setIsDeletingId] = useState<Id<"sites"> | null>(null);
     const [searchQuery, setSearchQuery] = useState("");
 
@@ -35,6 +38,8 @@ export default function SiteManagement() {
     const [newShiftStart, setNewShiftStart] = useState("08:00");
     const [newShiftEnd, setNewShiftEnd] = useState("20:00");
     const [newRegionId, setNewRegionId] = useState("");
+    const [newCity, setNewCity] = useState("");
+    const [showNewCityList, setShowNewCityList] = useState(true);
     const [expandedSiteId, setExpandedSiteId] = useState<Id<"sites"> | null>(null);
     const [selectedOrgId, setSelectedOrgId] = useState<string>("");
     const [isCreateOrgModalOpen, setIsCreateOrgModalOpen] = useState(false);
@@ -93,6 +98,7 @@ export default function SiteManagement() {
                 allowedRadius: parseInt(newRadius) || 100,
                 organizationId: orgIdToUse as Id<"organizations">,
                 regionId: newRegionId || undefined,
+                city: newCity || undefined,
                 shiftStart: newShiftStart,
                 shiftEnd: newShiftEnd
             });
@@ -105,6 +111,7 @@ export default function SiteManagement() {
             setNewShiftStart("08:00");
             setNewShiftEnd("20:00");
             setNewRegionId("");
+            setNewCity("");
             toast.success("Site created successfully");
         } catch (error: any) {
             console.error("Failed to create site:", error);
@@ -172,6 +179,7 @@ export default function SiteManagement() {
                 allowedRadius: editingSite.allowedRadius,
                 organizationId: editingSite.organizationId,
                 regionId: editingSite.regionId,
+                city: editingSite.city,
                 shiftStart: editingSite.shiftStart,
                 shiftEnd: editingSite.shiftEnd
             });
@@ -396,9 +404,17 @@ export default function SiteManagement() {
                                                 {site.latitude.toFixed(4)}, {site.longitude.toFixed(4)}
                                             </td>
                                             <td className="px-4 sm:px-6 py-4">
-                                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium border bg-emerald-500/10 text-emerald-500 border-emerald-500/20 whitespace-nowrap">
-                                                    Active
-                                                </span>
+                                                <div className="flex flex-col gap-1">
+                                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium border bg-emerald-500/10 text-emerald-500 border-emerald-500/20 whitespace-nowrap">
+                                                        Active
+                                                    </span>
+                                                    {site.regionId && (
+                                                        <div className="text-[10px] text-muted-foreground flex flex-wrap gap-1 max-w-[120px]">
+                                                            <span className="font-semibold text-primary/70">{site.regionId}:</span>
+                                                            <span className="text-white/80">{site.city || "No City Selected"}</span>
+                                                        </div>
+                                                    )}
+                                                </div>
                                             </td>
                                             <td className="px-4 sm:px-6 py-4 text-right" onClick={e => e.stopPropagation()}>
                                                 <div className="flex items-center justify-end gap-1 sm:gap-2">
@@ -639,6 +655,49 @@ export default function SiteManagement() {
                                     <option value="">Select Region (Optional)</option>
                                     {((regions as any) || [])?.map((r: any) => <option key={r._id} value={r.regionId}>{r.regionName} ({r.regionId})</option>)}
                                 </select>
+                                {newRegionId && regions?.find((r: any) => r.regionId === newRegionId) && (
+                                    <div className="mt-2 space-y-2">
+                                        {(!showNewCityList && newCity) ? (
+                                            <div className="flex items-center justify-between bg-neutral-900/50 p-3 rounded-xl border border-white/10 text-left">
+                                                <div className="flex flex-col">
+                                                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Selected City</span>
+                                                    <span className="text-sm text-primary font-medium">{newCity}</span>
+                                                </div>
+                                                <button 
+                                                    onClick={() => setShowNewCityList(true)}
+                                                    className="px-3 py-1 bg-white/5 hover:bg-white/10 rounded-lg text-xs font-medium text-white transition-colors border border-white/10"
+                                                >
+                                                    Change
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <div className="max-h-40 overflow-y-auto custom-scrollbar bg-neutral-900/50 p-3 rounded-xl border border-white/10 text-left">
+                                                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest block mb-2">Select City</label>
+                                                <div className="grid grid-cols-1 gap-2">
+                                                    {(regions.find((r: any) => r.regionId === newRegionId) as any)?.cities?.map((city: string) => (
+                                                        <label key={city} className="flex items-center gap-3 cursor-pointer group p-2 hover:bg-white/5 rounded-lg transition-colors">
+                                                            <input
+                                                                type="radio"
+                                                                name="newCity"
+                                                                value={city}
+                                                                checked={newCity === city}
+                                                                onChange={e => {
+                                                                    setNewCity(e.target.value);
+                                                                    setShowNewCityList(false);
+                                                                }}
+                                                                className="w-4 h-4 border-white/20 bg-white/5 text-primary focus:ring-primary/50"
+                                                            />
+                                                            <span className={cn(
+                                                                "text-sm transition-colors",
+                                                                newCity === city ? "text-primary font-medium" : "text-white/70 group-hover:text-white"
+                                                            )}>{city}</span>
+                                                        </label>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
@@ -741,6 +800,49 @@ export default function SiteManagement() {
                                     <option value="">Select Region (Optional)</option>
                                     {((regions as any) || [])?.map((r: any) => <option key={r._id} value={r.regionId}>{r.regionName} ({r.regionId})</option>)}
                                 </select>
+                                {editingSite.regionId && regions?.find((r: any) => r.regionId === editingSite.regionId) && (
+                                    <div className="mt-2 space-y-2">
+                                        {(!showEditCityList && editingSite.city) ? (
+                                            <div className="flex items-center justify-between bg-neutral-900/50 p-3 rounded-xl border border-white/10 text-left">
+                                                <div className="flex flex-col">
+                                                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Selected City</span>
+                                                    <span className="text-sm text-primary font-medium">{editingSite.city}</span>
+                                                </div>
+                                                <button 
+                                                    onClick={() => setShowEditCityList(true)}
+                                                    className="px-3 py-1 bg-white/5 hover:bg-white/10 rounded-lg text-xs font-medium text-white transition-colors border border-white/10"
+                                                >
+                                                    Change
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <div className="max-h-40 overflow-y-auto custom-scrollbar bg-neutral-900/50 p-3 rounded-xl border border-white/10 text-left">
+                                                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest block mb-2">Select City</label>
+                                                <div className="grid grid-cols-1 gap-2">
+                                                    {(regions.find((r: any) => r.regionId === editingSite.regionId) as any)?.cities?.map((city: string) => (
+                                                        <label key={city} className="flex items-center gap-3 cursor-pointer group p-2 hover:bg-white/5 rounded-lg transition-colors">
+                                                            <input
+                                                                type="radio"
+                                                                name="editCity"
+                                                                value={city}
+                                                                checked={editingSite.city === city}
+                                                                onChange={e => {
+                                                                    setEditingSite({ ...editingSite, city: e.target.value });
+                                                                    setShowEditCityList(false);
+                                                                }}
+                                                                className="w-4 h-4 border-white/20 bg-white/5 text-primary focus:ring-primary/50"
+                                                            />
+                                                            <span className={cn(
+                                                                "text-sm transition-colors",
+                                                                editingSite.city === city ? "text-primary font-medium" : "text-white/70 group-hover:text-white"
+                                                            )}>{city}</span>
+                                                        </label>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                             <div className="grid grid-cols-2 gap-3 relative">
                                 <div>
@@ -791,7 +893,7 @@ export default function SiteManagement() {
             {/* Delete Confirmation */}
             {isDeletingId && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-                    <div className="glass w-full max-w-sm rounded-2xl border border-white/10 p-6 space-y-4 text-center">
+                    <div className="glass w-full max-sm rounded-2xl border border-white/10 p-6 space-y-4 text-center">
                         <div className="w-12 h-12 bg-red-500/10 rounded-full flex items-center justify-center mx-auto">
                             <Trash2 className="w-6 h-6 text-red-500" />
                         </div>
