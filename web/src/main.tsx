@@ -1,20 +1,18 @@
-import React from "react";
-import ReactDOM from "react-dom/client";
 import { ClerkProvider, useAuth } from "@clerk/clerk-react";
 import { ConvexProviderWithClerk } from "convex/react-clerk";
 import { ConvexReactClient } from "convex/react";
-import App from "./App";
-import "./index.css";
+import type { AppProps } from "next/app";
 
-const convex = new ConvexReactClient(import.meta.env.VITE_CONVEX_URL as string);
-const clerkPublishableKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string;
+const convex = new ConvexReactClient(
+  process.env.NEXT_PUBLIC_CONVEX_URL!
+);
 
-ReactDOM.createRoot(document.getElementById("root")!).render(
-  <React.StrictMode>
-    <ClerkProvider publishableKey={clerkPublishableKey}>
+export default function MyApp({ Component, pageProps }: AppProps) {
+  return (
+    <ClerkProvider publishableKey={process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}>
       <ConvexProviderWithClerk client={convex} useAuth={useAuth}>
-        <App />
+        <Component {...pageProps} />
       </ConvexProviderWithClerk>
     </ClerkProvider>
-  </React.StrictMode>
-);
+  );
+}
