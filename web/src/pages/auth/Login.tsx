@@ -22,7 +22,7 @@ export default function Login() {
                 </div>
 
                 <div className="glass rounded-[32px] border border-white/10 shadow-2xl overflow-hidden">
-                    <SignIn 
+                    <SignIn
                         forceRedirectUrl="/dashboard"
                         fallbackRedirectUrl="/dashboard"
                         signUpForceRedirectUrl="/dashboard"

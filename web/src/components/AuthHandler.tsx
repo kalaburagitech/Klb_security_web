@@ -20,7 +20,12 @@ export default function AuthHandler({ children }: { children: React.ReactNode })
             console.log("AuthHandler: checking status...", { isLoaded, hasUser: !!user, isSynced });
             if (isLoaded && user && !isSynced) {
                 try {
-                    console.log("AuthHandler: syncing user with Convex...", user.id);
+                    console.log("AuthHandler: syncing user with options:", {
+                        clerkId: user.id,
+                        email: user.primaryEmailAddress?.emailAddress,
+                        name: user.fullName || user.username
+                    });
+                    
                     const convexUser = await syncUser({
                         clerkId: user.id,
                         name: user.fullName || user.username || "Unknown",
@@ -28,7 +33,11 @@ export default function AuthHandler({ children }: { children: React.ReactNode })
                     });
 
                     if (convexUser) {
-                        console.log("AuthHandler: user synced, generating token...", convexUser._id);
+                        console.log("AuthHandler: user synced successfully:", {
+                            id: convexUser._id,
+                            role: convexUser.role,
+                            clerkIdInConvex: convexUser.clerkId
+                        });
                         const token = await generateToken({
                             userId: convexUser._id,
                             email: convexUser.email || "",
