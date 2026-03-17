@@ -9,7 +9,6 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@clerk/clerk-react": "^5.61.3",
     "@clerk/nextjs": "^6.9.1",
     "@types/leaflet": "^1.9.21",
     "clsx": "^2.1.1",
@@ -22,7 +21,6 @@
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-leaflet": "^4.2.1",
-    "react-router-dom": "^6.22.3",
     "sonner": "^1.4.41",
     "tailwind-merge": "^2.5.2"
   },
