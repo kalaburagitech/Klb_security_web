@@ -3,7 +3,7 @@ import { Layout } from "../../components/Layout";
 import { Plus, Globe, Search, Loader2, Edit2, Trash2, X, Hash } from "lucide-react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../services/convex";
-import { useUser } from "@clerk/clerk-react";
+import { useUser } from "@clerk/nextjs";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { toast } from "sonner";
 

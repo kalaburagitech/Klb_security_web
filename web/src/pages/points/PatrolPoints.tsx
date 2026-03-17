@@ -6,7 +6,7 @@ import { api } from "../../services/convex";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { QRCodeSVG } from "qrcode.react";
 import { toast } from "sonner";
-import { useUser } from "@clerk/clerk-react";
+import { useUser } from "@clerk/nextjs";
 import { SearchableSitePicker } from "../../components/SearchableSitePicker";
 
 const ITEMS_PER_PAGE = 12;

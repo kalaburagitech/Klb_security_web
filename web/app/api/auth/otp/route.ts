@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { convex } from "@/lib/convexClient";
-import { api } from "@/convex/_generated/api.js";
+import { api } from "@/convex/_generated/api";
 import { otps } from "@/lib/otpStore";
 import { handleCors, handleOptions } from "@/lib/cors";
 

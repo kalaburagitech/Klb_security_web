@@ -4,7 +4,7 @@ import { AlertTriangle, Clock, MapPin, CheckCircle2, ShieldAlert, Loader2 } from
 import { cn } from "../../lib/utils";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../services/convex";
-import { useUser } from "@clerk/clerk-react";
+import { useUser } from "@clerk/nextjs";
 import { toast } from "sonner";
 import type { Id } from "../../../convex/_generated/dataModel";
 

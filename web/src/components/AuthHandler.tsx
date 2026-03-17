@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { useUser, useClerk } from "@clerk/clerk-react";
+import { useUser, useClerk } from "@clerk/nextjs";
 import { toast } from "sonner";
 import { useMutation, useAction } from "convex/react";
 import { api } from "../services/convex";

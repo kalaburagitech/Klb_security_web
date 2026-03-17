@@ -4,7 +4,7 @@ import dynamic from "next/dynamic";
 import { ShieldCheck } from "lucide-react";
 
 const SignIn = dynamic(
-    () => import("@clerk/clerk-react").then((mod) => mod.SignIn),
+    () => import("@clerk/nextjs").then((mod) => mod.SignIn),
     { ssr: false }
 );
 

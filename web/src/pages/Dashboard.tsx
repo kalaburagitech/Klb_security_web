@@ -11,7 +11,7 @@ import {
 import { cn } from "../lib/utils";
 import { useQuery } from "convex/react";
 import { api } from "../services/convex";
-import { useUser } from "@clerk/clerk-react";
+import { useUser } from "@clerk/nextjs";
 import { useState } from "react";
 import type { Id } from "../../convex/_generated/dataModel";
 import { SearchableSitePicker } from "../components/SearchableSitePicker";

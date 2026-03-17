@@ -13,7 +13,7 @@ import RegionManagement from "./pages/regions/RegionManagement";
 import Login from "./pages/auth/Login";
 import Restricted from "./pages/auth/Restricted";
 import AuthHandler from "./components/AuthHandler";
-import { useUser, SignedIn, SignedOut } from "@clerk/clerk-react";
+import { useUser, SignedIn, SignedOut } from "@clerk/nextjs";
 import { useQuery } from "convex/react";
 import { api } from "./services/convex";
 import { Toaster } from "sonner";
