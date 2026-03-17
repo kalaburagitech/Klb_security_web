@@ -1,33 +1,44 @@
-import { useClerk } from "@clerk/clerk-react";
-import { ShieldAlert, LogOut } from "lucide-react";
+"use client";
 
-export default function Restricted() {
-    const { signOut } = useClerk();
+import dynamic from "next/dynamic";
+import { ShieldCheck } from "lucide-react";
 
+const SignIn = dynamic(
+    () => import("@clerk/clerk-react").then((mod) => mod.SignIn),
+    { ssr: false }
+);
+
+export default function Login() {
     return (
-        <div className="min-h-screen bg-black flex items-center justify-center p-4">
-            <div className="max-w-md w-full glass p-8 rounded-3xl border border-white/10 text-center space-y-6">
-                <div className="flex justify-center">
-                    <div className="p-4 bg-red-500/10 rounded-full">
-                        <ShieldAlert className="w-12 h-12 text-red-500" />
+        <div className="min-h-screen bg-black flex flex-col items-center justify-center p-4 relative overflow-hidden">
+            {/* Background decorative elements */}
+            <div className="absolute top-0 left-0 w-full h-full pointer-events-none">
+                <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-primary/20 rounded-full blur-[120px]" />
+                <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-blue-500/10 rounded-full blur-[120px]" />
+            </div>
+
+            <div className="w-full max-w-[440px] z-10 space-y-8">
+                <div className="flex flex-col items-center text-center space-y-4">
+                    <div className="p-3 bg-white/5 rounded-2xl border border-white/10 shadow-2xl">
+                        <ShieldCheck className="w-12 h-12 text-primary" />
+                    </div>
+                    <div className="space-y-1">
+                        <h1 className="text-3xl font-bold text-white tracking-tight">Security OS</h1>
+                        <p className="text-gray-400">Enterprise Security Management System</p>
                     </div>
                 </div>
-                
-                <div className="space-y-2">
-                    <h1 className="text-2xl font-bold text-white">Access Restricted</h1>
-                    <p className="text-gray-400">
-                        Your account is currently not authorized to access the system. 
-                        Please contact the administrator to activate your account.
-                    </p>
+
+                <div className="glass rounded-[32px] border border-white/10 shadow-2xl overflow-hidden">
+                    <SignIn
+                        forceRedirectUrl="/dashboard"
+                        fallbackRedirectUrl="/dashboard"
+                        signUpForceRedirectUrl="/dashboard"
+                    />
                 </div>
 
-                <button
-                    onClick={() => signOut()}
-                    className="w-full py-3 px-4 bg-white/5 hover:bg-white/10 text-white rounded-xl border border-white/10 transition-all flex items-center justify-center gap-2 group"
-                >
-                    <LogOut className="w-4 h-4 text-gray-400 group-hover:text-white transition-colors" />
-                    Sign Out
-                </button>
+                <p className="text-center text-gray-500 text-sm">
+                    Protected by high-level encryption & Clerk security.
+                </p>
             </div>
         </div>
     );
