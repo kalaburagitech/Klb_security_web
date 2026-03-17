@@ -1,12 +1,12 @@
 import React, { useState } from "react";
-import { Layout } from "../../components/Layout";
+import { Layout } from "../../../components/Layout";
 import { AlertTriangle, Clock, MapPin, CheckCircle2, ShieldAlert, Loader2 } from "lucide-react";
-import { cn } from "../../lib/utils";
+import { cn } from "../../../lib/utils";
 import { useQuery, useMutation } from "convex/react";
-import { api } from "../../services/convex";
+import { api } from "../../../services/convex";
 import { useUser } from "@clerk/nextjs";
 import { toast } from "sonner";
-import type { Id } from "../../../convex/_generated/dataModel";
+import type { Id } from "../../../../convex/_generated/dataModel";
 
 export default function IssueTracker() {
     const { user } = useUser();

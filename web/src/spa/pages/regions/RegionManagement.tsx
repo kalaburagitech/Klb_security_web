@@ -1,11 +1,11 @@
 import React, { useState } from "react";
-import { Layout } from "../../components/Layout";
+import { Layout } from "../../../components/Layout";
 import { Plus, Globe, Search, Loader2, Edit2, Trash2, X, Hash } from "lucide-react";
-import { cn } from "../../lib/utils";
+import { cn } from "../../../lib/utils";
 import { useQuery, useMutation } from "convex/react";
-import { api } from "../../services/convex";
+import { api } from "../../../services/convex";
 import { useUser } from "@clerk/nextjs";
-import type { Id } from "../../../convex/_generated/dataModel";
+import type { Id } from "../../../../convex/_generated/dataModel";
 import { toast } from "sonner";
 
 export default function RegionManagement() {

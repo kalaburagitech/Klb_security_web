@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { useQuery } from "convex/react";
-import { api } from "../../services/convex";
-import { Layout } from "../../components/Layout";
+import { api } from "../../../services/convex";
+import { Layout } from "../../../components/Layout";
 import { Loader2, UserCheck, Eye, X, Image as ImageIcon } from "lucide-react";
-import { cn } from "../../lib/utils";
+import { cn } from "../../../lib/utils";
 import { useUser } from "@clerk/nextjs";
 
 

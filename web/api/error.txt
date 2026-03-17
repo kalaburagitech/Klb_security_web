@@ -1,8 +1,0 @@
-[CONVEX M(loginLogs:logLogin)] [Request ID: 0cc43fef571fd8da] Server Error
-ArgumentValidationError: Object contains extra field `organizationId` that is not in the validator.
-
-Object: {email: "officer@gmail.com", ipAddress: "::1", loginStatus: "success", organizationId: "jx73q2rzmyhpf1b00at870d95h82esqk", userId: "jn77djkpycgbpp49xkm7tvg87s82fh70"}
-Validator: v.object({browserInfo: v.optional(v.string()), email: v.string(), ipAddress: v.optional(v.string()), loginStatus: v.string(), sessionId: v.optional(v.string()), userId: v.id("users")})
-
-
-  Called by client

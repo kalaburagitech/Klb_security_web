@@ -93,19 +93,27 @@ export const list = query({
         empId: v.optional(v.string()),
     },
     handler: async (ctx, args) => {
-        let query = ctx.db.query("attendanceRecords");
-
-        if (args.organizationId) {
-            query = query.withIndex("by_org", (q) => q.eq("organizationId", args.organizationId));
-        } else if (args.region) {
-            query = query.withIndex("by_region", (q) => q.eq("region", args.region));
-        } else if (args.empId) {
-            query = query.withIndex("by_empId", (q) => q.eq("empId", args.empId));
-        } else if (args.date) {
-            query = query.withIndex("by_date", (q) => q.eq("date", args.date));
-        }
-
-        const records = await query.collect();
+        const records = args.organizationId
+            ? await ctx.db
+                  .query("attendanceRecords")
+                  .withIndex("by_org", (q) => q.eq("organizationId", args.organizationId))
+                  .collect()
+            : args.region
+              ? await ctx.db
+                    .query("attendanceRecords")
+                    .withIndex("by_region", (q) => q.eq("region", args.region!))
+                    .collect()
+              : args.empId
+                ? await ctx.db
+                      .query("attendanceRecords")
+                      .withIndex("by_empId", (q) => q.eq("empId", args.empId!))
+                      .collect()
+                : args.date
+                  ? await ctx.db
+                        .query("attendanceRecords")
+                        .withIndex("by_date", (q) => q.eq("date", args.date!))
+                        .collect()
+                  : await ctx.db.query("attendanceRecords").collect();
         
         // Filter by additional criteria if needed
         let filtered = records;

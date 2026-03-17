@@ -4,10 +4,11 @@ import { ClerkProvider, useAuth } from "@clerk/nextjs";
 import { ConvexProviderWithClerk } from "convex/react-clerk";
 import { ConvexReactClient } from "convex/react";
 import App from "./App";
-import "./index.css";
+import "../index.css";
+import { NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY, NEXT_PUBLIC_CONVEX_URL } from "../config/env";
 
-const convex = new ConvexReactClient(process.env.NEXT_PUBLIC_CONVEX_URL as string);
-const clerkPublishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY as string;
+const convex = new ConvexReactClient(NEXT_PUBLIC_CONVEX_URL);
+const clerkPublishableKey = NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

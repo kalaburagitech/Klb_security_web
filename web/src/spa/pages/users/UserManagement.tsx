@@ -1,11 +1,11 @@
 import { useState } from "react";
-import { Layout } from "../../components/Layout";
+import { Layout } from "../../../components/Layout";
 import { Plus, User, Mail, Shield, Search, Loader2, Edit2, Trash2, X, Building, Smartphone } from "lucide-react";
-import { cn } from "../../lib/utils";
+import { cn } from "../../../lib/utils";
 import { useQuery, useMutation } from "convex/react";
-import { api } from "../../services/convex";
+import { api } from "../../../services/convex";
 import { useUser } from "@clerk/nextjs";
-import type { Id } from "../../../convex/_generated/dataModel";
+import type { Id } from "../../../../convex/_generated/dataModel";
 import { toast } from "sonner";
 
 const ROLES = ["Owner", "Deployment Manager", "Manager", "Officer", "Security Officer", "SG", "SO", "NEW_USER"] as const;

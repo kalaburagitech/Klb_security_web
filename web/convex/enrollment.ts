@@ -37,17 +37,23 @@ export const list = query({
         empId: v.optional(v.string()),
     },
     handler: async (ctx, args) => {
-        let query = ctx.db.query("enrolledPersons");
+        const enrollments = args.organizationId
+            ? await ctx.db
+                  .query("enrolledPersons")
+                  .withIndex("by_org", (q) => q.eq("organizationId", args.organizationId))
+                  .collect()
+            : args.region
+              ? await ctx.db
+                    .query("enrolledPersons")
+                    .withIndex("by_region", (q) => q.eq("region", args.region!))
+                    .collect()
+              : args.empId
+                ? await ctx.db
+                      .query("enrolledPersons")
+                      .withIndex("by_empId", (q) => q.eq("empId", args.empId!))
+                      .collect()
+                : await ctx.db.query("enrolledPersons").collect();
 
-        if (args.organizationId) {
-            query = query.withIndex("by_org", (q) => q.eq("organizationId", args.organizationId));
-        } else if (args.region) {
-            query = query.withIndex("by_region", (q) => q.eq("region", args.region));
-        } else if (args.empId) {
-            query = query.withIndex("by_empId", (q) => q.eq("empId", args.empId));
-        }
-
-        const enrollments = await query.collect();
         return enrollments;
     },
 });

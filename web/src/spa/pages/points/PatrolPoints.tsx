@@ -1,13 +1,13 @@
 import { useState } from "react";
-import { Layout } from "../../components/Layout";
+import { Layout } from "../../../components/Layout";
 import { Plus, Search, MapPin, Printer, X, Trash2, Loader2, Edit2 } from "lucide-react";
 import { useQuery, useMutation, usePaginatedQuery } from "convex/react";
-import { api } from "../../services/convex";
-import type { Id } from "../../../convex/_generated/dataModel";
+import { api } from "../../../services/convex";
+import type { Id } from "../../../../convex/_generated/dataModel";
 import { QRCodeSVG } from "qrcode.react";
 import { toast } from "sonner";
 import { useUser } from "@clerk/nextjs";
-import { SearchableSitePicker } from "../../components/SearchableSitePicker";
+import { SearchableSitePicker } from "../../../components/SearchableSitePicker";
 
 const ITEMS_PER_PAGE = 12;
 

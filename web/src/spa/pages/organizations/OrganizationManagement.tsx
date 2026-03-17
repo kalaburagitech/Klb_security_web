@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "convex/react";
-import { api } from "../../services/convex";
-import { Layout } from "../../components/Layout";
+import { api } from "../../../services/convex";
+import { Layout } from "../../../components/Layout";
 import {
     Plus,
     Pencil,
@@ -14,8 +14,8 @@ import {
     Check
 } from "lucide-react";
 import { toast } from "sonner";
-import { cn } from "../../lib/utils";
-import type { Id } from "../../../convex/_generated/dataModel";
+import { cn } from "../../../lib/utils";
+import type { Id } from "../../../../convex/_generated/dataModel";
 
 export default function OrganizationManagement() {
     const orgs = useQuery((api as any).organizations.list);
