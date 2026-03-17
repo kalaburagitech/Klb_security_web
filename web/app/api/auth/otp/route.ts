@@ -2,14 +2,20 @@ import { NextRequest, NextResponse } from "next/server";
 import { convex } from "@/lib/convexClient";
 import { api } from "@/convex/_generated/api.js";
 import { otps } from "@/lib/otpStore";
+import { handleCors, handleOptions } from "@/lib/cors";
+
+export function OPTIONS(req: NextRequest) {
+  return handleOptions(req);
+}
 
 export async function POST(req: NextRequest) {
+  const headers = handleCors(req);
   try {
     const body = await req.json();
     const { mobileNumber } = body;
 
     if (!mobileNumber) {
-      return NextResponse.json({ error: "Mobile number is required" }, { status: 400 });
+      return NextResponse.json({ error: "Mobile number is required" }, { status: 400, headers });
     }
 
     // Normalize number
@@ -32,10 +38,10 @@ export async function POST(req: NextRequest) {
       success: true,
       otp,
       message: "OTP sent (check server console)"
-    });
+    }, { headers });
   } catch (error) {
     console.error("[API] Send OTP error:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json({ error: "Internal server error" }, { status: 500, headers });
   }
 }
 
