@@ -5,9 +5,9 @@ import { corsHeaders } from "@/lib/cors";
 
 export async function GET(
     req: Request,
-    { params }: { params: { orgId: string } }
+    { params }: { params: Promise<{ orgId: string }> }
 ) {
-    const { orgId } = params;
+    const { orgId } = await params;
     const { searchParams } = new URL(req.url);
     const siteId = searchParams.get("siteId");
 
