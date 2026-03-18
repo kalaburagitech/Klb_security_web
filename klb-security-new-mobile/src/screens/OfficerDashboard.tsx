@@ -87,7 +87,8 @@ export default function OfficerDashboard() {
                         <MapPin color={selectedRegionId ? "white" : "#64748b"} size={20} />
                     </TouchableOpacity>
                     <TouchableOpacity onPress={handleLogout} style={styles.logoutBtn}>
-                        <LogOut color="#ef4444" size={20} />
+                        <LogOut color="#ef4444" size={16} />
+                        <Text style={styles.logoutText}>Logout</Text>
                     </TouchableOpacity>
                 </View>
             </View>
@@ -351,14 +352,21 @@ const styles = StyleSheet.create({
         borderColor: 'rgba(59, 130, 246, 0.2)',
     },
     logoutBtn: {
-        width: 44,
-        height: 44,
-        borderRadius: 14,
+        flexDirection: 'row',
+        paddingHorizontal: 12,
+        height: 40,
+        borderRadius: 12,
         backgroundColor: 'rgba(239, 68, 68, 0.1)',
         justifyContent: 'center',
         alignItems: 'center',
         borderWidth: 1,
         borderColor: 'rgba(239, 68, 68, 0.2)',
+        gap: 6,
+    },
+    logoutText: {
+        color: '#ef4444',
+        fontSize: 13,
+        fontWeight: 'bold',
     },
     actionSection: {
         marginBottom: 32,

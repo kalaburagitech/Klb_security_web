@@ -8,7 +8,7 @@ export function middleware(req: NextRequest) {
     // Handle preflight request
     if (req.method === "OPTIONS") {
         return new NextResponse(null, {
-            status: 200,
+            status: 204, // 204 is standard for preflight
             headers: corsHeaders(origin),
         });
     }
@@ -16,9 +16,15 @@ export function middleware(req: NextRequest) {
     const response = NextResponse.next();
 
     // Attach CORS headers to all responses
-    Object.entries(corsHeaders(origin)).forEach(([key, value]) => {
+    const headers = corsHeaders(origin);
+    Object.entries(headers).forEach(([key, value]) => {
         response.headers.set(key, value);
     });
 
     return response;
 }
+
+// Ensure middleware only runs on API routes
+export const config = {
+    matcher: "/api/:path*",
+};
