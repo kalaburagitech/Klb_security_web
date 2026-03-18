@@ -4,7 +4,7 @@ import { Platform, Alert } from 'react-native';
 // Update this single URL to your production endpoint (e.g. Render) before building
 // For local development, use your computer's local IP address.
 const IS_PRODUCTION = true; // Toggle this for production builds
-const PROD_URL = 'https://klb-security-api.vercel.app/api';
+const PROD_URL = 'https://klb-security-web.vercel.app/api';
 const DEV_URL = 'http://192.168.0.108:3000/api';
 
 export const API_URL = IS_PRODUCTION ? PROD_URL : DEV_URL;
