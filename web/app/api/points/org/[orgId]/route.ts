@@ -9,10 +9,9 @@ export async function GET(
 ) {
   try {
     const { orgId } = await params;
-    // Note: Convex doesn't have a direct listPatrolPointsByOrg yet, 
-    // we'll need to list all and filter or add the function.
-    // For now, let's assume points are fetched by site in QRManagement.
-    return NextResponse.json({ error: "Use site-based point listing" }, { status: 400 });
+    const points = await convex.query(api.patrolPoints.listByOrg, { organizationId: orgId as Id<"organizations"> });
+    console.log(`[API] GET /api/points/org/${orgId} - Success: ${points?.length || 0} points found`);
+    return NextResponse.json(points);
   } catch (error: any) {
     console.error("[API] Points Org error:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

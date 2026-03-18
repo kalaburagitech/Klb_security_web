@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, TextInput, Platform, ScrollView, Alert, StyleSheet } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Shield, ChevronRight, CheckCircle2 } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 import { authService } from '../../services/api';
 
 export default function SignUpScreen() {
+    const insets = useSafeAreaInsets();
     const navigation = useNavigation<any>();
 
     const [firstName, setFirstName] = useState("");
@@ -132,6 +133,7 @@ export default function SignUpScreen() {
                     Secure Registration Portal
                 </Text>
             </ScrollView>
+            <View style={{ height: insets.bottom }} />
         </SafeAreaView>
     );
 }

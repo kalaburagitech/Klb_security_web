@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, ActivityIndicator, Alert, Modal } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { ChevronLeft, CheckCircle, X, User, Clock, MapPin, RefreshCw } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
@@ -9,15 +9,18 @@ import { faceRecognitionService, regionService, attendanceService } from '../ser
 import { useCustomAuth } from '../context/AuthContext';
 
 export default function MarkAttendanceScreen() {
+    const insets = useSafeAreaInsets();
     const navigation = useNavigation<any>();
     const { organizationId } = useCustomAuth();
     const [permission, requestPermission] = useCameraPermissions();
     const cameraRef = useRef<any>(null);
 
-    const [step, setStep] = useState<'region' | 'camera'>('region');
+    const [step, setStep] = useState<'region' | 'city' | 'camera'>('region');
     const [region, setRegion] = useState('');
-    const [regions, setRegions] = useState<Array<{ regionId: string; regionName: string }>>([]);
+    const [city, setCity] = useState('');
+    const [regions, setRegions] = useState<Array<{ regionId: string; regionName: string; cities?: string[] }>>([]);
     const [showRegionPicker, setShowRegionPicker] = useState(false);
+    const [showCityPicker, setShowCityPicker] = useState(false);
     
     const [detectedPerson, setDetectedPerson] = useState<any>(null);
     const [attendanceStatus, setAttendanceStatus] = useState<any>(null);
@@ -106,6 +109,7 @@ export default function MarkAttendanceScreen() {
                 type: 'image/jpeg',
             } as any);
             formData.append('region', region);
+            formData.append('city', city);
             formData.append('emp_id', ''); // Let API search all
 
             const response = await faceRecognitionService.recognize(formData);
@@ -213,7 +217,8 @@ export default function MarkAttendanceScreen() {
                         latitude: lat,
                         longitude: lon,
                         locationAccuracy: accuracy,
-                        region: selectedRegion?.regionName || region,
+                        region: regions.find(r => r.regionId === region)?.regionName || region,
+                        city: city,
                         organizationId,
                     });
                 } catch (error) {
@@ -253,6 +258,7 @@ export default function MarkAttendanceScreen() {
                 <View style={styles.centerContainer}>
                     <Text style={styles.text}>Loading camera permissions...</Text>
                 </View>
+                <View style={{ height: insets.bottom }} />
             </SafeAreaView>
         );
     }
@@ -288,22 +294,12 @@ export default function MarkAttendanceScreen() {
                         style={[styles.continueButton, !region && styles.disabled]}
                         onPress={() => {
                             if (region) {
-                                if (!permission?.granted) {
-                                    requestPermission().then((result) => {
-                                        if (result.granted) {
-                                            setStep('camera');
-                                        } else {
-                                            Alert.alert('Permission Required', 'Camera permission is needed for face recognition');
-                                        }
-                                    });
-                                } else {
-                                    setStep('camera');
-                                }
+                                setStep('city');
                             }
                         }}
                         disabled={!region}
                     >
-                        <Text style={styles.continueButtonText}>Continue</Text>
+                        <Text style={styles.continueButtonText}>Continue to Select City</Text>
                     </TouchableOpacity>
                 </ScrollView>
 
@@ -328,6 +324,7 @@ export default function MarkAttendanceScreen() {
                                         style={[styles.regionOption, region === r.regionId && styles.regionOptionSelected]}
                                         onPress={() => {
                                             setRegion(r.regionId);
+                                            setCity(''); // Reset city
                                             setShowRegionPicker(false);
                                         }}
                                     >
@@ -341,6 +338,101 @@ export default function MarkAttendanceScreen() {
                         </View>
                     </View>
                 </Modal>
+                <View style={{ height: insets.bottom }} />
+            </SafeAreaView>
+        );
+    }
+
+    if (step === 'city') {
+        return (
+            <SafeAreaView style={styles.container}>
+                <View style={styles.header}>
+                    <TouchableOpacity onPress={() => setStep('region')} style={styles.backButton}>
+                        <ChevronLeft color="white" size={24} />
+                    </TouchableOpacity>
+                    <Text style={styles.headerTitle}>Select City</Text>
+                    <View style={{ width: 44 }} />
+                </View>
+
+                <ScrollView contentContainerStyle={styles.scrollContent}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                        <Text style={styles.sectionTitle}>Select City</Text>
+                        <TouchableOpacity onPress={() => setStep('region')}>
+                            <Text style={{ color: '#2563eb', fontSize: 12 }}>Change Region</Text>
+                        </TouchableOpacity>
+                    </View>
+                    <Text style={styles.sectionSubtitle}>Choose the city for attendance marking</Text>
+
+                    <TouchableOpacity
+                        style={styles.regionButton}
+                        onPress={() => setShowCityPicker(true)}
+                    >
+                        <View style={styles.regionButtonContent}>
+                            <Text style={[styles.regionButtonText, !city && styles.regionPlaceholder]}>
+                                {city || 'Select city'}
+                            </Text>
+                            <ChevronLeft color="#64748b" size={20} style={{ transform: [{ rotate: '-90deg' }] }} />
+                        </View>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                        style={[styles.continueButton, !city && styles.disabled]}
+                        onPress={() => {
+                            if (city) {
+                                if (!permission?.granted) {
+                                    requestPermission().then((result) => {
+                                        if (result.granted) {
+                                            setStep('camera');
+                                        } else {
+                                            Alert.alert('Permission Required', 'Camera permission is needed for face recognition');
+                                        }
+                                    });
+                                } else {
+                                    setStep('camera');
+                                }
+                            }
+                        }}
+                        disabled={!city}
+                    >
+                        <Text style={styles.continueButtonText}>Continue to Recognize</Text>
+                    </TouchableOpacity>
+                </ScrollView>
+
+                <Modal
+                    visible={showCityPicker}
+                    transparent={true}
+                    animationType="slide"
+                    onRequestClose={() => setShowCityPicker(false)}
+                >
+                    <View style={styles.modalOverlay}>
+                        <View style={styles.modalContent}>
+                            <View style={styles.modalHeader}>
+                                <Text style={styles.modalTitle}>Select City</Text>
+                                <TouchableOpacity onPress={() => setShowCityPicker(false)}>
+                                    <Text style={styles.modalClose}>Done</Text>
+                                </TouchableOpacity>
+                            </View>
+                            <ScrollView>
+                                {regions.find(r => r.regionId === region)?.cities?.map((c) => (
+                                    <TouchableOpacity
+                                        key={c}
+                                        style={[styles.regionOption, city === c && styles.regionOptionSelected]}
+                                        onPress={() => {
+                                            setCity(c);
+                                            setShowCityPicker(false);
+                                        }}
+                                    >
+                                        <Text style={[styles.regionOptionText, city === c && styles.regionOptionTextSelected]}>
+                                            {c}
+                                        </Text>
+                                        {city === c && <CheckCircle color="#2563eb" size={20} />}
+                                    </TouchableOpacity>
+                                ))}
+                            </ScrollView>
+                        </View>
+                    </View>
+                </Modal>
+                <View style={{ height: insets.bottom }} />
             </SafeAreaView>
         );
     }
@@ -357,6 +449,7 @@ export default function MarkAttendanceScreen() {
                         <Text style={styles.buttonText}>Back</Text>
                     </TouchableOpacity>
                 </View>
+                <View style={{ height: insets.bottom }} />
             </SafeAreaView>
         );
     }
@@ -370,7 +463,7 @@ export default function MarkAttendanceScreen() {
             />
             <View style={styles.cameraOverlay}>
                 <View style={styles.cameraHeader}>
-                    <TouchableOpacity onPress={() => { setStep('region'); setDetectedPerson(null); setAttendanceStatus(null); }} style={styles.iconBtn}>
+                    <TouchableOpacity onPress={() => { setStep('city'); setDetectedPerson(null); setAttendanceStatus(null); }} style={styles.iconBtn}>
                         <ChevronLeft color="white" size={24} />
                     </TouchableOpacity>
                     <Text style={styles.cameraTitle}>Face Recognition</Text>
@@ -504,6 +597,7 @@ export default function MarkAttendanceScreen() {
                     )}
                 </View>
             </View>
+            <View style={{ height: insets.bottom }} />
         </SafeAreaView>
     );
 }

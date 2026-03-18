@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, Dimensions } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 // import { useQuery } from 'convex/react';
 // import { api } from '../../services/convex';
 import { siteService, pointService } from '../../services/api';
@@ -15,6 +15,7 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const isSmallScreen = SCREEN_WIDTH < 375;
 
 export default function HomeScreen() {
+    const insets = useSafeAreaInsets();
     const navigation = useNavigation<any>();
     const { userId, customUser, logout } = useCustomAuth();
     const [activeSession, setActiveSession] = useState<any>(null); // Still need to migrate getActiveSession
@@ -248,6 +249,7 @@ export default function HomeScreen() {
                     </>
                 )}
             </ScrollView>
+            <View style={{ height: insets.bottom }} />
         </SafeAreaView >
     );
 }

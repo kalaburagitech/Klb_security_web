@@ -1,26 +1,46 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 // import { useQuery } from 'convex/react';
 // import { api } from '../services/convex';
-import { siteService } from '../services/api';
-import { Building2, Search, MapPin, ChevronRight, ArrowLeft } from 'lucide-react-native';
+import { siteService, regionService } from '../services/api';
+import { Building2, Search, MapPin, ChevronRight, ArrowLeft, CheckCircle } from 'lucide-react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { usePatrolStore } from '../store/usePatrolStore';
 import { useCustomAuth } from '../context/AuthContext';
+import { Modal, ScrollView } from 'react-native';
 
 export default function SiteSelection() {
+    const insets = useSafeAreaInsets();
     const navigation = useNavigation<any>();
     const route = useRoute<any>();    const { userId, customUser } = useCustomAuth();
     const [sites, setSites] = useState<any[]>([]);
+    const [regions, setRegions] = useState<any[]>([]);
+    const [selectedRegionId, setSelectedRegionId] = useState<string | null>(null);
+    const [selectedCity, setSelectedCity] = useState<string | null>(null);
+    const [showRegionPicker, setShowRegionPicker] = useState(false);
+    const [showCityPicker, setShowCityPicker] = useState(false);
+    const [step, setStep] = useState<'region' | 'city' | 'site'>('region');
 
     React.useEffect(() => {
-        if (userId) {
+        const fetchRegions = async () => {
+            try {
+                const response = await regionService.getRegions();
+                setRegions(response.data || []);
+            } catch (error) {
+                console.error("Error fetching regions:", error);
+            }
+        };
+        fetchRegions();
+    }, []);
+
+    React.useEffect(() => {
+        if (userId && step === 'site') {
             const fetchSites = async () => {
                 try {
                     // SGs only see their assigned sites, SOs see all (or by org)
                     const response = customUser?.role === 'SG' 
-                        ? await siteService.getSitesByUser(userId)
+                        ? await siteService.getSitesByUser(userId, selectedRegionId || undefined, selectedCity || undefined)
                         : await siteService.getAllSites();
                     setSites(response.data);
                 } catch (error) {
@@ -29,7 +49,7 @@ export default function SiteSelection() {
             };
             fetchSites();
         }
-    }, [userId, customUser?.role]);
+    }, [userId, customUser?.role, step, selectedRegionId, selectedCity]);
     const [searchQuery, setSearchQuery] = useState('');
     const setCurrentSite = usePatrolStore((state) => state.setCurrentSite);
 
@@ -64,51 +84,184 @@ export default function SiteSelection() {
                 </View>
             </View>
 
-            <View style={styles.searchContainer}>
-                <Search color="#94a3b8" size={18} style={styles.searchIcon} />
-                <TextInput
-                    style={styles.searchInput}
-                    placeholder="Search by site or location"
-                    placeholderTextColor="#64748b"
-                    value={searchQuery}
-                    onChangeText={setSearchQuery}
-                />
-            </View>
-
-            <FlatList
-                data={filteredSites}
-                keyExtractor={(item) => item._id}
-                contentContainerStyle={styles.listContent}
-                renderItem={({ item }) => (
+            {step === 'region' ? (
+                <View style={{ flex: 1, paddingHorizontal: 24 }}>
+                    <Text style={styles.sectionTitle}>Select Region</Text>
                     <TouchableOpacity
-                        style={styles.siteItem}
-                        onPress={() => handleSelectSite(item)}
+                        style={styles.regionSelectorBtn}
+                        onPress={() => setShowRegionPicker(true)}
                     >
-                        <View style={styles.iconContainer}>
-                            <Building2 color="#3b82f6" size={22} />
-                        </View>
-                        <View style={styles.info}>
-                            <Text style={styles.siteName}>{item.name}</Text>
-                            <View style={styles.locationRow}>
-                                <MapPin color="#94a3b8" size={14} />
-                                <Text style={styles.location}>{item.locationName}</Text>
-                            </View>
-                            <View style={styles.badgeRow}>
-                                <View style={styles.badge}>
-                                    <Text style={styles.badgeText}>Ready</Text>
-                                </View>
-                                <Text style={styles.badgeSub}>Patrol zone active</Text>
-                            </View>
-                        </View>
-                        <ChevronRight color="#334155" size={20} />
+                        <Text style={[styles.regionBtnText, !selectedRegionId && { color: '#64748b' }]}>
+                            {selectedRegionId ? regions.find(r => r.regionId === selectedRegionId)?.regionName : "Choose a region..."}
+                        </Text>
+                        <ChevronRight color="#64748b" size={20} />
                     </TouchableOpacity>
-                )}
-                ListEmptyComponent={
-                    <View style={styles.emptyContainer}>
-                        <Text style={styles.emptyText}>No sites found matching your search</Text>
+
+                    <TouchableOpacity
+                        style={[styles.continueBtn, !selectedRegionId && { opacity: 0.5 }]}
+                        onPress={() => selectedRegionId && setStep('city')}
+                        disabled={!selectedRegionId}
+                    >
+                        <Text style={styles.continueBtnText}>Continue to Select City</Text>
+                    </TouchableOpacity>
+                </View>
+            ) : step === 'city' ? (
+                <View style={{ flex: 1, paddingHorizontal: 24 }}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, marginTop: 10 }}>
+                        <Text style={[styles.sectionTitle, { marginBottom: 0, marginTop: 0 }]}>Select City</Text>
+                        <TouchableOpacity onPress={() => setStep('region')}>
+                            <Text style={{ color: '#3b82f6', fontSize: 12 }}>Change Region</Text>
+                        </TouchableOpacity>
                     </View>
-                }
-            />
+                    
+                    <TouchableOpacity
+                        style={styles.regionSelectorBtn}
+                        onPress={() => setShowCityPicker(true)}
+                    >
+                        <Text style={[styles.regionBtnText, !selectedCity && { color: '#64748b' }]}>
+                            {selectedCity || "Choose a city..."}
+                        </Text>
+                        <ChevronRight color="#64748b" size={20} />
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                        style={[styles.continueBtn, !selectedCity && { opacity: 0.5 }]}
+                        onPress={() => selectedCity && setStep('site')}
+                        disabled={!selectedCity}
+                    >
+                        <Text style={styles.continueBtnText}>View Sites</Text>
+                    </TouchableOpacity>
+                </View>
+            ) : (
+                <>
+                    <View style={styles.searchContainer}>
+                        <Search color="#94a3b8" size={18} style={styles.searchIcon} />
+                        <TextInput
+                            style={styles.searchInput}
+                            placeholder="Search by site or location"
+                            placeholderTextColor="#64748b"
+                            value={searchQuery}
+                            onChangeText={setSearchQuery}
+                        />
+                    </View>
+
+                    <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 12, paddingHorizontal: 24, marginBottom: 8 }}>
+                        <TouchableOpacity onPress={() => setStep('city')}>
+                            <Text style={{ color: '#3b82f6', fontSize: 12 }}>Change City</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={() => setStep('region')}>
+                            <Text style={{ color: '#3b82f6', fontSize: 12 }}>Change Region</Text>
+                        </TouchableOpacity>
+                    </View>
+
+                    <FlatList
+                        data={filteredSites}
+                        keyExtractor={(item) => item._id}
+                        contentContainerStyle={styles.listContent}
+                        renderItem={({ item }) => (
+                            <TouchableOpacity
+                                style={styles.siteItem}
+                                onPress={() => handleSelectSite(item)}
+                            >
+                                <View style={styles.iconContainer}>
+                                    <Building2 color="#3b82f6" size={22} />
+                                </View>
+                                <View style={styles.info}>
+                                    <Text style={styles.siteName}>{item.name}</Text>
+                                    <View style={styles.locationRow}>
+                                        <MapPin color="#94a3b8" size={14} />
+                                        <Text style={styles.location}>{item.locationName}</Text>
+                                    </View>
+                                    <View style={styles.badgeRow}>
+                                        <View style={styles.badge}>
+                                            <Text style={styles.badgeText}>Ready</Text>
+                                        </View>
+                                        <Text style={styles.badgeSub}>Patrol zone active</Text>
+                                    </View>
+                                </View>
+                                <ChevronRight color="#334155" size={20} />
+                            </TouchableOpacity>
+                        )}
+                        ListEmptyComponent={
+                            <View style={styles.emptyContainer}>
+                                <Text style={styles.emptyText}>No sites found matching your search</Text>
+                            </View>
+                        }
+                    />
+                </>
+            )}
+
+            <Modal
+                visible={showRegionPicker}
+                transparent={true}
+                animationType="slide"
+                onRequestClose={() => setShowRegionPicker(false)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                        <View style={styles.modalHeader}>
+                            <Text style={styles.modalTitle}>Select Region</Text>
+                            <TouchableOpacity onPress={() => setShowRegionPicker(false)}>
+                                <Text style={styles.modalClose}>Close</Text>
+                            </TouchableOpacity>
+                        </View>
+                        <ScrollView>
+                            {regions.map((r) => (
+                                <TouchableOpacity
+                                    key={r.regionId}
+                                    style={[styles.regionOption, selectedRegionId === r.regionId && styles.regionOptionSelected]}
+                                    onPress={() => {
+                                        setSelectedRegionId(r.regionId);
+                                        setSelectedCity(null); // Reset city when region changes
+                                        setShowRegionPicker(false);
+                                    }}
+                                >
+                                    <Text style={[styles.regionOptionText, selectedRegionId === r.regionId && styles.regionOptionTextSelected]}>
+                                        {r.regionName}
+                                    </Text>
+                                    {selectedRegionId === r.regionId && <CheckCircle color="#2563eb" size={20} />}
+                                </TouchableOpacity>
+                            ))}
+                        </ScrollView>
+                    </View>
+                </View>
+            </Modal>
+
+            <Modal
+                visible={showCityPicker}
+                transparent={true}
+                animationType="slide"
+                onRequestClose={() => setShowCityPicker(false)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                        <View style={styles.modalHeader}>
+                            <Text style={styles.modalTitle}>Select City</Text>
+                            <TouchableOpacity onPress={() => setShowCityPicker(false)}>
+                                <Text style={styles.modalClose}>Close</Text>
+                            </TouchableOpacity>
+                        </View>
+                        <ScrollView>
+                            {regions.find(r => r.regionId === selectedRegionId)?.cities?.map((city: string) => (
+                                <TouchableOpacity
+                                    key={city}
+                                    style={[styles.regionOption, selectedCity === city && styles.regionOptionSelected]}
+                                    onPress={() => {
+                                        setSelectedCity(city);
+                                        setShowCityPicker(false);
+                                    }}
+                                >
+                                    <Text style={[styles.regionOptionText, selectedCity === city && styles.regionOptionTextSelected]}>
+                                        {city}
+                                    </Text>
+                                    {selectedCity === city && <CheckCircle color="#2563eb" size={20} />}
+                                </TouchableOpacity>
+                            ))}
+                        </ScrollView>
+                    </View>
+                </View>
+            </Modal>
+            <View style={{ height: insets.bottom }} />
         </SafeAreaView>
     );
 }
@@ -250,6 +403,96 @@ const styles = StyleSheet.create({
         color: '#94a3b8',
         fontSize: 11,
         fontWeight: '600',
+    },
+    sectionTitle: {
+        fontSize: 14,
+        fontWeight: 'bold',
+        color: '#64748b',
+        textTransform: 'uppercase',
+        letterSpacing: 1.5,
+        marginBottom: 20,
+        marginTop: 10,
+    },
+    regionSelectorBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        backgroundColor: '#0f172a',
+        padding: 20,
+        borderRadius: 18,
+        borderWidth: 1,
+        borderColor: 'rgba(59, 130, 246, 0.2)',
+        marginBottom: 24,
+    },
+    regionBtnText: {
+        color: 'white',
+        fontSize: 16,
+        fontWeight: '600',
+    },
+    continueBtn: {
+        backgroundColor: '#3b82f6',
+        paddingVertical: 18,
+        borderRadius: 18,
+        alignItems: 'center',
+        shadowColor: "#3b82f6",
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+        elevation: 5,
+    },
+    continueBtnText: {
+        color: 'white',
+        fontSize: 16,
+        fontWeight: 'bold',
+    },
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0, 0, 0, 0.7)',
+        justifyContent: 'flex-end',
+    },
+    modalContent: {
+        backgroundColor: '#0f172a',
+        borderTopLeftRadius: 30,
+        borderTopRightRadius: 30,
+        paddingBottom: 40,
+        maxHeight: '60%',
+    },
+    modalHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        padding: 24,
+        borderBottomWidth: 1,
+        borderBottomColor: 'rgba(255, 255, 255, 0.05)',
+    },
+    modalTitle: {
+        fontSize: 20,
+        fontWeight: 'bold',
+        color: 'white',
+    },
+    modalClose: {
+        color: '#3b82f6',
+        fontSize: 16,
+        fontWeight: '600',
+    },
+    regionOption: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        padding: 20,
+        borderBottomWidth: 1,
+        borderBottomColor: 'rgba(255, 255, 255, 0.02)',
+    },
+    regionOptionSelected: {
+        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+    },
+    regionOptionText: {
+        color: 'white',
+        fontSize: 16,
+    },
+    regionOptionTextSelected: {
+        color: '#3b82f6',
+        fontWeight: 'bold',
     },
     emptyContainer: {
         alignItems: 'center',

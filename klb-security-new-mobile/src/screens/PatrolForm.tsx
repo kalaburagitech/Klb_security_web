@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Image, ActivityIndicator, Alert } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 // import { useQuery, useMutation } from 'convex/react';
 import { usePatrolStore } from '../store/usePatrolStore';
 import * as Location from 'expo-location';
@@ -13,6 +13,7 @@ import { useCustomAuth } from '../context/AuthContext';
 import { uploadImage } from '../services/upload';
 
 export default function PatrolForm() {
+    const insets = useSafeAreaInsets();
     const route = useRoute<any>();
     const navigation = useNavigation<any>();
     const { qrCode } = route.params || {};
@@ -53,7 +54,9 @@ export default function PatrolForm() {
     const createLog = async (data: any) => {
         return logService.createPatrolLog(data);
     };
-    const updateSessionPoints = async (data: any) => { console.log("Mocked updateSessionPoints", data); };
+    const updateSessionPoints = async (data: { sessionId: string; pointId: string }) => {
+        return logService.updateSessionPoints(data.sessionId, data.pointId);
+    };
 
     useEffect(() => {
         let subscription: Location.LocationSubscription | null = null;
@@ -296,6 +299,7 @@ export default function PatrolForm() {
                     <Text style={styles.skipBtnText}>Discard Scan</Text>
                 </TouchableOpacity>
             </ScrollView>
+            <View style={{ height: insets.bottom }} />
         </SafeAreaView>
     );
 }

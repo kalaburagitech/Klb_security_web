@@ -9,7 +9,9 @@ export async function GET(
 ) {
   try {
     const { orgId } = await params;
+    console.log(`[API] GET /api/sites/org/${orgId} - Request received`);
     const sites = await convex.query(api.sites.listSitesByOrg, { organizationId: orgId as Id<"organizations"> });
+    console.log(`[API] GET /api/sites/org/${orgId} - Success: ${sites?.length || 0} sites found`);
     return NextResponse.json(sites);
   } catch (error) {
     console.error("[API] Sites Org error:", error);

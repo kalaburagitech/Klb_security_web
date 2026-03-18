@@ -1,9 +1,13 @@
 import axios from 'axios';
-import { Platform } from 'react-native';
+import { Platform, Alert } from 'react-native';
 
 // Update this single URL to your production endpoint (e.g. Render) before building
 // For local development, use your computer's local IP address.
-export const API_URL = 'http://localhost:3000/api';
+const IS_PRODUCTION = true; // Toggle this for production builds
+const PROD_URL = 'https://klb-security-api.vercel.app/api';
+const DEV_URL = 'http://192.168.0.108:3000/api';
+
+export const API_URL = IS_PRODUCTION ? PROD_URL : DEV_URL;
 
 // Face Recognition API URL
 export const FACE_RECOGNITION_API_URL = 'https://rawly-unmeditative-isaura.ngrok-free.dev/api';
@@ -14,6 +18,48 @@ const api = axios.create({
         'Content-Type': 'application/json',
     },
 });
+
+// Request Interceptor for logging
+api.interceptors.request.use(
+    (config) => {
+        if (__DEV__) {
+            console.log(`[API Request] ${config.method?.toUpperCase()} ${config.url}`, config.data || '');
+        }
+        return config;
+    },
+    (error) => {
+        if (__DEV__) {
+            console.error('[API Request Error]', error);
+        }
+        return Promise.reject(error);
+    }
+);
+
+// Response Interceptor for logging
+api.interceptors.response.use(
+    (response) => {
+        if (__DEV__) {
+            console.log(`[API Response] ${response.status} ${response.config.url}`, response.data);
+        }
+        return response;
+    },
+    (error) => {
+        if (__DEV__) {
+            // Show API errors in UI during development OR production if user requested
+            Alert.alert(
+                "System Error",
+                `URL: ${error.config?.url ? error.config.url.split('/').pop() : 'API'}\nStatus: ${error.response?.status || 'Network Error'}\nMessage: ${error.response?.data?.error || error.message || 'Something went wrong. Please check your internet connection.'}`
+            );
+        } else {
+            // General error alert for production if __DEV__ is false
+            Alert.alert(
+                "Connection Error",
+                "Unable to reach server. Please check your internet connection and try again."
+            );
+        }
+        return Promise.reject(error);
+    }
+);
 
 // Face Recognition API client (uses multipart/form-data)
 const faceRecognitionApi = axios.create({
@@ -37,7 +83,17 @@ export const userService = {
 export const siteService = {
     getSitesByOrg: (orgId: string) => api.get(`/sites/org/${orgId}`),
     getSitesByIds: (ids: string[]) => api.post('/sites/list', { ids }),
-    getSitesByUser: (userId: string) => api.get(`/sites/user/${userId}`),
+    getSitesByUser: (userId: string, regionId?: string, city?: string) => {
+        let url = `/sites/user/${userId}`;
+        const params = new URLSearchParams();
+        if (regionId) params.append('regionId', regionId);
+        if (city) params.append('city', city);
+
+        const queryString = params.toString();
+        if (queryString) url += `?${queryString}`;
+
+        return api.get(url);
+    },
     getAllSites: () => api.get('/sites/all'),
     getSiteById: (id: string) => api.get(`/sites/${id}`),
 };
@@ -61,6 +117,7 @@ export const logService = {
         api.post('/logs/validate-point', { siteId, qrCodeId, userLat, userLon, guardId }),
     updateSessionPoints: (sessionId: string, pointId: string) => api.post('/logs/session/points/update', { sessionId, pointId }),
     endSession: (sessionId: string) => api.post(`/logs/session/${sessionId}/end`),
+    createIncidentReport: (data: any) => api.post('/logs/incident', data),
 };
 
 /**
@@ -139,6 +196,12 @@ export const enrollmentService = {
 export const attendanceService = {
     create: (attendanceData: any) => api.post('/attendance', attendanceData),
     list: (filters?: any) => api.get('/attendance', { params: filters }),
+};
+
+export const issueService = {
+    getIssuesByOrg: (orgId: string, siteId?: string) =>
+        api.get(`/logs/issues/org/${orgId}${siteId ? `?siteId=${siteId}` : ''}`),
+    resolveIssue: (issueId: string) => api.post('/logs/issues/resolve', { issueId }),
 };
 
 export default api;

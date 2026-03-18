@@ -1,27 +1,43 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, ActivityIndicator } from 'react-native';
 import { useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowLeft, ShieldAlert, Clock, MapPin, AlertCircle, CheckCircle2, Filter, ChevronRight } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 // import { useQuery, useMutation } from 'convex/react';
-// import { api } from '../services/convex';
 import { useCustomAuth } from '../context/AuthContext';
+import { issueService } from '../services/api';
 
 export default function IssueReview() {
     const navigation = useNavigation<any>();
     const { organizationId } = useCustomAuth();
     const [statusFilter, setStatusFilter] = useState<'open' | 'closed'>('open');
     const [priorityFilter, setPriorityFilter] = useState<string | null>(null);
-
-    const issues: any[] = [];
-    const resolveIssue = async (options: any) => { console.log('Mocked resolveIssue', options); };
+    const [issues, setIssues] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
 
     const filteredIssues = issues?.filter(issue => {
         const matchesStatus = issue.status === statusFilter;
         const matchesPriority = priorityFilter ? issue.priority === priorityFilter : true;
         return matchesStatus && matchesPriority;
     });
+
+    const fetchIssues = async () => {
+        if (!organizationId) return;
+        setLoading(true);
+        try {
+            const res = await issueService.getIssuesByOrg(organizationId);
+            setIssues(res.data || []);
+        } catch (err) {
+            console.error("Failed to fetch issues", err);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    React.useEffect(() => {
+        fetchIssues();
+    }, [organizationId]);
 
     const handleResolve = async (id: string) => {
         Alert.alert(
@@ -33,7 +49,9 @@ export default function IssueReview() {
                     text: "Resolve",
                     onPress: async () => {
                         try {
-                            await resolveIssue({ issueId: id as any });
+                            setLoading(true);
+                            await issueService.resolveIssue(id);
+                            fetchIssues();
                         } catch (e) {
                             console.error(e);
                         }
@@ -88,7 +106,12 @@ export default function IssueReview() {
             </View>
 
             <ScrollView contentContainerStyle={styles.content}>
-                {filteredIssues?.map((issue) => (
+                {loading ? (
+                    <View style={styles.emptyState}>
+                        <ActivityIndicator color="#3b82f6" size="large" />
+                        <Text style={[styles.emptyText, { marginTop: 12 }]}>Fetching issues...</Text>
+                    </View>
+                ) : filteredIssues?.map((issue) => (
                     <View key={issue._id} style={styles.issueCard}>
                         <View style={styles.cardHeader}>
                             <View style={[styles.priorityIndicator, { backgroundColor: issue.priority === 'High' ? '#ef4444' : issue.priority === 'Medium' ? '#f59e0b' : '#22c55e' }]} />
@@ -116,7 +139,7 @@ export default function IssueReview() {
                         </View>
                     </View>
                 ))}
-                {filteredIssues?.length === 0 && (
+                {!loading && filteredIssues?.length === 0 && (
                     <View style={styles.emptyState}>
                         <AlertCircle color="#1e293b" size={60} />
                         <Text style={styles.emptyTitle}>Clear Sky!</Text>

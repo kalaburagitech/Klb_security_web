@@ -9,6 +9,7 @@ import { useNavigation } from '@react-navigation/native';
 import { usePatrolStore } from '../store/usePatrolStore';
 import { useCustomAuth } from '../context/AuthContext';
 import { uploadImage } from '../services/upload';
+import { logService } from '../services/api';
 
 export default function IncidentReport() {
     const navigation = useNavigation<any>();
@@ -21,8 +22,7 @@ export default function IncidentReport() {
     const [loading, setLoading] = useState(false);
     
     // In a full migration, create incident endpoints in api.ts
-    const reportIncident = async (data: any) => { console.log('Mocked report incident', data); };
-    const generateUploadUrl = async () => { console.log("Mocked upload url"); return ""; };
+    // Removed mocked report incident and generateUploadUrl
 
     const pickImage = async () => {
         let result = await ImagePicker.launchCameraAsync({
@@ -47,15 +47,16 @@ export default function IncidentReport() {
         try {
             let storageId = undefined;
             if (image) {
-                storageId = await uploadImage(image, generateUploadUrl);
+                storageId = await uploadImage(image);
             }
 
-            await reportIncident({
+            await logService.createPatrolLog({
                 siteId: activeSession?.siteId as any,
-                comment: comment,
+                notes: comment, // Using notes for incident details
                 severity: severity,
                 organizationId: organizationId as any,
-                imageId: storageId,
+                imageUrl: storageId, // Store storageId here
+                type: 'incident',
             });
             Alert.alert("Reported", "Incident report submitted successfully.");
             navigation.goBack();

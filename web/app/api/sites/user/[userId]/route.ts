@@ -9,8 +9,17 @@ export async function GET(
 ) {
   try {
     const { userId } = await params;
-    const sites = await convex.query(api.sites.listSitesByUser, { userId: userId as Id<"users"> });
-    console.log(`[API] Sites for user ${userId}:`, sites?.length || 0, "found");
+    const { searchParams } = new URL(req.url);
+    const regionId = searchParams.get("regionId");
+    const city = searchParams.get("city");
+
+    console.log(`[API] GET /api/sites/user/${userId} - Request received (regionId: ${regionId || 'none'}, city: ${city || 'none'})`);
+    const sites = await convex.query(api.sites.listSitesByUser, { 
+      userId: userId as Id<"users">,
+      regionId: regionId || undefined,
+      city: city || undefined
+    });
+    console.log(`[API] GET /api/sites/user/${userId} - Success: ${sites?.length || 0} sites found`);
     return NextResponse.json(sites);
   } catch (error: any) {
     console.error("[API] Sites User error:", error);

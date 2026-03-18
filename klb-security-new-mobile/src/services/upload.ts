@@ -13,41 +13,55 @@ import { API_URL } from './api';
  * @returns storageId string (assetId) to store in the log record
  */
 export async function uploadImage(uri: string): Promise<string> {
+    console.log(`[Upload] Starting upload for URI: ${uri}`);
+    
     // Step 1: Get a fresh upload URL from our web API
-    const urlRes = await fetch(`${API_URL}/upload/generate-url`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-    });
+    try {
+        const urlRes = await fetch(`${API_URL}/upload/generate-url`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+        });
 
-    if (!urlRes.ok) {
-        throw new Error(`Failed to get upload URL: ${urlRes.statusText}`);
+        if (!urlRes.ok) {
+            const errorText = await urlRes.text();
+            throw new Error(`Failed to get upload URL (${urlRes.status}): ${errorText}`);
+        }
+
+        const { uploadUrl } = await urlRes.json();
+        if (!uploadUrl) {
+            throw new Error('Upload URL not returned from server');
+        }
+
+        console.log(`[Upload] Got upload URL: ${uploadUrl.substring(0, 30)}...`);
+
+        // Step 2: Fetch the image from the local URI
+        const imageRes = await fetch(uri);
+        const blob = await imageRes.blob();
+        console.log(`[Upload] Blob created: ${blob.size} bytes, type: ${blob.type}`);
+
+        // Step 3: POST the image blob directly to Convex storage (NOT PUT)
+        // Convex expects a POST to the uploadUrl
+        const uploadRes = await fetch(uploadUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': blob.type || 'image/jpeg' },
+            body: blob,
+        });
+
+        if (!uploadRes.ok) {
+            const errorText = await uploadRes.text();
+            throw new Error(`Image upload to storage failed (${uploadRes.status}): ${errorText}`);
+        }
+
+        const { storageId } = await uploadRes.json();
+        if (!storageId) {
+            throw new Error('storageId not returned from Convex storage');
+        }
+
+        console.log(`[Upload] Successfully uploaded. storageId: ${storageId}`);
+        return storageId;
+    } catch (error: any) {
+        console.error('[Upload] Error in uploadImage:', error);
+        throw error;
     }
-
-    const { uploadUrl } = await urlRes.json();
-    if (!uploadUrl) {
-        throw new Error('Upload URL not returned from server');
-    }
-
-    // Step 2: Fetch the image from the local URI
-    const imageRes = await fetch(uri);
-    const blob = await imageRes.blob();
-
-    // Step 3: PUT the image blob directly to Convex storage
-    const uploadRes = await fetch(uploadUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': blob.type || 'image/jpeg' },
-        body: blob,
-    });
-
-    if (!uploadRes.ok) {
-        throw new Error(`Image upload to storage failed: ${uploadRes.statusText}`);
-    }
-
-    const { storageId } = await uploadRes.json();
-    if (!storageId) {
-        throw new Error('storageId not returned from Convex storage');
-    }
-
-    return storageId;
 }
 

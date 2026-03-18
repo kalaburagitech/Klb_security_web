@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, ActivityIndicator, ScrollView, TextInput } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Clock, MapPin, ChevronRight, Filter, CheckCircle, X, Search, Calendar } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useCustomAuth } from '../../context/AuthContext';
 import { attendanceService } from '../../services/api';
 
 export default function AttendanceHistoryScreen() {
+    const insets = useSafeAreaInsets();
     const { organizationId } = useCustomAuth();
     const navigation = useNavigation<any>();
     
@@ -267,6 +268,7 @@ export default function AttendanceHistoryScreen() {
                     }
                 />
             )}
+            <View style={{ height: insets.bottom }} />
         </SafeAreaView>
     );
 }

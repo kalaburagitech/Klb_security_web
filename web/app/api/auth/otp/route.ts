@@ -10,6 +10,7 @@ export function OPTIONS(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   const headers = handleCors(req);
+  console.log("[API] POST /api/auth/otp - Request received");
   try {
     const body = await req.json();
     const { mobileNumber } = body;

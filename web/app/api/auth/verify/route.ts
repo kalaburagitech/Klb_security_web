@@ -13,6 +13,7 @@ export async function POST(req: NextRequest) {
   const headers = handleCors(req);
 
   try {
+    console.log("[API] POST /api/auth/verify - Request received");
     const { mobileNumber, otp } = await req.json();
 
     if (!mobileNumber || !otp) {

@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, TextInput, Platform, Alert, ScrollView, KeyboardAvoidingView, TouchableWithoutFeedback, Keyboard } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Shield, ChevronRight } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useCustomAuth } from '../../context/AuthContext';
 import { authService } from '../../services/api';
 
 export default function SignInScreen() {
+    const insets = useSafeAreaInsets();
     const { login } = useCustomAuth();
     const navigation = useNavigation<any>();
 
@@ -176,6 +177,7 @@ export default function SignInScreen() {
                     </ScrollView>
                 </TouchableWithoutFeedback>
             </KeyboardAvoidingView>
+            <View style={{ height: insets.bottom }} />
         </SafeAreaView>
     );
 }

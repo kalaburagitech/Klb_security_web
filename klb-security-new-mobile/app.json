@@ -20,7 +20,8 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.hackerhihello.klbsecuritynewmobile"
+      "package": "com.hackerhihello.klbsecuritynewmobile",
+      "usesCleartextTraffic": true
     },
     "web": {
       "output": "single",

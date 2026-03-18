@@ -1,39 +1,61 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { Building2, User, Clock, ClipboardList, ChevronRight, MapPin, Search, LogOut } from 'lucide-react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Building2, User, Clock, ClipboardList, ChevronRight, MapPin, Search, LogOut, X, CheckCircle, Scan, ShieldAlert } from 'lucide-react-native';
+import { useNavigation } from '@react-navigation/native';
 // import { useQuery } from 'convex/react';
 // import { api } from '../services/convex';
-import { siteService, logService } from '../services/api';
+import { siteService, logService, regionService } from '../services/api';
 import { useCustomAuth } from '../context/AuthContext';
-import { TextInput, Alert } from 'react-native';
+import { TextInput, Alert, Modal } from 'react-native';
 
 export default function OfficerDashboard() {
+    const insets = useSafeAreaInsets();
+    const navigation = useNavigation<any>();
     const { organizationId, userId, logout } = useCustomAuth();
     const [selectedSiteId, setSelectedSiteId] = useState<any>(null);
     const [searchQuery, setSearchQuery] = useState('');
     
-    const handleLogout = () => {
+    const handleLogout = async () => {
         Alert.alert(
             "Logout",
             "Are you sure you want to logout?",
             [
                 { text: "Cancel", style: "cancel" },
-                { text: "Logout", style: "destructive", onPress: () => logout() }
+                { 
+                    text: "Logout", 
+                    style: "destructive", 
+                    onPress: async () => {
+                        try {
+                            await logout();
+                        } catch (err) {
+                            console.error("Logout failed", err);
+                        }
+                    } 
+                }
             ]
         );
     };
     const [sites, setSites] = useState<any[]>([]);
+    const [regions, setRegions] = useState<any[]>([]);
+    const [selectedRegionId, setSelectedRegionId] = useState<string | null>(null);
+    const [showRegionPicker, setShowRegionPicker] = useState(false);
     const [patrolLogs, setPatrolLogs] = useState<any[]>([]);
     const [visitLogs, setVisitLogs] = useState<any[]>([]);
 
     React.useEffect(() => {
+        regionService.getRegions()
+            .then(res => setRegions(res.data || []))
+            .catch(err => console.error("Error fetching regions:", err));
+    }, []);
+
+    React.useEffect(() => {
         if (userId) {
-            siteService.getAllSites()
+            siteService.getSitesByUser(userId, selectedRegionId || undefined)
                 .then(res => setSites(res.data))
                 .catch(err => console.error("Error fetching sites:", err));
         }
-    }, [userId]);
+    }, [userId, selectedRegionId]);
 
     React.useEffect(() => {
         if (organizationId) {
@@ -57,10 +79,29 @@ export default function OfficerDashboard() {
         <SafeAreaView style={styles.container}>
             <View style={styles.header}>
                 <Text style={styles.title}>Officer Dashboard</Text>
-                <TouchableOpacity onPress={handleLogout} style={styles.logoutBtn}>
-                    <LogOut color="#ef4444" size={20} />
-                </TouchableOpacity>
+                <View style={{ flexDirection: 'row', gap: 10 }}>
+                    <TouchableOpacity 
+                        onPress={() => setShowRegionPicker(true)} 
+                        style={[styles.regionFilterBtn, selectedRegionId ? styles.regionFilterActive : {}]}
+                    >
+                        <MapPin color={selectedRegionId ? "white" : "#64748b"} size={20} />
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={handleLogout} style={styles.logoutBtn}>
+                        <LogOut color="#ef4444" size={20} />
+                    </TouchableOpacity>
+                </View>
             </View>
+
+            {selectedRegionId && (
+                <View style={styles.regionIndicator}>
+                    <Text style={styles.regionIndicatorText}>
+                        Filtering: {regions.find(r => r.regionId === selectedRegionId)?.regionName}
+                    </Text>
+                    <TouchableOpacity onPress={() => setSelectedRegionId(null)}>
+                        <X color="#3b82f6" size={14} />
+                    </TouchableOpacity>
+                </View>
+            )}
 
             <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
                 <View style={styles.searchSection}>
@@ -78,6 +119,51 @@ export default function OfficerDashboard() {
                                 <Text style={{ color: '#64748b', fontSize: 12 }}>Clear</Text>
                             </TouchableOpacity>
                         )}
+                    </View>
+                </View>
+
+                {/* Quick Actions - Match SG Dashboard */}
+                <View style={styles.actionSection}>
+                    <Text style={styles.sectionTitle}>Quick Actions</Text>
+                    <View style={styles.actionGrid}>
+                        <TouchableOpacity
+                            style={[styles.actionCard, { backgroundColor: '#1e1b4b', borderColor: '#312e81' }]}
+                            onPress={() => navigation.navigate('Enrollment')}
+                        >
+                            <View style={[styles.actionIconBox, { backgroundColor: '#3b82f6' }]}>
+                                <User color="white" size={24} />
+                            </View>
+                            <View style={styles.actionContent}>
+                                <Text style={styles.actionTitle}>Enrollment</Text>
+                                <Text style={styles.actionSub}>Face recognition setup</Text>
+                            </View>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                            style={[styles.actionCard, { backgroundColor: '#1e1b4b', borderColor: '#312e81' }]}
+                            onPress={() => navigation.navigate('MarkAttendance')}
+                        >
+                            <View style={[styles.actionIconBox, { backgroundColor: '#4338ca' }]}>
+                                <CheckCircle color="white" size={24} />
+                            </View>
+                            <View style={styles.actionContent}>
+                                <Text style={styles.actionTitle}>Attendance</Text>
+                                <Text style={styles.actionSub}>Check In/Out</Text>
+                            </View>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                            style={[styles.actionCard, { backgroundColor: '#1e1b4b', borderColor: '#312e81' }]}
+                            onPress={() => navigation.navigate('IssueReview')}
+                        >
+                            <View style={[styles.actionIconBox, { backgroundColor: '#ef4444' }]}>
+                                <ShieldAlert color="white" size={24} />
+                            </View>
+                            <View style={styles.actionContent}>
+                                <Text style={styles.actionTitle}>Issues</Text>
+                                <Text style={styles.actionSub}>Track & Resolve</Text>
+                            </View>
+                        </TouchableOpacity>
                     </View>
                 </View>
 
@@ -192,6 +278,53 @@ export default function OfficerDashboard() {
                     </View>
                 )}
             </ScrollView>
+
+            <Modal
+                visible={showRegionPicker}
+                transparent={true}
+                animationType="slide"
+                onRequestClose={() => setShowRegionPicker(false)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                        <View style={styles.modalHeader}>
+                            <Text style={styles.modalTitle}>Select Region</Text>
+                            <TouchableOpacity onPress={() => setShowRegionPicker(false)}>
+                                <Text style={styles.modalClose}>Done</Text>
+                            </TouchableOpacity>
+                        </View>
+                        <ScrollView>
+                            <TouchableOpacity
+                                style={[styles.regionOption, !selectedRegionId && styles.regionOptionSelected]}
+                                onPress={() => {
+                                    setSelectedRegionId(null);
+                                    setShowRegionPicker(false);
+                                }}
+                            >
+                                <Text style={[styles.regionOptionText, !selectedRegionId && styles.regionOptionTextSelected]}>
+                                    All Regions
+                                </Text>
+                            </TouchableOpacity>
+                            {regions.map((r) => (
+                                <TouchableOpacity
+                                    key={r.regionId}
+                                    style={[styles.regionOption, selectedRegionId === r.regionId && styles.regionOptionSelected]}
+                                    onPress={() => {
+                                        setSelectedRegionId(r.regionId);
+                                        setShowRegionPicker(false);
+                                    }}
+                                >
+                                    <Text style={[styles.regionOptionText, selectedRegionId === r.regionId && styles.regionOptionTextSelected]}>
+                                        {r.regionName}
+                                    </Text>
+                                    {selectedRegionId === r.regionId && <CheckCircle color="#3b82f6" size={20} />}
+                                </TouchableOpacity>
+                            ))}
+                        </ScrollView>
+                    </View>
+                </View>
+            </Modal>
+            <View style={{ height: insets.bottom }} />
         </SafeAreaView>
     );
 }
@@ -206,16 +339,70 @@ const styles = StyleSheet.create({
         paddingTop: 24,
         paddingBottom: 12
     },
-    title: { fontSize: 24, fontWeight: 'bold', color: 'white' },
+    title: { fontSize: 28, fontWeight: 'bold', color: 'white' },
+    regionFilterBtn: {
+        width: 44,
+        height: 44,
+        borderRadius: 14,
+        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: 'rgba(59, 130, 246, 0.2)',
+    },
     logoutBtn: {
-        width: 40,
-        height: 40,
-        borderRadius: 12,
+        width: 44,
+        height: 44,
+        borderRadius: 14,
         backgroundColor: 'rgba(239, 68, 68, 0.1)',
         justifyContent: 'center',
         alignItems: 'center',
         borderWidth: 1,
         borderColor: 'rgba(239, 68, 68, 0.2)',
+    },
+    actionSection: {
+        marginBottom: 32,
+    },
+    actionGrid: {
+        flexDirection: 'row',
+        gap: 12,
+    },
+    actionCard: {
+        flex: 1,
+        backgroundColor: '#0f172a',
+        padding: 16,
+        borderRadius: 24,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.08)',
+        alignItems: 'center',
+        gap: 12,
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+        elevation: 5,
+    },
+    actionIconBox: {
+        width: 48,
+        height: 48,
+        borderRadius: 24,
+        backgroundColor: '#3b82f6',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    actionContent: {
+        alignItems: 'center',
+    },
+    actionTitle: {
+        color: 'white',
+        fontSize: 16,
+        fontWeight: 'bold',
+    },
+    actionSub: {
+        color: '#64748b',
+        fontSize: 11,
+        marginTop: 2,
+        textAlign: 'center',
     },
     content: { padding: 24 },
     searchSection: {
@@ -381,6 +568,77 @@ const styles = StyleSheet.create({
     logInfo: { flex: 1 },
     logText: { color: 'white', fontSize: 14, fontWeight: '600' as const },
     logSubtext: { color: '#64748b', fontSize: 11, marginTop: 2 },
+    regionFilterActive: {
+        backgroundColor: '#3b82f6',
+        borderColor: '#3b82f6',
+    },
+    regionIndicator: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+        marginHorizontal: 24,
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        borderRadius: 12,
+        marginTop: 8,
+        borderWidth: 1,
+        borderColor: 'rgba(59, 130, 246, 0.2)',
+    },
+    regionIndicatorText: {
+        color: '#3b82f6',
+        fontSize: 12,
+        fontWeight: '600',
+    },
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        justifyContent: 'flex-end',
+    },
+    modalContent: {
+        backgroundColor: '#0f172a',
+        borderTopLeftRadius: 28,
+        borderTopRightRadius: 28,
+        maxHeight: '70%',
+        paddingBottom: 40,
+    },
+    modalHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        padding: 24,
+        borderBottomWidth: 1,
+        borderBottomColor: 'rgba(255, 255, 255, 0.05)',
+    },
+    modalTitle: {
+        fontSize: 20,
+        fontWeight: 'bold',
+        color: 'white',
+    },
+    modalClose: {
+        fontSize: 16,
+        color: '#3b82f6',
+        fontWeight: '600',
+    },
+    regionOption: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        padding: 20,
+        borderBottomWidth: 1,
+        borderBottomColor: 'rgba(255, 255, 255, 0.02)',
+    },
+    regionOptionSelected: {
+        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+    },
+    regionOptionText: {
+        fontSize: 16,
+        color: 'white',
+    },
+    regionOptionTextSelected: {
+        color: '#3b82f6',
+        fontWeight: 'bold',
+    },
     emptyState: { alignItems: 'center', marginTop: 100 },
     emptyTitle: { color: 'white', fontSize: 20, fontWeight: 'bold' as const, marginTop: 24, marginBottom: 8 },
     emptyText: { color: '#64748b', fontSize: 14, textAlign: 'center' },

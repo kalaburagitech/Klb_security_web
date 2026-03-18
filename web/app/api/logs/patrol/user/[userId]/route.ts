@@ -9,7 +9,9 @@ export async function GET(
 ) {
   try {
     const { userId } = await params;
+    console.log(`[API] GET /api/logs/patrol/user/${userId} - Request received`);
     const logs = await convex.query(api.logs.listPatrolLogsByUser, { userId: userId as Id<"users"> });
+    console.log(`[API] GET /api/logs/patrol/user/${userId} - Success: ${logs?.length || 0} logs found`);
     return NextResponse.json(logs);
   } catch (error) {
     console.error("[API] Logs Patrol User error:", error);

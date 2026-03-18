@@ -84,7 +84,11 @@ export const listSitesByOrg = query({
 });
 
 export const listSitesByUser = query({
-    args: { userId: v.id("users") },
+    args: { 
+        userId: v.id("users"),
+        regionId: v.optional(v.string()),
+        city: v.optional(v.string())
+    },
     handler: async (ctx, args) => {
         const user = await ctx.db.get(args.userId);
         if (!user) return [];
@@ -109,7 +113,23 @@ export const listSitesByUser = query({
         for (const id of ids) {
             try {
                 const site = await ctx.db.get(id as Id<"sites">);
-                if (site) sites.push(site);
+                if (site) {
+                    // Filter by region if regionId is provided
+                    let matchesRegion = true;
+                    if (args.regionId) {
+                        matchesRegion = site.regionId === args.regionId;
+                    }
+
+                    // Filter by city if city is provided
+                    let matchesCity = true;
+                    if (args.city) {
+                        matchesCity = site.city === args.city;
+                    }
+
+                    if (matchesRegion && matchesCity) {
+                        sites.push(site);
+                    }
+                }
             } catch (err) {
                 console.error(`[Convex] Error fetching site ${id}:`, err);
             }

@@ -3,6 +3,7 @@ import { convex } from "@/lib/convexClient";
 import { api } from "@/convex/_generated/api.js";
 
 export async function GET(req: NextRequest) {
+  console.log("[API] GET /api/enrollment - Request received");
   try {
     const { searchParams } = new URL(req.url);
     const organizationId = searchParams.get("organizationId");
@@ -15,6 +16,7 @@ export async function GET(req: NextRequest) {
     if (empId) filters.empId = empId;
 
     const enrollments = await convex.query(api.enrollment.list, filters);
+    console.log(`[API] GET /api/enrollment - Success: ${enrollments.length} enrollments found`);
     return NextResponse.json(enrollments);
   } catch (error) {
     console.error("[API] Enrollment list error:", error);
@@ -23,9 +25,11 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  console.log("[API] POST /api/enrollment - Request received");
   try {
     const body = await req.json();
     const enrollmentId = await convex.mutation(api.enrollment.create, body);
+    console.log(`[API] POST /api/enrollment - Success: Enrollment ${enrollmentId} created`);
     return NextResponse.json({ enrollmentId });
   } catch (error: any) {
     console.error("[API] Create Enrollment error:", error);

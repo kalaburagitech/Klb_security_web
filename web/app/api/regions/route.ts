@@ -3,12 +3,25 @@ import { convex } from "@/lib/convexClient";
 import { api } from "@/convex/_generated/api.js";
 
 export async function GET() {
+  console.log("[API] GET /api/regions - Request received");
   try {
     const regions = await convex.query(api.regions.list);
-    return NextResponse.json(regions);
+    console.log(`[API] GET /api/regions - Success: ${regions.length} regions found`);
+    return NextResponse.json(regions, {
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization",
+      },
+    });
   } catch (error) {
     console.error("[API] Regions error:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json({ error: "Internal server error" }, {
+      status: 500,
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+      },
+    });
   }
 }
 

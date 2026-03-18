@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Image, ActivityIndicator, Alert, Modal } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { ChevronLeft, Camera, CheckCircle, ChevronDown, RefreshCw } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
@@ -8,6 +8,7 @@ import { faceRecognitionService, regionService, enrollmentService } from '../ser
 import { useCustomAuth } from '../context/AuthContext';
 
 export default function EnrollmentScreen() {
+    const insets = useSafeAreaInsets();
     const navigation = useNavigation<any>();
     const { organizationId } = useCustomAuth();
     const [permission, requestPermission] = useCameraPermissions();
@@ -15,12 +16,14 @@ export default function EnrollmentScreen() {
 
     const [name, setName] = useState('');
     const [region, setRegion] = useState('');
+    const [city, setCity] = useState('');
     const [empId, setEmpId] = useState('');
     const [empCode, setEmpCode] = useState('');
     const [empRank, setEmpRank] = useState('');
     const [description, setDescription] = useState('');
-    const [regions, setRegions] = useState<Array<{ regionId: string; regionName: string }>>([]);
+    const [regions, setRegions] = useState<Array<{ regionId: string; regionName: string; cities?: string[] }>>([]);
     const [showRegionPicker, setShowRegionPicker] = useState(false);
+    const [showCityPicker, setShowCityPicker] = useState(false);
     
     const [capturedImages, setCapturedImages] = useState<string[]>([]);
     const [isCapturing, setIsCapturing] = useState(false);
@@ -100,8 +103,8 @@ export default function EnrollmentScreen() {
     };
 
     const handleSubmit = async () => {
-        if (!name.trim() || !region || !empId.trim() || !empRank.trim()) {
-            Alert.alert('Validation Error', 'Please fill in all required fields (Name, Region, Employee ID, Employee Rank)');
+        if (!name.trim() || !region || !city || !empId.trim() || !empRank.trim()) {
+            Alert.alert('Validation Error', 'Please fill in all required fields (Name, Region, City, Employee ID, Employee Rank)');
             return;
         }
 
@@ -131,6 +134,7 @@ export default function EnrollmentScreen() {
             // Add other fields
             formData.append('name', name);
             formData.append('region', region);
+            formData.append('city', city);
             formData.append('emp_id', empId);
             if (empCode) formData.append('emp_code', empCode);
             formData.append('emp_rank', empRank);
@@ -149,7 +153,8 @@ export default function EnrollmentScreen() {
                         empId,
                         empCode: empCode || null,
                         empRank,
-                        region: selectedRegion?.regionName || region,
+                        region: regions.find(r => r.regionId === region)?.regionName || region,
+                        city: city,
                         description: description || null,
                         faceEncodingIds: response.data.results?.map((r: any) => r.face_encoding_id) || [],
                         enrolledAt: Date.now(),
@@ -180,6 +185,7 @@ export default function EnrollmentScreen() {
                 <View style={styles.centerContainer}>
                     <Text style={styles.text}>Loading camera permissions...</Text>
                 </View>
+                <View style={{ height: insets.bottom }} />
             </SafeAreaView>
         );
     }
@@ -196,6 +202,7 @@ export default function EnrollmentScreen() {
                         <Text style={styles.buttonText}>Cancel</Text>
                     </TouchableOpacity>
                 </View>
+                <View style={{ height: insets.bottom }} />
             </SafeAreaView>
         );
     }
@@ -249,6 +256,7 @@ export default function EnrollmentScreen() {
                         )}
                     </View>
                 </View>
+                <View style={{ height: insets.bottom }} />
             </SafeAreaView>
         );
     }
@@ -292,6 +300,27 @@ export default function EnrollmentScreen() {
                     </TouchableOpacity>
                 </View>
 
+                <View style={styles.inputGroup}>
+                    <Text style={styles.label}>City *</Text>
+                    <TouchableOpacity
+                        style={styles.input}
+                        onPress={() => {
+                            if (!region) {
+                                Alert.alert('Selection Error', 'Please select a region first');
+                                return;
+                            }
+                            setShowCityPicker(true);
+                        }}
+                    >
+                        <View style={styles.regionSelector}>
+                            <Text style={[styles.regionText, !city && styles.regionPlaceholder]}>
+                                {city || 'Select city'}
+                            </Text>
+                            <ChevronDown color="#64748b" size={20} />
+                        </View>
+                    </TouchableOpacity>
+                </View>
+
                 <Modal
                     visible={showRegionPicker}
                     transparent={true}
@@ -313,6 +342,7 @@ export default function EnrollmentScreen() {
                                         style={[styles.regionOption, region === r.regionId && styles.regionOptionSelected]}
                                         onPress={() => {
                                             setRegion(r.regionId);
+                                            setCity(''); // Reset city
                                             setShowRegionPicker(false);
                                         }}
                                     >
@@ -320,6 +350,41 @@ export default function EnrollmentScreen() {
                                             {r.regionName}
                                         </Text>
                                         {region === r.regionId && <CheckCircle color="#2563eb" size={20} />}
+                                    </TouchableOpacity>
+                                ))}
+                            </ScrollView>
+                        </View>
+                    </View>
+                </Modal>
+
+                <Modal
+                    visible={showCityPicker}
+                    transparent={true}
+                    animationType="slide"
+                    onRequestClose={() => setShowCityPicker(false)}
+                >
+                    <View style={styles.modalOverlay}>
+                        <View style={styles.modalContent}>
+                            <View style={styles.modalHeader}>
+                                <Text style={styles.modalTitle}>Select City</Text>
+                                <TouchableOpacity onPress={() => setShowCityPicker(false)}>
+                                    <Text style={styles.modalClose}>Done</Text>
+                                </TouchableOpacity>
+                            </View>
+                            <ScrollView>
+                                {regions.find(r => r.regionId === region)?.cities?.map((c) => (
+                                    <TouchableOpacity
+                                        key={c}
+                                        style={[styles.regionOption, city === c && styles.regionOptionSelected]}
+                                        onPress={() => {
+                                            setCity(c);
+                                            setShowCityPicker(false);
+                                        }}
+                                    >
+                                        <Text style={[styles.regionOptionText, city === c && styles.regionOptionTextSelected]}>
+                                            {c}
+                                        </Text>
+                                        {city === c && <CheckCircle color="#2563eb" size={20} />}
                                     </TouchableOpacity>
                                 ))}
                             </ScrollView>
@@ -422,6 +487,7 @@ export default function EnrollmentScreen() {
                     )}
                 </TouchableOpacity>
             </ScrollView>
+            <View style={{ height: insets.bottom }} />
         </SafeAreaView>
     );
 }

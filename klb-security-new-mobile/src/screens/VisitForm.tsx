@@ -6,9 +6,10 @@ import * as ImagePicker from 'expo-image-picker';
 import { useCustomAuth } from '../context/AuthContext';
 import { logService } from '../services/api';
 import { uploadImage } from '../services/upload';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function VisitForm({ route, navigation }: any) {
+    const insets = useSafeAreaInsets();
     const { customUser } = useCustomAuth();
     const currentUser = customUser;
 
@@ -77,7 +78,7 @@ export default function VisitForm({ route, navigation }: any) {
                 storageId = await uploadImage(image);
             }
 
-            await createDualLog({
+            const res = await createDualLog({
                 userId: currentUser._id,
                 siteId: siteId,
                 qrCode: isManual ? "MANUAL_VISIT" : (qrCode || "QR_VISIT"),
@@ -89,6 +90,7 @@ export default function VisitForm({ route, navigation }: any) {
                 issueDetails: reportIssue ? { title: issueTitle || "Visit Issue", priority } : undefined,
             });
 
+            console.log("[VisitForm] Submit Success:", res.data);
             Alert.alert("Success", "Visit logged successfully!");
             navigation.navigate("MainTabs");
         } catch (error) {
@@ -230,6 +232,7 @@ export default function VisitForm({ route, navigation }: any) {
                     )}
                 </TouchableOpacity>
             </ScrollView>
+            <View style={{ height: insets.bottom }} />
         </SafeAreaView>
     );
 }
