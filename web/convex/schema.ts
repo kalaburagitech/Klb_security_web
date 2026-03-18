@@ -98,6 +98,7 @@ export default defineSchema({
         userId: v.id("users"),
         siteId: v.id("sites"),
         qrData: v.string(),
+        visitType: v.optional(v.string()), // e.g. "General", "Trainer", "SiteCheckDay/Night"
         imageId: v.optional(v.string()),
         remark: v.string(),
         latitude: v.number(),

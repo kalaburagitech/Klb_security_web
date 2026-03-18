@@ -16,11 +16,14 @@ export default function SiteSelection() {
     const route = useRoute<any>();    const { userId, customUser } = useCustomAuth();
     const [sites, setSites] = useState<any[]>([]);
     const [regions, setRegions] = useState<any[]>([]);
-    const [selectedRegionId, setSelectedRegionId] = useState<string | null>(null);
-    const [selectedCity, setSelectedCity] = useState<string | null>(null);
+    const { lastRegionId, lastCity, setLastSelection } = usePatrolStore();
+    const [selectedRegionId, setSelectedRegionId] = useState<string | null>(lastRegionId);
+    const [selectedCity, setSelectedCity] = useState<string | null>(lastCity);
     const [showRegionPicker, setShowRegionPicker] = useState(false);
     const [showCityPicker, setShowCityPicker] = useState(false);
-    const [step, setStep] = useState<'region' | 'city' | 'site'>('region');
+    const [step, setStep] = useState<'region' | 'city' | 'site'>(
+        lastRegionId ? (lastCity ? 'site' : 'city') : 'region'
+    );
 
     React.useEffect(() => {
         const fetchRegions = async () => {
@@ -58,14 +61,23 @@ export default function SiteSelection() {
         site.locationName.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
-    const isVisit = route.params?.isVisit;
+    const { isVisit, visitType } = route.params || {};
 
     const handleSelectSite = (site: any) => {
         setCurrentSite(site);
-        navigation.navigate('PatrolStart', { 
-            isVisit: isVisit,
-            selectedSite: site 
-        });
+        if (visitType) {
+            navigation.navigate('VisitForm', { 
+                type: visitType,
+                siteId: site._id,
+                siteName: site.name,
+                organizationId: customUser?.organizationId
+            });
+        } else {
+            navigation.navigate('PatrolStart', { 
+                isVisit: isVisit,
+                selectedSite: site 
+            });
+        }
     };
 
     return (
@@ -213,6 +225,7 @@ export default function SiteSelection() {
                                     onPress={() => {
                                         setSelectedRegionId(r.regionId);
                                         setSelectedCity(null); // Reset city when region changes
+                                        setLastSelection(r.regionId, null);
                                         setShowRegionPicker(false);
                                     }}
                                 >
@@ -248,6 +261,7 @@ export default function SiteSelection() {
                                     style={[styles.regionOption, selectedCity === city && styles.regionOptionSelected]}
                                     onPress={() => {
                                         setSelectedCity(city);
+                                        setLastSelection(selectedRegionId, city);
                                         setShowCityPicker(false);
                                     }}
                                 >

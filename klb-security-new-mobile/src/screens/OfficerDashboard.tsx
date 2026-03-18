@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Building2, User, Clock, ClipboardList, ChevronRight, MapPin, Search, LogOut, X, CheckCircle, Scan, ShieldAlert } from 'lucide-react-native';
+import { Building2, User, Clock, ClipboardList, ChevronRight, MapPin, Search, LogOut, X, CheckCircle, Scan, ShieldAlert, Plus, QrCode, GraduationCap, SunMoon } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 // import { useQuery } from 'convex/react';
 // import { api } from '../services/convex';
 import { siteService, logService, regionService } from '../services/api';
 import { useCustomAuth } from '../context/AuthContext';
+import { usePatrolStore } from '../store/usePatrolStore';
 import { TextInput, Alert, Modal } from 'react-native';
 
 export default function OfficerDashboard() {
@@ -38,10 +39,14 @@ export default function OfficerDashboard() {
     };
     const [sites, setSites] = useState<any[]>([]);
     const [regions, setRegions] = useState<any[]>([]);
-    const [selectedRegionId, setSelectedRegionId] = useState<string | null>(null);
+    const { lastRegionId, lastCity, setLastSelection } = usePatrolStore();
+    const [selectedRegionId, setSelectedRegionId] = useState<string | null>(lastRegionId);
+    const [selectedCity, setSelectedCity] = useState<string | null>(lastCity);
     const [showRegionPicker, setShowRegionPicker] = useState(false);
+    const [showCityPicker, setShowCityPicker] = useState(false);
     const [patrolLogs, setPatrolLogs] = useState<any[]>([]);
     const [visitLogs, setVisitLogs] = useState<any[]>([]);
+    const [showVisitMenu, setShowVisitMenu] = useState(false);
 
     React.useEffect(() => {
         regionService.getRegions()
@@ -50,12 +55,21 @@ export default function OfficerDashboard() {
     }, []);
 
     React.useEffect(() => {
-        if (userId) {
-            siteService.getSitesByUser(userId, selectedRegionId || undefined)
-                .then(res => setSites(res.data))
+        if (organizationId) {
+            siteService.getSitesByOrg(organizationId as string)
+                .then(res => {
+                    let filteredSites = res.data || [];
+                    if (selectedRegionId) {
+                        filteredSites = filteredSites.filter((s: any) => s.regionId === selectedRegionId);
+                    }
+                    if (selectedCity) {
+                        filteredSites = filteredSites.filter((s: any) => s.city === selectedCity);
+                    }
+                    setSites(filteredSites);
+                })
                 .catch(err => console.error("Error fetching sites:", err));
         }
-    }, [userId, selectedRegionId]);
+    }, [organizationId, selectedRegionId, selectedCity]);
 
     React.useEffect(() => {
         if (organizationId) {
@@ -69,11 +83,16 @@ export default function OfficerDashboard() {
         }
     }, [organizationId, selectedSiteId]);
 
-    const filteredVisitLogs = visitLogs?.filter(log => log.siteId === selectedSiteId);
+    const filteredPatrolLogs = patrolLogs?.filter(log => 
+        selectedSiteId ? log.siteId === selectedSiteId : sites.some(s => s._id === log.siteId)
+    );
+    const filteredVisitLogs = visitLogs?.filter(log => 
+        selectedSiteId ? log.siteId === selectedSiteId : sites.some(s => s._id === log.siteId)
+    );
 
     // Mock "Current Guard" - in a real app, this would be a specialized query
-    const currentGuard = patrolLogs?.length ? patrolLogs[0].userName : "No guard active";
-    const lastPatrol = patrolLogs?.length ? new Date(patrolLogs[0].createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "None today";
+    const currentGuard = filteredPatrolLogs?.length ? filteredPatrolLogs[0].userName : "No guard active";
+    const lastPatrol = filteredPatrolLogs?.length ? new Date(filteredPatrolLogs[0].createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "None today";
 
     return (
         <SafeAreaView style={styles.container}>
@@ -94,11 +113,29 @@ export default function OfficerDashboard() {
             </View>
 
             {selectedRegionId && (
+                <View style={[styles.regionIndicator, { marginBottom: selectedCity ? 0 : 8 }]}>
+                    <Text style={styles.regionIndicatorText}>
+                        Region: {regions.find(r => r.regionId === selectedRegionId)?.regionName}
+                    </Text>
+                    <TouchableOpacity onPress={() => {
+                        setSelectedRegionId(null);
+                        setSelectedCity(null);
+                        setLastSelection(null, null);
+                    }}>
+                        <X color="#3b82f6" size={14} />
+                    </TouchableOpacity>
+                </View>
+            )}
+
+            {selectedCity && (
                 <View style={styles.regionIndicator}>
                     <Text style={styles.regionIndicatorText}>
-                        Filtering: {regions.find(r => r.regionId === selectedRegionId)?.regionName}
+                        City: {selectedCity}
                     </Text>
-                    <TouchableOpacity onPress={() => setSelectedRegionId(null)}>
+                    <TouchableOpacity onPress={() => {
+                        setSelectedCity(null);
+                        setLastSelection(selectedRegionId, null);
+                    }}>
                         <X color="#3b82f6" size={14} />
                     </TouchableOpacity>
                 </View>
@@ -125,36 +162,36 @@ export default function OfficerDashboard() {
 
                 {/* Quick Actions - Match SG Dashboard */}
                 <View style={styles.actionSection}>
-                    <Text style={styles.sectionTitle}>Quick Actions</Text>
-                    <View style={styles.actionGrid}>
+                    <Text style={styles.sectionTitle}>Dashboard Tools</Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12 }}>
                         <TouchableOpacity
-                            style={[styles.actionCard, { backgroundColor: '#1e1b4b', borderColor: '#312e81' }]}
+                            style={[styles.actionCard, { backgroundColor: '#1e1b4b', borderColor: '#312e81', width: 140 }]}
                             onPress={() => navigation.navigate('Enrollment')}
                         >
-                            <View style={[styles.actionIconBox, { backgroundColor: '#3b82f6' }]}>
+                            <View style={[styles.actionIconBox, { backgroundColor: '#4338ca' }]}>
                                 <User color="white" size={24} />
                             </View>
                             <View style={styles.actionContent}>
                                 <Text style={styles.actionTitle}>Enrollment</Text>
-                                <Text style={styles.actionSub}>Face recognition setup</Text>
+                                <Text style={styles.actionSub}>Face setup</Text>
                             </View>
                         </TouchableOpacity>
 
                         <TouchableOpacity
-                            style={[styles.actionCard, { backgroundColor: '#1e1b4b', borderColor: '#312e81' }]}
+                            style={[styles.actionCard, { backgroundColor: '#1e1b4b', borderColor: '#312e81', width: 140 }]}
                             onPress={() => navigation.navigate('MarkAttendance')}
                         >
-                            <View style={[styles.actionIconBox, { backgroundColor: '#4338ca' }]}>
+                            <View style={[styles.actionIconBox, { backgroundColor: '#10b981' }]}>
                                 <CheckCircle color="white" size={24} />
                             </View>
                             <View style={styles.actionContent}>
                                 <Text style={styles.actionTitle}>Attendance</Text>
-                                <Text style={styles.actionSub}>Check In/Out</Text>
+                                <Text style={styles.actionSub}>In/Out</Text>
                             </View>
                         </TouchableOpacity>
 
                         <TouchableOpacity
-                            style={[styles.actionCard, { backgroundColor: '#1e1b4b', borderColor: '#312e81' }]}
+                            style={[styles.actionCard, { backgroundColor: '#1e1b4b', borderColor: '#312e81', width: 140 }]}
                             onPress={() => navigation.navigate('IssueReview')}
                         >
                             <View style={[styles.actionIconBox, { backgroundColor: '#ef4444' }]}>
@@ -162,10 +199,23 @@ export default function OfficerDashboard() {
                             </View>
                             <View style={styles.actionContent}>
                                 <Text style={styles.actionTitle}>Issues</Text>
-                                <Text style={styles.actionSub}>Track & Resolve</Text>
+                                <Text style={styles.actionSub}>Review</Text>
                             </View>
                         </TouchableOpacity>
-                    </View>
+
+                        <TouchableOpacity
+                            style={[styles.actionCard, { backgroundColor: '#1e1b4b', borderColor: '#312e81', width: 140 }]}
+                            onPress={() => setShowVisitMenu(true)}
+                        >
+                            <View style={[styles.actionIconBox, { backgroundColor: '#3b82f6' }]}>
+                                <QrCode color="white" size={24} />
+                            </View>
+                            <View style={styles.actionContent}>
+                                <Text style={styles.actionTitle}>Visits</Text>
+                                <Text style={styles.actionSub}>QR & Checks</Text>
+                            </View>
+                        </TouchableOpacity>
+                    </ScrollView>
                 </View>
 
                 {selectedSiteId ? (
@@ -211,8 +261,8 @@ export default function OfficerDashboard() {
                                 <ClipboardList color="#3b82f6" size={18} />
                                 <Text style={styles.cardTitle}>Recent Activity</Text>
                             </View>
-                            {patrolLogs && patrolLogs.length > 0 ? (
-                                patrolLogs.slice(0, 3).map((log, i) => (
+                            {filteredPatrolLogs && filteredPatrolLogs.length > 0 ? (
+                                filteredPatrolLogs.slice(0, 3).map((log, i) => (
                                     <View key={log._id} style={styles.logRow}>
                                         <View style={[styles.logDot, { backgroundColor: log.distance > 100 ? '#ef4444' : '#22c55e' }]} />
                                         <View style={styles.logInfo}>
@@ -312,7 +362,10 @@ export default function OfficerDashboard() {
                                     style={[styles.regionOption, selectedRegionId === r.regionId && styles.regionOptionSelected]}
                                     onPress={() => {
                                         setSelectedRegionId(r.regionId);
+                                        setSelectedCity(null);
+                                        setLastSelection(r.regionId, null);
                                         setShowRegionPicker(false);
+                                        setShowCityPicker(true);
                                     }}
                                 >
                                     <Text style={[styles.regionOptionText, selectedRegionId === r.regionId && styles.regionOptionTextSelected]}>
@@ -325,7 +378,140 @@ export default function OfficerDashboard() {
                     </View>
                 </View>
             </Modal>
+            <Modal
+                visible={showCityPicker}
+                transparent={true}
+                animationType="slide"
+                onRequestClose={() => setShowCityPicker(false)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                        <View style={styles.modalHeader}>
+                            <Text style={styles.modalTitle}>Select City</Text>
+                            <TouchableOpacity onPress={() => setShowCityPicker(false)}>
+                                <Text style={styles.modalClose}>Done</Text>
+                            </TouchableOpacity>
+                        </View>
+                        <ScrollView>
+                            <TouchableOpacity
+                                style={[styles.regionOption, !selectedCity && styles.regionOptionSelected]}
+                                onPress={() => {
+                                    setSelectedCity(null);
+                                    setLastSelection(selectedRegionId, null);
+                                    setShowCityPicker(false);
+                                }}
+                            >
+                                <Text style={[styles.regionOptionText, !selectedCity && styles.regionOptionTextSelected]}>
+                                    All Cities
+                                </Text>
+                            </TouchableOpacity>
+                            {regions.find(r => r.regionId === selectedRegionId)?.cities?.map((city: string) => (
+                                <TouchableOpacity
+                                    key={city}
+                                    style={[styles.regionOption, selectedCity === city && styles.regionOptionSelected]}
+                                    onPress={() => {
+                                        setSelectedCity(city);
+                                        setLastSelection(selectedRegionId, city);
+                                        setShowCityPicker(false);
+                                    }}
+                                >
+                                    <Text style={[styles.regionOptionText, selectedCity === city && styles.regionOptionTextSelected]}>
+                                        {city}
+                                    </Text>
+                                    {selectedCity === city && <CheckCircle color="#3b82f6" size={20} />}
+                                </TouchableOpacity>
+                            ))}
+                        </ScrollView>
+                    </View>
+                </View>
+            </Modal>
+            <Modal
+                visible={showVisitMenu}
+                transparent={true}
+                animationType="slide"
+                onRequestClose={() => setShowVisitMenu(false)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                        <View style={styles.modalHeader}>
+                            <View>
+                                <Text style={styles.modalTitle}>Visit Operations</Text>
+                                <Text style={styles.modalSub}>Select activity to perform</Text>
+                            </View>
+                            <TouchableOpacity onPress={() => setShowVisitMenu(false)}>
+                                <X color="#64748b" size={24} />
+                            </TouchableOpacity>
+                        </View>
+                        <View style={styles.visitOptionsGrid}>
+                            <TouchableOpacity
+                                style={styles.visitOptionCard}
+                                onPress={() => {
+                                    setShowVisitMenu(false);
+                                    navigation.navigate('SiteSelection', { isVisit: true, visitType: 'QR' });
+                                }}
+                            >
+                                <View style={[styles.visitOptionIcon, { backgroundColor: '#3b82f6' }]}>
+                                    <QrCode color="white" size={24} />
+                                </View>
+                                <Text style={styles.visitOptionText}>QR Visit</Text>
+                                <Text style={styles.visitOptionDesc}>Standard site visit</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                style={styles.visitOptionCard}
+                                onPress={() => {
+                                    setShowVisitMenu(false);
+                                    navigation.navigate('SiteSelection', { isVisit: true, visitType: 'Trainer' });
+                                }}
+                            >
+                                <View style={[styles.visitOptionIcon, { backgroundColor: '#8b5cf6' }]}>
+                                    <GraduationCap color="white" size={24} />
+                                </View>
+                                <Text style={styles.visitOptionText}>Trainer</Text>
+                                <Text style={styles.visitOptionDesc}>Activity training</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                style={styles.visitOptionCard}
+                                onPress={() => {
+                                    setShowVisitMenu(false);
+                                    navigation.navigate('SiteSelection', { isVisit: true, visitType: 'SiteCheckDay' });
+                                }}
+                            >
+                                <View style={[styles.visitOptionIcon, { backgroundColor: '#f59e0b' }]}>
+                                    <SunMoon color="white" size={24} />
+                                </View>
+                                <Text style={styles.visitOptionText}>Day Check</Text>
+                                <Text style={styles.visitOptionDesc}>Day shift audit</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                style={styles.visitOptionCard}
+                                onPress={() => {
+                                    setShowVisitMenu(false);
+                                    navigation.navigate('SiteSelection', { isVisit: true, visitType: 'SiteCheckNight' });
+                                }}
+                            >
+                                <View style={[styles.visitOptionIcon, { backgroundColor: '#1e293b' }]}>
+                                    <Clock color="white" size={24} />
+                                </View>
+                                <Text style={styles.visitOptionText}>Night Check</Text>
+                                <Text style={styles.visitOptionDesc}>Night shift audit</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
             <View style={{ height: insets.bottom }} />
+
+            {/* WhatsApp Style FAB */}
+            <TouchableOpacity 
+                style={styles.fab} 
+                onPress={() => setShowVisitMenu(true)}
+                activeOpacity={0.8}
+            >
+                <Plus color="white" size={32} />
+            </TouchableOpacity>
         </SafeAreaView>
     );
 }
@@ -650,4 +836,61 @@ const styles = StyleSheet.create({
     emptyState: { alignItems: 'center', marginTop: 100 },
     emptyTitle: { color: 'white', fontSize: 20, fontWeight: 'bold' as const, marginTop: 24, marginBottom: 8 },
     emptyText: { color: '#64748b', fontSize: 14, textAlign: 'center' },
+    modalSub: {
+        fontSize: 12,
+        color: '#64748b',
+        marginTop: 4,
+    },
+    visitOptionsGrid: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        padding: 20,
+        gap: 12,
+    },
+    visitOptionCard: {
+        width: '48%',
+        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+        padding: 20,
+        borderRadius: 20,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.08)',
+        alignItems: 'center',
+    },
+    visitOptionIcon: {
+        width: 48,
+        height: 48,
+        borderRadius: 24,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 12,
+    },
+    visitOptionText: {
+        color: 'white',
+        fontSize: 15,
+        fontWeight: 'bold',
+    },
+    visitOptionDesc: {
+        color: '#64748b',
+        fontSize: 11,
+        marginTop: 4,
+        textAlign: 'center',
+    },
+    fab: {
+        position: 'absolute',
+        bottom: 30,
+        right: 30,
+        width: 64,
+        height: 64,
+        borderRadius: 32,
+        backgroundColor: '#2563eb',
+        justifyContent: 'center',
+        alignItems: 'center',
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.4,
+        shadowRadius: 10,
+        elevation: 10,
+        borderWidth: 2,
+        borderColor: 'rgba(255, 255, 255, 0.2)',
+    },
 });

@@ -74,12 +74,26 @@ export const countAll = query({
 });
 
 export const listSitesByOrg = query({
-    args: { organizationId: v.id("organizations") },
+    args: { 
+        organizationId: v.id("organizations"),
+        regionId: v.optional(v.string()),
+        city: v.optional(v.string())
+    },
     handler: async (ctx, args) => {
-        return await ctx.db
+        let sites = await ctx.db
             .query("sites")
             .withIndex("by_org", (q) => q.eq("organizationId", args.organizationId))
             .collect();
+
+        if (args.regionId) {
+            sites = sites.filter(s => s.regionId === args.regionId);
+        }
+
+        if (args.city) {
+            sites = sites.filter(s => s.city === args.city);
+        }
+
+        return sites;
     },
 });
 
@@ -172,6 +186,8 @@ export const countByOrg = query({
     args: {
         organizationId: v.id("organizations"),
         siteId: v.optional(v.id("sites")),
+        regionId: v.optional(v.string()),
+        city: v.optional(v.string()),
     },
     handler: async (ctx, args) => {
         if (args.siteId) {
@@ -182,10 +198,18 @@ export const countByOrg = query({
             return 1;
         }
 
-        const sites = await ctx.db
+        let sites = await ctx.db
             .query("sites")
             .withIndex("by_org", (q) => q.eq("organizationId", args.organizationId))
             .collect();
+
+        if (args.regionId) {
+            sites = sites.filter(s => s.regionId === args.regionId);
+        }
+
+        if (args.city) {
+            sites = sites.filter(s => s.city === args.city);
+        }
 
         return sites.length;
     },

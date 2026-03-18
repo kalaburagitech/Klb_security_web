@@ -48,6 +48,8 @@ export default function QRScanner() {
         return R * c; // Distance in meters
     };
 
+    const isPointRecentlyScanned = usePatrolStore((state) => state.isPointRecentlyScanned);
+
     if (!permission) return <View style={styles.container} />;
 
     if (!permission.granted) {
@@ -64,6 +66,16 @@ export default function QRScanner() {
     const handleBarCodeScanned = async ({ data }: any) => {
         if (scanned) return;
         setScanned(true);
+
+        // Duplicate scan check
+        if (!mode && isPointRecentlyScanned(data)) {
+            Alert.alert(
+                "Duplicate Scan",
+                "This point was recently scanned. Please wait before scanning it again.",
+                [{ text: "OK", onPress: () => setScanned(false) }]
+            );
+            return;
+        }
 
         if (mode === 'setup') {
             if (!targetSite) {

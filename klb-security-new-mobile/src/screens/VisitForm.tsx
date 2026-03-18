@@ -6,6 +6,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useCustomAuth } from '../context/AuthContext';
 import { logService } from '../services/api';
 import { uploadImage } from '../services/upload';
+import { usePatrolStore } from '../store/usePatrolStore';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function VisitForm({ route, navigation }: any) {
@@ -13,7 +14,7 @@ export default function VisitForm({ route, navigation }: any) {
     const { customUser } = useCustomAuth();
     const currentUser = customUser;
 
-    const { siteId, siteName, qrCode, organizationId, isManual } = route.params || {};
+    const { siteId, siteName, qrCode, organizationId, isManual, type } = route.params || {};
     const [remark, setRemark] = useState('');
     const [loading, setLoading] = useState(false);
     const [location, setLocation] = useState<any>(null);
@@ -87,8 +88,14 @@ export default function VisitForm({ route, navigation }: any) {
                 longitude: location.coords.longitude,
                 organizationId: organizationId || currentUser.organizationId,
                 imageId: storageId,
+                visitType: type || (isManual ? "Manual" : "General"),
                 issueDetails: reportIssue ? { title: issueTitle || "Visit Issue", priority } : undefined,
             });
+
+            const addScannedPoint = usePatrolStore.getState().addScannedPoint;
+            if (!isManual && qrCode) {
+                addScannedPoint(qrCode);
+            }
 
             console.log("[VisitForm] Submit Success:", res.data);
             Alert.alert("Success", "Visit logged successfully!");
@@ -108,9 +115,14 @@ export default function VisitForm({ route, navigation }: any) {
                     <ChevronLeft color="white" size={24} />
                 </TouchableOpacity>
                 <View>
-                    <Text style={styles.headerLabel}>Submit Visit Log</Text>
-                    <Text style={styles.headerTitle}>{isManual ? "Manual Visit" : "Officer Visit"}</Text>
-                    <Text style={styles.siteSubtitle}>{siteName}</Text>
+                    <Text style={styles.headerLabel}>Submit {type || "Visit"}</Text>
+                    <Text style={styles.headerTitle}>
+                        {type === 'Trainer' ? 'Training Visit' : 
+                         type === 'SiteCheckDay' ? 'Day Shift Check' : 
+                         type === 'SiteCheckNight' ? 'Night Shift Check' : 
+                         isManual ? "Manual Visit" : "Officer Visit"}
+                    </Text>
+                    <Text style={styles.siteSubtitle}>{siteName || "General Area"}</Text>
                 </View>
             </View>
 

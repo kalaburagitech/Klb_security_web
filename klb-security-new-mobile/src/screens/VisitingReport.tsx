@@ -3,8 +3,10 @@ import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, Modal,
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowLeft, ClipboardList, Building2, ChevronRight, Search, MapPin } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
-import { siteService, regionService } from '../services/api';
+import { siteService, regionService, logService } from '../services/api';
+import { uploadImage } from '../services/upload';
 import { useCustomAuth } from '../context/AuthContext';
+import { usePatrolStore } from '../store/usePatrolStore';
 
 export default function VisitingReport() {
     const navigation = useNavigation<any>();
@@ -13,13 +15,16 @@ export default function VisitingReport() {
     const [searchQuery, setSearchQuery] = useState('');
     const [sites, setSites] = useState<any[]>([]);
     const [regions, setRegions] = useState<any[]>([]);
-    const [selectedRegionId, setSelectedRegionId] = useState<string | null>(null);
-    const [selectedCity, setSelectedCity] = useState<string | null>(null);
     const [showRegionPicker, setShowRegionPicker] = useState(false);
     const [showCityPicker, setShowCityPicker] = useState(false);
-    const [step, setStep] = useState<'region' | 'city' | 'site'>('region');
+    const { lastRegionId, lastCity, setLastSelection } = usePatrolStore();
+    const [selectedRegionId, setSelectedRegionId] = useState<string | null>(lastRegionId);
+    const [selectedCity, setSelectedCity] = useState<string | null>(lastCity);
+    const [step, setStep] = useState<'region' | 'city' | 'site'>(
+        lastRegionId ? (lastCity ? 'site' : 'city') : 'region'
+    );
     const [loading, setLoading] = useState(false);
-    
+
     useEffect(() => {
         regionService.getRegions()
             .then(res => setRegions(res.data || []))
@@ -49,7 +54,7 @@ export default function VisitingReport() {
     const handleSiteSelect = (site: any) => {
         navigation.navigate('PatrolStart', {
             isVisit: true,
-            selectedSite: site 
+            selectedSite: site
         });
     };
 
@@ -86,12 +91,12 @@ export default function VisitingReport() {
             ) : step === 'city' ? (
                 <View style={{ flex: 1, paddingHorizontal: 24, paddingTop: 20 }}>
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                         <Text style={styles.sectionLabel}>Select City</Text>
-                         <TouchableOpacity onPress={() => setStep('region')}>
+                        <Text style={styles.sectionLabel}>Select City</Text>
+                        <TouchableOpacity onPress={() => setStep('region')}>
                             <Text style={{ color: '#3b82f6', fontSize: 12 }}>Change Region</Text>
                         </TouchableOpacity>
                     </View>
-                   
+
                     <TouchableOpacity
                         style={styles.regionSelectorBtn}
                         onPress={() => setShowCityPicker(true)}
@@ -137,7 +142,7 @@ export default function VisitingReport() {
                                 </TouchableOpacity>
                             </View>
                         </View>
-                        
+
                         {loading ? (
                             <ActivityIndicator color="#3b82f6" size="large" style={{ marginTop: 40 }} />
                         ) : filteredSites?.length === 0 ? (
@@ -187,6 +192,7 @@ export default function VisitingReport() {
                                     onPress={() => {
                                         setSelectedRegionId(r.regionId);
                                         setSelectedCity(null); // Reset city when region changes
+                                        setLastSelection(r.regionId, null);
                                         setShowRegionPicker(false);
                                     }}
                                 >
@@ -221,6 +227,7 @@ export default function VisitingReport() {
                                     style={[styles.regionOption, selectedCity === city && styles.regionOptionSelected]}
                                     onPress={() => {
                                         setSelectedCity(city);
+                                        setLastSelection(selectedRegionId, city);
                                         setShowCityPicker(false);
                                     }}
                                 >

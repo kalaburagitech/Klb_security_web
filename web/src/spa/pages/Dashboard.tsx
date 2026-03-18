@@ -7,6 +7,10 @@ import {
   ArrowUpRight,
   Users,
   PlusCircle,
+  GraduationCap,
+  Sun,
+  Moon,
+  QrCode,
 } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { useQuery } from "convex/react";
@@ -20,9 +24,12 @@ export default function Dashboard() {
   const { user } = useUser();
   const [selectedOrgId, setSelectedOrgId] = useState<string>("");
   const [selectedSiteId, setSelectedSiteId] = useState<string>("all");
+  const [selectedRegionId, setSelectedRegionId] = useState<string>("");
+  const [selectedCity, setSelectedCity] = useState<string>("");
 
   // Fetch real data
   const currentUser = useQuery(api.users.getByClerkId, user?.id ? { clerkId: user.id } : "skip");
+  const regions = useQuery(api.regions.list);
   const organizationId = currentUser?.organizationId;
   const isOwner = currentUser?.role === "Owner";
   const orgs = useQuery(api.organizations.list);
@@ -32,23 +39,69 @@ export default function Dashboard() {
 
   const usersCount = useQuery(
     isOwner ? api.users.countAll : api.users.countByOrg,
-    isOwner ? {} : orgIdToUse ? { organizationId: orgIdToUse, siteId: siteIdToUse } : "skip"
+    (isOwner ? {} : orgIdToUse ? { 
+      organizationId: orgIdToUse, 
+      siteId: siteIdToUse,
+      regionId: selectedRegionId || undefined,
+      city: selectedCity || undefined
+    } : "skip") as any
   );
   const sitesCount = useQuery(
     isOwner ? api.sites.countAll : api.sites.countByOrg,
-    isOwner ? {} : orgIdToUse ? { organizationId: orgIdToUse } : "skip"
+    (isOwner ? {} : orgIdToUse ? { 
+      organizationId: orgIdToUse,
+      regionId: selectedRegionId || undefined,
+      city: selectedCity || undefined
+    } : "skip") as any
   );
   const patrolLogsCount = useQuery(
-    isOwner ? api.logs.countAllPatrolLogs : api.logs.countByOrg,
-    isOwner ? {} : orgIdToUse ? { organizationId: orgIdToUse, siteId: siteIdToUse } : "skip"
+    isOwner ? api.logs.countPatrolLogsByOrg : api.logs.countPatrolLogsByOrg,
+    (isOwner ? {} : orgIdToUse ? { 
+      organizationId: orgIdToUse, 
+      siteId: siteIdToUse,
+      regionId: selectedRegionId || undefined,
+      city: selectedCity || undefined
+    } : "skip") as any
   );
   const openIssuesCount = useQuery(
     isOwner ? api.logs.countAllIssues : api.logs.countIssuesByOrg,
-    isOwner ? {} : orgIdToUse ? { organizationId: orgIdToUse, siteId: siteIdToUse } : "skip"
+    (isOwner ? {} : orgIdToUse ? { 
+      organizationId: orgIdToUse, 
+      siteId: siteIdToUse,
+      regionId: selectedRegionId || undefined,
+      city: selectedCity || undefined
+    } : "skip") as any
   );
   const issuesList = useQuery(
     isOwner ? api.logs.listAllIssues : api.logs.listIssuesByOrg,
-    isOwner ? {} : orgIdToUse ? { organizationId: orgIdToUse, siteId: siteIdToUse } : "skip"
+    (isOwner ? {} : orgIdToUse ? { 
+      organizationId: orgIdToUse, 
+      siteId: siteIdToUse,
+      regionId: selectedRegionId || undefined,
+      city: selectedCity || undefined
+    } : "skip") as any
+  );
+  const visitStats = useQuery(
+    api.logs.countVisitLogsByType,
+    (orgIdToUse ? { 
+      organizationId: orgIdToUse, 
+      siteId: siteIdToUse,
+      regionId: selectedRegionId || undefined,
+      city: selectedCity || undefined
+    } : "skip") as any
+  );
+  const dailyCoverage = useQuery(
+    api.logs.getDailyOfficerCoverage,
+    (orgIdToUse ? { organizationId: orgIdToUse } : "skip") as any
+  );
+
+  const dashboardSites = useQuery(
+    api.sites.listSitesByOrg,
+    (orgIdToUse ? { 
+      organizationId: orgIdToUse,
+      regionId: selectedRegionId || undefined,
+      city: selectedCity || undefined
+    } : "skip") as any
   );
 
   const stats = [
@@ -108,6 +161,54 @@ export default function Dashboard() {
           </div>
         )}
 
+        {/* Region & City Filter Bar */}
+        <div className="flex flex-col lg:flex-row lg:items-center gap-4 bg-white/5 border border-white/10 p-4 rounded-2xl">
+          <div className="flex items-center gap-2 min-w-fit">
+            <MapPin className="w-4 h-4 text-primary" />
+            <span className="text-sm font-semibold text-muted-foreground mr-2">Region:</span>
+          </div>
+          <div className="flex-1 max-w-sm">
+            <select
+              value={selectedRegionId}
+              onChange={(e) => {
+                setSelectedRegionId(e.target.value);
+                setSelectedCity("");
+                setSelectedSiteId("all");
+              }}
+              className="w-full h-10 px-4 bg-white/5 border border-white/10 rounded-xl text-sm text-white focus:outline-none focus:ring-1 focus:ring-primary/50"
+            >
+              <option value="" className="bg-[#1a1c20]">All Regions</option>
+              {regions?.map((r: any) => (
+                <option key={r._id} value={r.regionId} className="bg-[#1a1c20]">
+                  {r.regionName} ({r.regionId})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex items-center gap-2 min-w-fit">
+            <span className="text-sm font-semibold text-muted-foreground mr-2 lg:ml-4">City:</span>
+          </div>
+          <div className="flex-1 max-w-sm">
+            <select
+              disabled={!selectedRegionId}
+              value={selectedCity}
+              onChange={(e) => {
+                setSelectedCity(e.target.value);
+                setSelectedSiteId("all");
+              }}
+              className="w-full h-10 px-4 bg-white/5 border border-white/10 rounded-xl text-sm text-white focus:outline-none focus:ring-1 focus:ring-primary/50 disabled:opacity-50"
+            >
+              <option value="" className="bg-[#1a1c20]">All Cities</option>
+              {regions?.find((r: any) => r.regionId === selectedRegionId)?.cities?.map((city: string) => (
+                <option key={city} value={city} className="bg-[#1a1c20]">
+                  {city}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
         {/* Site Filter Bar */}
         <div className="flex flex-col sm:flex-row sm:items-center gap-4 bg-white/5 border border-white/10 p-4 rounded-2xl">
           <div className="flex items-center gap-2">
@@ -120,6 +221,8 @@ export default function Dashboard() {
                 organizationId={orgIdToUse}
                 selectedSiteId={selectedSiteId}
                 onSelect={setSelectedSiteId}
+                regionId={selectedRegionId || undefined}
+                city={selectedCity || undefined}
               />
             ) : (
               <div className="h-10 bg-white/5 border border-white/10 rounded-xl animate-pulse" />
@@ -177,58 +280,226 @@ export default function Dashboard() {
           ))}
         </div>
 
-        {/* Recent Alerts & Charts */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 glass rounded-2xl border border-white/10 p-6 min-h-[400px]">
+        {/* Specialized Visits Section */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="glass p-4 rounded-2xl border border-white/10 hover:border-primary/30 transition-all flex items-center gap-4">
+            <div className="p-2 rounded-xl bg-blue-500/10 text-blue-400">
+              <GraduationCap className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Trainer Visits</p>
+              <h4 className="text-xl font-bold text-white">{visitStats?.trainer || 0}</h4>
+            </div>
+          </div>
+          <div className="glass p-4 rounded-2xl border border-white/10 hover:border-amber-400/30 transition-all flex items-center gap-4">
+            <div className="p-2 rounded-xl bg-amber-400/10 text-amber-400">
+              <Sun className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Day Checks</p>
+              <h4 className="text-xl font-bold text-white">{visitStats?.dayCheck || 0}</h4>
+            </div>
+          </div>
+          <div className="glass p-4 rounded-2xl border border-white/10 hover:border-indigo-400/30 transition-all flex items-center gap-4">
+            <div className="p-2 rounded-xl bg-indigo-400/10 text-indigo-400">
+              <Moon className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Night Checks</p>
+              <h4 className="text-xl font-bold text-white">{visitStats?.nightCheck || 0}</h4>
+            </div>
+          </div>
+          <div className="glass p-4 rounded-2xl border border-white/10 hover:border-emerald-400/30 transition-all flex items-center gap-4">
+            <div className="p-2 rounded-xl bg-emerald-400/10 text-emerald-400">
+              <QrCode className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">All Visits</p>
+              <h4 className="text-xl font-bold text-white">{visitStats?.total || 0}</h4>
+            </div>
+          </div>
+        </div>
+
+        {/* Sites Overview & Recent Alerts Grid */}
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-8 pb-8">
+          {/* Daily Site Coverage */}
+          <div className="glass p-6 rounded-3xl border border-white/10 overflow-hidden flex flex-col h-[500px]">
             <div className="flex items-center justify-between mb-6">
-              <h4 className="text-lg font-semibold text-white/90">Patrol Intensity</h4>
-              <button className="text-xs font-semibold text-primary hover:text-primary/80 flex items-center gap-1 group">
-                View Reports
-                <ArrowUpRight className="w-3.5 h-3.5 group-hover:-translate-y-0.5 group-hover:translate-x-0.5 transition-transform" />
-              </button>
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-xl bg-primary/10 text-primary">
+                  <MapPin className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-white">Daily Site Coverage</h3>
+                  <p className="text-xs text-muted-foreground">Sites visited by officers today</p>
+                </div>
+              </div>
             </div>
 
-            <div className="flex-1 flex items-center justify-center text-muted-foreground border border-dashed border-white/5 rounded-xl bg-white/[0.02]">
-              <p className="text-sm">Activity Chart Visualization</p>
+            <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
+              <div className="space-y-4">
+                {dailyCoverage?.map((item: any) => (
+                  <div key={item.userId} className="p-4 rounded-2xl bg-white/5 border border-white/5 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold">
+                          {item.userName[0]}
+                        </div>
+                        <div>
+                          <p className="text-sm font-bold text-white">{item.userName}</p>
+                          <p className="text-[10px] text-muted-foreground uppercase">{item.userRole}</p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-bold text-primary">{item.siteCount} Sites</p>
+                        <p className="text-[10px] text-muted-foreground uppercase">Covered Today</p>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {item.sites.map((site: string, idx: number) => (
+                        <span key={idx} className="px-2 py-1 rounded-lg bg-white/5 text-[10px] text-muted-foreground border border-white/5">
+                          {site}
+                        </span>
+                      ))}
+                    </div>
+                    <div className="pt-2 border-t border-white/5 flex items-center justify-between">
+                      <p className="text-[10px] text-muted-foreground">Last visit at {new Date(item.lastVisit).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                    </div>
+                  </div>
+                ))}
+                {(!dailyCoverage || dailyCoverage.length === 0) && (
+                  <div className="h-40 flex flex-col items-center justify-center text-center">
+                    <MapPin className="w-8 h-8 text-muted-foreground/30 mb-2" />
+                    <p className="text-sm text-muted-foreground">No visits recorded today</p>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
-          <div className="glass rounded-2xl border border-white/10 p-6 h-full">
-            <h4 className="text-lg font-semibold text-white/90 mb-6">Recent Alerts</h4>
-            <div className="space-y-4">
-              {issuesList && issuesList.filter((i: any) => i.status === "open").length > 0 ? (
-                issuesList
-                  .filter((i: any) => i.status === "open")
-                  .slice(0, 5)
-                  .map((issue: any) => (
-                    <div
-                      key={issue._id}
-                      className="flex gap-4 p-3 rounded-xl hover:bg-white/5 border border-transparent hover:border-white/5 transition-all cursor-pointer"
-                    >
-                      <div
-                        className={cn(
-                          "w-10 h-10 rounded-lg flex items-center justify-center shrink-0",
-                          issue.priority === "High" ? "bg-rose-500/10" : "bg-amber-500/10"
-                        )}
-                      >
-                        <AlertTriangle
-                          className={cn(
-                            "w-5 h-5",
-                            issue.priority === "High" ? "text-rose-500" : "text-amber-500"
-                          )}
-                        />
+          {/* Sites Overview */}
+          <div className="bg-white/5 border border-white/10 rounded-2xl p-6 lg:p-8">
+            <div className="flex items-center justify-between mb-8">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-emerald-400/10 rounded-xl">
+                  <MapPin className="w-5 h-5 text-emerald-400" />
+                </div>
+                <h2 className="text-xl font-bold text-white tracking-tight">Sites Overview</h2>
+              </div>
+              <span className="px-3 py-1 bg-emerald-400/10 text-emerald-400 text-xs font-medium rounded-full border border-emerald-400/20">
+                {dashboardSites?.length || 0} Total
+              </span>
+            </div>
+
+            <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
+              {!dashboardSites ? (
+                Array(3).fill(0).map((_, i) => (
+                  <div key={i} className="h-20 bg-white/5 border border-white/10 rounded-xl animate-pulse" />
+                ))
+              ) : dashboardSites.length === 0 ? (
+                <div className="text-center py-12 bg-white/5 border border-white/5 rounded-2xl">
+                  <MapPin className="w-12 h-12 text-muted-foreground/20 mx-auto mb-4" />
+                  <p className="text-muted-foreground font-medium">No sites found for this selection</p>
+                </div>
+              ) : (
+                dashboardSites.map((site: any) => (
+                  <button
+                    key={site._id}
+                    onClick={() => setSelectedSiteId(site._id)}
+                    className={cn(
+                      "w-full flex items-center justify-between p-4 rounded-xl border transition-all duration-300 group",
+                      selectedSiteId === site._id
+                        ? "bg-primary/20 border-primary shadow-[0_0_20px_rgba(59,130,246,0.1)]"
+                        : "bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20"
+                    )}
+                  >
+                    <div className="flex items-center gap-4 text-left">
+                      <div className={cn(
+                        "p-2 rounded-lg transition-colors",
+                        selectedSiteId === site._id ? "bg-primary text-white" : "bg-white/5 text-muted-foreground group-hover:text-primary"
+                      )}>
+                        <ShieldCheck className="w-5 h-5" />
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-white/90 truncate">{issue.title}</p>
-                        <p className="text-xs text-muted-foreground truncate">{issue.description}</p>
-                        <p className="text-[10px] text-muted-foreground mt-1 opacity-60">
-                          {new Date(issue.timestamp).toLocaleTimeString()}
+                      <div>
+                        <h3 className="font-semibold text-white group-hover:text-primary transition-colors line-clamp-1">
+                          {site.name}
+                        </h3>
+                        <p className="text-[10px] text-muted-foreground mt-0.5">
+                          {site.regionId}: {site.city}
                         </p>
                       </div>
                     </div>
-                  ))
+                    <ArrowUpRight className={cn(
+                      "w-4 h-4 transition-all",
+                      selectedSiteId === site._id ? "text-primary opacity-100" : "text-muted-foreground opacity-0 group-hover:opacity-100"
+                    )} />
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* Recent Alerts (Issues) */}
+          <div className="bg-white/5 border border-white/10 rounded-2xl p-6 lg:p-8">
+            <div className="flex items-center justify-between mb-8">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-rose-500/10 rounded-xl">
+                  <AlertTriangle className="w-5 h-5 text-rose-500" />
+                </div>
+                <h2 className="text-xl font-bold text-white tracking-tight">Recent Alerts</h2>
+              </div>
+              <a href="/logs" className="text-xs font-semibold text-primary hover:text-primary/80 transition-colors">
+                View All
+              </a>
+            </div>
+
+            <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
+              {!issuesList ? (
+                Array(3).fill(0).map((_, i) => (
+                  <div key={i} className="h-20 bg-white/5 border border-white/10 rounded-xl animate-pulse" />
+                ))
+              ) : issuesList.filter((i: any) => i.status === "open").length === 0 ? (
+                <div className="text-center py-12 bg-white/5 border border-white/5 rounded-2xl">
+                  <ShieldCheck className="w-12 h-12 text-emerald-400/20 mx-auto mb-4" />
+                  <p className="text-muted-foreground font-medium">All systems clear</p>
+                </div>
               ) : (
-                <div className="text-center py-12 text-muted-foreground text-sm italic">No recent alerts.</div>
+                issuesList.filter((i: any) => i.status === "open").map((issue: any) => (
+                  <div
+                    key={issue._id}
+                    className="flex flex-col gap-3 p-4 bg-white/5 border border-white/10 rounded-xl transition-all hover:bg-white/10 group"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className={cn(
+                          "px-2 py-0.5 text-[10px] font-bold rounded-full border",
+                          issue.priority === "High" ? "bg-rose-500/10 text-rose-500 border-rose-500/20" :
+                          issue.priority === "Medium" ? "bg-amber-400/10 text-amber-400 border-amber-400/20" :
+                          "bg-blue-400/10 text-blue-400 border-blue-400/20"
+                        )}>
+                          {issue.priority}
+                        </span>
+                        <span className="text-xs font-bold text-white group-hover:text-primary transition-colors line-clamp-1">
+                          {issue.title}
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-muted-foreground font-medium tabular-nums">
+                        {new Date(issue.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <div className="flex flex-col min-w-0">
+                        <p className="text-xs text-muted-foreground line-clamp-1">
+                          {issue.description}
+                        </p>
+                        <span className="text-[10px] text-primary/60 font-medium mt-1 uppercase tracking-wider">
+                          {issue.siteName}
+                        </span>
+                      </div>
+                      <TrendingUp className="w-4 h-4 text-rose-500/30 group-hover:text-rose-500 transition-colors" />
+                    </div>
+                  </div>
+                ))
               )}
             </div>
           </div>

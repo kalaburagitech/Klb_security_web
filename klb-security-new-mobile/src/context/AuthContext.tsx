@@ -64,6 +64,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 }
             }
             await AsyncStorage.removeItem('custom_user');
+            const store = require('../store/usePatrolStore').usePatrolStore;
+            store.getState().setLastSelection(null, null);
+            store.getState().clearLastScannedPoints();
             setCustomUser(null);
         } catch (e) {
             console.error('Failed to clear auth state', e);

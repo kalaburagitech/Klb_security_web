@@ -10,13 +10,17 @@ interface SearchableSitePickerProps {
     selectedSiteId: string;
     onSelect: (siteId: string) => void;
     className?: string;
+    regionId?: string;
+    city?: string;
 }
 
 export function SearchableSitePicker({
     organizationId,
     selectedSiteId,
     onSelect,
-    className
+    className,
+    regionId,
+    city
 }: SearchableSitePickerProps) {
     const [isOpen, setIsOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
@@ -35,8 +39,15 @@ export function SearchableSitePicker({
     // Debug: Log current state
     console.log("SearchableSitePicker - orgId:", organizationId, "orgSites:", orgSites?.length, "allSitesFallback:", allSitesFallback?.length, "allSites:", allSites?.length);
 
-    // Filter sites locally based on search query
+    // Filter sites locally based on search query, region, and city
     const filteredSites = (allSites || []).filter(site => {
+        // First apply region filter if present
+        if (regionId && site.regionId !== regionId) return false;
+        
+        // Then apply city filter if present
+        if (city && site.city !== city) return false;
+
+        // Finally apply search query
         if (!searchQuery.trim()) return true;
         const lower = searchQuery.toLowerCase().trim();
         return (

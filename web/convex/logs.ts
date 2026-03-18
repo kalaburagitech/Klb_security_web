@@ -140,6 +140,7 @@ export const createVisitLog = mutation({
         latitude: v.number(),
         longitude: v.number(),
         organizationId: v.id("organizations"),
+        visitType: v.optional(v.string()),
         imageId: v.optional(v.string()),
         issueDetails: v.optional(v.object({
             title: v.string(),
@@ -168,6 +169,51 @@ export const createVisitLog = mutation({
         }
 
         return logId;
+    },
+});
+
+export const countVisitLogsByType = query({
+    args: {
+        organizationId: v.id("organizations"),
+        siteId: v.optional(v.id("sites")),
+        regionId: v.optional(v.string()),
+        city: v.optional(v.string()),
+    },
+    handler: async (ctx, args) => {
+        let logs = await ctx.db
+            .query("visitLogs")
+            .withIndex("by_org", (q) => q.eq("organizationId", args.organizationId))
+            .collect();
+
+        if (args.siteId) {
+            const sId = args.siteId as any;
+            logs = logs.filter((log) => log.siteId === sId);
+        } else if (args.regionId || args.city) {
+            const sites = await ctx.db
+                .query("sites")
+                .withIndex("by_org", (q) => q.eq("organizationId", args.organizationId))
+                .collect();
+            
+            const filteredSiteIds = new Set(
+                sites.filter(s => {
+                    let matchesRegion = !args.regionId || s.regionId === args.regionId;
+                    let matchesCity = !args.city || s.city === args.city;
+                    return matchesRegion && matchesCity;
+                }).map(s => s._id)
+            );
+            
+            logs = logs.filter(log => filteredSiteIds.has(log.siteId as any));
+        }
+
+        const counts = {
+            total: logs.length,
+            trainer: logs.filter(l => (l as any).visitType === "Trainer").length,
+            dayCheck: logs.filter(l => (l as any).visitType === "SiteCheckDay").length,
+            nightCheck: logs.filter(l => (l as any).visitType === "SiteCheckNight").length,
+            general: logs.filter(l => !(l as any).visitType || (l as any).visitType === "General").length,
+        };
+
+        return counts;
     },
 });
 
@@ -295,6 +341,8 @@ export const listIssuesByOrg = query({
     args: {
         organizationId: v.id("organizations"),
         siteId: v.optional(v.id("sites")),
+        regionId: v.optional(v.string()),
+        city: v.optional(v.string()),
     },
     handler: async (ctx, args) => {
         let issues = await ctx.db
@@ -305,6 +353,22 @@ export const listIssuesByOrg = query({
 
         if (args.siteId) {
             issues = issues.filter((issue) => issue.siteId === args.siteId);
+        } else if (args.regionId || args.city) {
+            // Filter by region/city via site lookup
+            const sites = await ctx.db
+                .query("sites")
+                .withIndex("by_org", (q) => q.eq("organizationId", args.organizationId))
+                .collect();
+            
+            const filteredSiteIds = new Set(
+                sites.filter(s => {
+                    let matchesRegion = !args.regionId || s.regionId === args.regionId;
+                    let matchesCity = !args.city || s.city === args.city;
+                    return matchesRegion && matchesCity;
+                }).map(s => s._id)
+            );
+            
+            issues = issues.filter(issue => filteredSiteIds.has(issue.siteId));
         }
 
         const enrichedIssues = await Promise.all(
@@ -364,6 +428,7 @@ export const createDualLog = mutation({
         latitude: v.number(),
         longitude: v.number(),
         organizationId: v.id("organizations"),
+        visitType: v.optional(v.string()),
         issueDetails: v.optional(v.object({
             title: v.string(),
             priority: v.union(v.literal("Low"), v.literal("Medium"), v.literal("High")),
@@ -426,6 +491,7 @@ export const createDualLog = mutation({
             latitude: args.latitude,
             longitude: args.longitude,
             organizationId: args.organizationId,
+            visitType: args.visitType || "General",
             createdAt: Date.now(),
         });
 
@@ -472,9 +538,38 @@ export const countAll = query({
     },
 });
 
-export const countAllPatrolLogs = query({
-    handler: async (ctx) => {
-        const logs = await ctx.db.query("patrolLogs").collect();
+export const countPatrolLogsByOrg = query({
+    args: {
+        organizationId: v.id("organizations"),
+        siteId: v.optional(v.id("sites")),
+        regionId: v.optional(v.string()),
+        city: v.optional(v.string()),
+    },
+    handler: async (ctx, args) => {
+        let logs = await ctx.db
+            .query("patrolLogs")
+            .withIndex("by_org", (q) => q.eq("organizationId", args.organizationId))
+            .collect();
+
+        if (args.siteId) {
+            logs = logs.filter((log) => log.siteId === args.siteId);
+        } else if (args.regionId || args.city) {
+            const sites = await ctx.db
+                .query("sites")
+                .withIndex("by_org", (q) => q.eq("organizationId", args.organizationId))
+                .collect();
+            
+            const filteredSiteIds = new Set(
+                sites.filter(s => {
+                    let matchesRegion = !args.regionId || s.regionId === args.regionId;
+                    let matchesCity = !args.city || s.city === args.city;
+                    return matchesRegion && matchesCity;
+                }).map(s => s._id)
+            );
+            
+            logs = logs.filter(log => filteredSiteIds.has(log.siteId as any));
+        }
+
         return logs.length;
     },
 });
@@ -483,19 +578,36 @@ export const countIssuesByOrg = query({
     args: {
         organizationId: v.id("organizations"),
         siteId: v.optional(v.id("sites")),
+        regionId: v.optional(v.string()),
+        city: v.optional(v.string()),
     },
 
     handler: async (ctx, args) => {
-        let logs = await ctx.db
+        let issues = await ctx.db
             .query("issues")
             .withIndex("by_org", (q) => q.eq("organizationId", args.organizationId))
             .collect();
 
         if (args.siteId) {
-            logs = logs.filter((log) => log.siteId === args.siteId);
+            issues = issues.filter((issue) => issue.siteId === args.siteId);
+        } else if (args.regionId || args.city) {
+            const sites = await ctx.db
+                .query("sites")
+                .withIndex("by_org", (q) => q.eq("organizationId", args.organizationId))
+                .collect();
+            
+            const filteredSiteIds = new Set(
+                sites.filter(s => {
+                    let matchesRegion = !args.regionId || s.regionId === args.regionId;
+                    let matchesCity = !args.city || s.city === args.city;
+                    return matchesRegion && matchesCity;
+                }).map(s => s._id)
+            );
+            
+            issues = issues.filter(issue => filteredSiteIds.has(issue.siteId as any));
         }
 
-        return logs.length;
+        return issues.length;
     },
 });
 
@@ -510,6 +622,8 @@ export const countByOrg = query({
     args: {
         organizationId: v.id("organizations"),
         siteId: v.optional(v.id("sites")),
+        regionId: v.optional(v.string()),
+        city: v.optional(v.string()),
     },
 
     handler: async (ctx, args) => {
@@ -520,6 +634,21 @@ export const countByOrg = query({
 
         if (args.siteId) {
             logs = logs.filter((log) => log.siteId === args.siteId);
+        } else if (args.regionId || args.city) {
+            const sites = await ctx.db
+                .query("sites")
+                .withIndex("by_org", (q) => q.eq("organizationId", args.organizationId))
+                .collect();
+            
+            const filteredSiteIds = new Set(
+                sites.filter(s => {
+                    let matchesRegion = !args.regionId || s.regionId === args.regionId;
+                    let matchesCity = !args.city || s.city === args.city;
+                    return matchesRegion && matchesCity;
+                }).map(s => s._id)
+            );
+            
+            logs = logs.filter(log => filteredSiteIds.has(log.siteId as any));
         }
 
         return logs.length;
@@ -585,6 +714,49 @@ export const listVisitLogsByUser = query({
                 };
             })
         );
+    },
+});
+
+export const getDailyOfficerCoverage = query({
+    args: { organizationId: v.id("organizations") },
+    handler: async (ctx, args) => {
+        const startOfDay = new Date().setHours(0, 0, 0, 0);
+
+        const logs = await ctx.db
+            .query("visitLogs")
+            .withIndex("by_org", (q) => q.eq("organizationId", args.organizationId))
+            .filter((q) => q.gte(q.field("createdAt"), startOfDay))
+            .collect();
+
+        const userGroups = new Map<string, Set<string>>();
+        logs.forEach(log => {
+            if (!userGroups.has(log.userId)) {
+                userGroups.set(log.userId, new Set());
+            }
+            userGroups.get(log.userId)!.add(log.siteId);
+        });
+
+        const results = await Promise.all(
+            Array.from(userGroups.entries()).map(async ([userId, siteIds]) => {
+                const user = await ctx.db.get(userId as Id<"users">);
+                const visitedSites = await Promise.all(
+                    Array.from(siteIds).map(async (sId) => {
+                        const site = await ctx.db.get(sId as Id<"sites">);
+                        return site?.name || "Unknown Site";
+                    })
+                );
+                return {
+                    userId,
+                    userName: user?.name || "Unknown User",
+                    userRole: user?.role || "Officer",
+                    siteCount: siteIds.size,
+                    sites: visitedSites,
+                    lastVisit: Math.max(...logs.filter(l => l.userId === userId).map(l => l.createdAt)),
+                };
+            })
+        );
+
+        return results.sort((a, b) => b.lastVisit - a.lastVisit);
     },
 });
 
