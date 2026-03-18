@@ -7,7 +7,7 @@ const IS_PRODUCTION = true; // Toggle this for production builds
 const PROD_URL = 'https://klb-security-web.vercel.app/api';
 const DEV_URL = 'http://192.168.0.108:3000/api';
 
-export const API_URL = IS_PRODUCTION ? PROD_URL : DEV_URL;
+export const API_URL = IS_PRODUCTION ? DEV_URL : PROD_URL;
 
 // Face Recognition API URL
 export const FACE_RECOGNITION_API_URL = 'https://rawly-unmeditative-isaura.ngrok-free.dev/api';

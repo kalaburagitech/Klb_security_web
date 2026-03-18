@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { corsHeaders } from "../lib/cors";
+import { corsHeaders } from "./lib/cors";
 
 export function middleware(req: NextRequest) {
     const origin = req.headers.get("origin");
