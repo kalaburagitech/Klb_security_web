@@ -7,13 +7,7 @@ export async function GET() {
   try {
     const regions = await convex.query(api.regions.list);
     console.log(`[API] GET /api/regions - Success: ${regions.length} regions found`);
-    return NextResponse.json(regions, {
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type, Authorization",
-      },
-    });
+    return NextResponse.json(regions);
   } catch (error) {
     console.error("[API] Regions error:", error);
     return NextResponse.json({ error: "Internal server error" }, {
