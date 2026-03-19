@@ -86,13 +86,13 @@ export const listSitesByOrg = query({
             .collect();
 
         if (args.regionId) {
-            sites = sites.filter(s => s.regionId === args.regionId);
+            const rSearch = args.regionId.toLowerCase().trim();
+            sites = sites.filter(s => s.regionId?.toLowerCase().trim() === rSearch);
         }
-
         if (args.city) {
-            sites = sites.filter(s => s.city === args.city);
+            const cSearch = args.city.toLowerCase().trim();
+            sites = sites.filter(s => s.city?.toLowerCase().trim() === cSearch);
         }
-
         return sites;
     },
 });
@@ -125,10 +125,12 @@ export const listSitesByUser = query({
                 .collect();
 
             if (args.regionId) {
-                sites = sites.filter(s => s.regionId === args.regionId);
+                const rSearch = args.regionId.toLowerCase().trim();
+                sites = sites.filter(s => s.regionId?.toLowerCase().trim() === rSearch);
             }
             if (args.city) {
-                sites = sites.filter(s => s.city === args.city);
+                const cSearch = args.city.toLowerCase().trim();
+                sites = sites.filter(s => s.city?.toLowerCase().trim() === cSearch);
             }
             return sites;
         }
