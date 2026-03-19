@@ -7,6 +7,7 @@ import { useNavigation } from '@react-navigation/native';
 import * as Location from 'expo-location';
 import { faceRecognitionService, regionService, attendanceService } from '../services/api';
 import { useCustomAuth } from '../context/AuthContext';
+import { showError, showSuccess } from '../utils/toastUtils';
 
 export default function MarkAttendanceScreen() {
     const insets = useSafeAreaInsets();
@@ -58,7 +59,7 @@ export default function MarkAttendanceScreen() {
             setRegions(response.data || []);
         } catch (error) {
             console.error('Error fetching regions:', error);
-            Alert.alert('Error', 'Failed to load regions');
+            showError('Error', 'Failed to load regions');
         }
     };
 
@@ -124,11 +125,11 @@ export default function MarkAttendanceScreen() {
                     face_encoding_id: match.face_encoding_id,
                 });
             } else {
-                Alert.alert('No Match', 'Face not recognized. Please try again.');
+                showError('No Match', 'Face not recognized. Please try again.');
             }
         } catch (error: any) {
             console.error('Recognition error:', error);
-            Alert.alert('Error', error.response?.data?.detail || 'Failed to recognize face');
+            showError('Error', error.response?.data?.detail || 'Failed to recognize face');
         } finally {
             setLoading(false);
         }
@@ -147,7 +148,7 @@ export default function MarkAttendanceScreen() {
             }
         } catch (error) {
             console.error('Capture error:', error);
-            Alert.alert('Error', 'Failed to capture image');
+            showError('Error', 'Failed to capture image');
         }
     };
 
@@ -231,24 +232,17 @@ export default function MarkAttendanceScreen() {
                     await checkAttendanceStatus();
                 }, 800);
 
-                Alert.alert(
+                showSuccess(
                     'Success',
-                    `Successfully ${action === 'check_in' ? 'checked in' : 'checked out'}`,
-                    [
-                        {
-                            text: 'OK',
-                            onPress: () => {
-                            setTimeout(() => {
-                                navigation.navigate('MainTabs');
-                            }, 300);
-                        }
-                        }
-                    ]
+                    `Successfully ${action === 'check_in' ? 'checked in' : 'checked out'}`
                 );
+                setTimeout(() => {
+                    navigation.navigate('MainTabs');
+                }, 1500);
             }
         } catch (error: any) {
             console.error('Mark attendance error:', error);
-            Alert.alert('Error', error.response?.data?.detail || 'Failed to mark attendance');
+            showError('Error', error.response?.data?.detail || 'Failed to mark attendance');
         } finally {
             setLoading(false);
         }
@@ -386,7 +380,7 @@ export default function MarkAttendanceScreen() {
                                         if (result.granted) {
                                             setStep('camera');
                                         } else {
-                                            Alert.alert('Permission Required', 'Camera permission is needed for face recognition');
+                                            showError('Permission Required', 'Camera permission is needed for face recognition');
                                         }
                                     });
                                 } else {

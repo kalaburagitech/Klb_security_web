@@ -159,6 +159,21 @@ export default function HomeScreen() {
                     </View>
                 ) : (
                     <View style={styles.actionContainer}>
+                        {/* Attendance - For All, but primary for SG */}
+                        <TouchableOpacity
+                            style={[styles.startPatrolBar, { backgroundColor: '#064e3b', borderColor: '#065f46', marginBottom: 12 }]}
+                            onPress={() => navigation.navigate('MarkAttendance')}
+                        >
+                            <View style={[styles.startIcon, { backgroundColor: '#10b981' }]}>
+                                <CheckCircle color="white" size={isSmallScreen ? 20 : 24} />
+                            </View>
+                            <View style={styles.startPatrolContent}>
+                                <Text style={styles.startTitle} numberOfLines={1}>Mark Attendance</Text>
+                                <Text style={styles.startSub} numberOfLines={2}>Submit your daily duty check-in/out</Text>
+                            </View>
+                        </TouchableOpacity>
+
+                        {/* Enrollment */}
                         <TouchableOpacity
                             style={[styles.startPatrolBar, { backgroundColor: '#0f172a', marginBottom: 12 }]}
                             onPress={() => navigation.navigate('Enrollment')}
@@ -170,32 +185,35 @@ export default function HomeScreen() {
                                 <Text style={styles.startTitle} numberOfLines={1}>Enrollment</Text>
                                 <Text 
                                     style={styles.startSub} 
-                                    numberOfLines={3}
-                                    ellipsizeMode="tail"
-                                    allowFontScaling={false}
-                                >
-                                    {isSmallScreen ? 'Register person with face recognition' : 'Register new person with face recognition'}
-                                </Text>
-                            </View>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                            style={[styles.startPatrolBar, { backgroundColor: '#1e1b4b', borderColor: '#312e81', marginTop: 12 }]}
-                            onPress={() => setShowVisitMenu(true)}
-                        >
-                            <View style={[styles.startIcon, { backgroundColor: '#3b82f6' }]}>
-                                <QrCode color="white" size={isSmallScreen ? 20 : 24} />
-                            </View>
-                            <View style={styles.startPatrolContent}>
-                                <Text style={styles.startTitle} numberOfLines={1}>Site Visits</Text>
-                                <Text 
-                                    style={[styles.startSub, { color: '#93c5fd' }]} 
                                     numberOfLines={2}
                                     ellipsizeMode="tail"
                                 >
-                                    Day/Night Checks & Trainer Visits
+                                    Register person with face recognition
                                 </Text>
                             </View>
                         </TouchableOpacity>
+
+                        {/* Site Visits - Only for Administrative roles */}
+                        {isAdministrativeRole(customUser?.role) && (
+                            <TouchableOpacity
+                                style={[styles.startPatrolBar, { backgroundColor: '#1e1b4b', borderColor: '#312e81', marginTop: 0 }]}
+                                onPress={() => setShowVisitMenu(true)}
+                            >
+                                <View style={[styles.startIcon, { backgroundColor: '#3b82f6' }]}>
+                                    <QrCode color="white" size={isSmallScreen ? 20 : 24} />
+                                </View>
+                                <View style={styles.startPatrolContent}>
+                                    <Text style={styles.startTitle} numberOfLines={1}>Site Visits</Text>
+                                    <Text 
+                                        style={[styles.startSub, { color: '#93c5fd' }]} 
+                                        numberOfLines={2}
+                                        ellipsizeMode="tail"
+                                    >
+                                        Day/Night Checks & Trainer Visits
+                                    </Text>
+                                </View>
+                            </TouchableOpacity>
+                        )}
                     </View>
                 )}
 
@@ -218,26 +236,6 @@ export default function HomeScreen() {
                     </View>
                 </View>
 
-                {/* Sites List - Only for non-Administrative roles (Guards) */}
-                {!isAdministrativeRole(customUser?.role) && (
-                    <>
-                        <View style={{ marginBottom: 16 }}>
-                            <Text style={styles.sectionTitle}>Operations</Text>
-                            <TouchableOpacity 
-                                style={[styles.startPatrolBar, { backgroundColor: '#0f172a' }]}
-                                onPress={() => navigation.navigate('SiteSelection')}
-                            >
-                                <View style={[styles.startIcon, { backgroundColor: '#10b981' }]}>
-                                    <Search color="white" size={isSmallScreen ? 20 : 24} />
-                                </View>
-                                <View style={styles.startPatrolContent}>
-                                    <Text style={styles.startTitle} numberOfLines={1}>Find Site & Start Patrol</Text>
-                                    <Text style={styles.startSub} numberOfLines={2}>Search all sites to begin your shift</Text>
-                                </View>
-                            </TouchableOpacity>
-                        </View>
-                    </>
-                )}
             </ScrollView>
 
             <Modal

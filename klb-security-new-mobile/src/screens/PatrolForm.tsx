@@ -11,6 +11,7 @@ import { logService } from '../services/api';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { useCustomAuth } from '../context/AuthContext';
 import { uploadImage } from '../services/upload';
+import { showError, showSuccess } from '../utils/toastUtils';
 
 export default function PatrolForm() {
     const insets = useSafeAreaInsets();
@@ -112,7 +113,7 @@ export default function PatrolForm() {
             console.log("[PatrolForm] Image uploaded immediately:", sid);
         } catch (err) {
             console.error("[PatrolForm] Immediate upload failed:", err);
-            Alert.alert("Upload Failed", "Could not upload the photo proof. Please try again.");
+            showError("Upload Failed", "Could not upload the photo proof. Please try again.");
             setImage(null);
         } finally {
             setUploadingImage(false);
@@ -121,7 +122,7 @@ export default function PatrolForm() {
     const pickImage = async () => {
         const { status } = await ImagePicker.requestCameraPermissionsAsync();
         if (status !== 'granted') {
-            Alert.alert("Camera Permission", "Camera permission is required to take a photo.");
+            showError("Camera Permission", "Camera permission is required to take a photo.");
             return;
         }
 
@@ -139,7 +140,7 @@ export default function PatrolForm() {
             }
         } catch (err) {
             console.error("Camera error:", err);
-            Alert.alert("Camera Error", "Failed to open camera or capture photo.");
+            showError("Camera Error", "Failed to open camera or capture photo.");
         }
     };
 
@@ -147,11 +148,11 @@ export default function PatrolForm() {
 
     const handleSubmit = async () => {
         if (!canSubmit) {
-            Alert.alert("Permission Denied", "You must be within 100m of the point to submit.");
+            showError("Permission Denied", "You must be within 100m of the point to submit.");
             return;
         }
         if (!comment && !image) {
-            Alert.alert("Evidence Required", "Please provide a comment or a photo.");
+            showError("Evidence Required", "Please provide a comment or a photo.");
             return;
         }
 
@@ -194,7 +195,7 @@ export default function PatrolForm() {
                 });
             }
 
-            Alert.alert("Success", "Patrol point logged successfully!");
+            showSuccess("Success", "Patrol point logged successfully!");
             navigation.navigate('MainTabs');
         } catch (error: any) {
             const status = error?.response?.status;

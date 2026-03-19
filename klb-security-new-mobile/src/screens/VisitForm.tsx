@@ -8,6 +8,7 @@ import { logService } from '../services/api';
 import { uploadImage } from '../services/upload';
 import { usePatrolStore } from '../store/usePatrolStore';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { showError, showSuccess } from '../utils/toastUtils';
 
 export default function VisitForm({ route, navigation }: any) {
     const insets = useSafeAreaInsets();
@@ -65,7 +66,7 @@ export default function VisitForm({ route, navigation }: any) {
             console.log("[VisitForm] Image uploaded immediately:", sid);
         } catch (err) {
             console.error("[VisitForm] Immediate upload failed:", err);
-            Alert.alert("Upload Failed", "Could not upload the photo proof. Please try again.");
+            showError("Upload Failed", "Could not upload the photo proof. Please try again.");
             setImage(null);
         } finally {
             setUploadingImage(false);
@@ -121,19 +122,19 @@ export default function VisitForm({ route, navigation }: any) {
 
     const handleSubmit = async () => {
         if (!location) {
-            Alert.alert("Error", "Waiting for GPS signal...");
+            showError("Error", "Waiting for GPS signal...");
             return;
         }
 
         if (!remark && !image) {
-            Alert.alert("Evidence Required", "Please provide notes or a photo.");
+            showError("Evidence Required", "Please provide notes or a photo.");
             return;
         }
 
         setLoading(true);
         try {
             if (!currentUser?._id) {
-                Alert.alert("Error", "User not found. Please log in again.");
+                showError("Error", "User not found. Please log in again.");
                 return;
             }
 
@@ -161,10 +162,10 @@ export default function VisitForm({ route, navigation }: any) {
             }
 
             console.log("[VisitForm] Submit Success:", res.data);
-            Alert.alert("Success", "Visit logged successfully!");
+            showSuccess("Success", "Visit logged successfully!");
             navigation.navigate("MainTabs");
         } catch (error) {
-            Alert.alert("Error", "Failed to submit visit log.");
+            showError("Error", "Failed to submit visit log.");
             console.error(error);
         } finally {
             setLoading(false);

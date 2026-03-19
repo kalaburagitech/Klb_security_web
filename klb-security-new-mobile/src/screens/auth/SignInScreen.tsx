@@ -5,6 +5,7 @@ import { Shield, ChevronRight } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useCustomAuth } from '../../context/AuthContext';
 import { authService } from '../../services/api';
+import { showError, showSuccess } from '../../utils/toastUtils';
 
 export default function SignInScreen() {
     const insets = useSafeAreaInsets();
@@ -18,7 +19,7 @@ export default function SignInScreen() {
 
     const onSendOtp = async () => {
         if (!mobileNumber || mobileNumber.length < 10) {
-            Alert.alert("Invalid Input", "Please enter a valid mobile number.");
+            showError("Invalid Input", "Please enter a valid mobile number.");
             return;
         }
 
@@ -34,14 +35,14 @@ export default function SignInScreen() {
                 if (response.data.otp) {
                     setOtp(response.data.otp);
                 }
-                Alert.alert("OTP Sent", "A 6-digit code has been sent to your number.");
+                showSuccess("OTP Sent", "A 6-digit code has been sent to your number.");
             } else {
                 console.error("[SignIn] Server returned success:false or malformed response");
-                Alert.alert("Error", "Server failed to process OTP request. Please try again.");
+                showError("Error", "Server failed to process OTP request. Please try again.");
             }
         } catch (err: any) {
             console.error(err);
-            Alert.alert("Error", err.response?.data?.error || "Failed to send OTP");
+            showError("Error", err.response?.data?.error || "Failed to send OTP");
         } finally {
             setLoading(false);
         }
@@ -50,7 +51,7 @@ export default function SignInScreen() {
     const onVerifyOtp = async (codeOverride?: string) => {
         const codeToVerify = codeOverride || otp;
         if (!codeToVerify || codeToVerify.length !== 6) {
-            if (!codeOverride) Alert.alert("Invalid OTP", "Please enter the 6-digit code.");
+            if (!codeOverride) showError("Invalid OTP", "Please enter the 6-digit code.");
             return;
         }
 
@@ -65,11 +66,11 @@ export default function SignInScreen() {
                 await login(response.data.user);
             } else {
                 console.error("[SignIn] Verification failed or malformed response");
-                Alert.alert("Verification Failed", response.data?.error || "Invalid OTP");
+                showError("Verification Failed", response.data?.error || "Invalid OTP");
             }
         } catch (err: any) {
             console.error(err);
-            Alert.alert("Verification Failed", err.response?.data?.error || "Invalid OTP");
+            showError("Verification Failed", err.response?.data?.error || "Invalid OTP");
         } finally {
             setLoading(false);
         }

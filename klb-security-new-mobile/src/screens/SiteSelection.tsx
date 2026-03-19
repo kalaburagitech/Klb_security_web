@@ -99,8 +99,8 @@ export default function SiteSelection() {
                     <ArrowLeft color="white" size={24} />
                 </TouchableOpacity>
                 <View>
-                    <Text style={styles.title}>Select Site</Text>
-                    <Text style={styles.subTitle}>Choose a location to start patrol</Text>
+                    <Text style={styles.title}>{isVisit ? (visitType === 'setup' ? 'QR Tool Setup' : visitType + ' Visit') : 'Select Site'}</Text>
+                    <Text style={styles.subTitle}>{isVisit ? 'Choose a site for ' + (visitType === 'setup' ? 'QR configuration' : 'inspection') : 'Choose a location to start patrol'}</Text>
                 </View>
             </View>
 
@@ -114,7 +114,7 @@ export default function SiteSelection() {
                         <Text style={[styles.regionBtnText, !selectedRegionId && { color: '#64748b' }]}>
                             {selectedRegionId ? regions.find(r => r.regionId === selectedRegionId)?.regionName : "Choose a region..."}
                         </Text>
-                        <ChevronRight color="#64748b" size={20} />
+                        <ChevronRight color="#64748b" size={20} style={{ transform: [{ rotate: showRegionPicker ? '90deg' : '0deg' }] }} />
                     </TouchableOpacity>
 
                     <TouchableOpacity
