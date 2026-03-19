@@ -22,9 +22,7 @@ export default function HistoryScreen() {
     
     useEffect(() => {
         if (organizationId && userId) {
-            const fetchPromise = isAdmin 
-                ? siteService.getSitesByOrg(organizationId)
-                : siteService.getSitesByUser(userId);
+            const fetchPromise = siteService.getSitesByUser(userId);
 
             fetchPromise
                 .then(res => setAllSites(res.data || []))

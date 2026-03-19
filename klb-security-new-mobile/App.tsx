@@ -11,6 +11,9 @@ import { AuthProvider } from './src/context/AuthContext';
 // Initialize Convex Client
 // const convex = new ConvexReactClient(CONVEX_URL);
 
+import Toast from 'react-native-toast-message';
+import { toastConfig } from './src/utils/toastUtils';
+
 export default function App() {
   return (
     <AuthProvider>
@@ -20,6 +23,7 @@ export default function App() {
           <RootNavigator />
         </NavigationContainer>
       </View>
+      <Toast config={toastConfig} />
     </AuthProvider>
   );
 }

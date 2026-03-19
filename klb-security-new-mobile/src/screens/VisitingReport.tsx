@@ -36,9 +36,7 @@ export default function VisitingReport() {
     useEffect(() => {
         if (userId && step === 'site') {
             setLoading(true);
-            const fetchPromise = (canSelectAll && organizationId)
-                ? siteService.getSitesByOrg(organizationId)
-                : siteService.getSitesByUser(userId, selectedRegionId || undefined, selectedCity || undefined);
+            const fetchPromise = siteService.getSitesByUser(userId, selectedRegionId || undefined, selectedCity || undefined);
 
             fetchPromise
                 .then(res => {

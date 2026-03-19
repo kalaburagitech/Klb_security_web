@@ -23,9 +23,7 @@ export default function QRManagement() {
     
     React.useEffect(() => {
         if (userId && organizationId) {
-            const fetchPromise = isAdmin
-                ? siteService.getSitesByOrg(organizationId)
-                : siteService.getSitesByUser(userId);
+            const fetchPromise = siteService.getSitesByUser(userId);
 
             fetchPromise
                 .then(res => setSites(res.data || []))

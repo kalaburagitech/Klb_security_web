@@ -42,11 +42,8 @@ export default function SiteSelection() {
         if (userId && step === 'site') {
             const fetchSites = async () => {
                 try {
-                    const useAllSites = canSelectAllSitesForVisits(customUser?.role);
-
-                    const response = useAllSites && customUser?.organizationId
-                        ? await siteService.getSitesByOrg(customUser.organizationId, selectedRegionId || undefined, selectedCity || undefined)
-                        : await siteService.getSitesByUser(userId, selectedRegionId || undefined, selectedCity || undefined);
+                    // Backend handles role-based site listing: listSitesByUser returns all sites for Admins
+                    const response = await siteService.getSitesByUser(userId, selectedRegionId || undefined, selectedCity || undefined);
                     setSites(response.data);
                 } catch (error) {
                     console.error("Error fetching sites:", error);

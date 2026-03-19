@@ -107,6 +107,25 @@ export const listSitesByUser = query({
         const user = await ctx.db.get(args.userId);
         if (!user) return [];
 
+        const adminRoles = ["Owner", "Officer", "Manager", "Deployment Manager", "SO", "Security Officer", "Admin"];
+        const isAdministrative = adminRoles.includes(user.role as string);
+
+        if (isAdministrative) {
+            console.log(`[Convex] User ${args.userId} is administrative (${user.role}). Fetching all organization sites.`);
+            let sites = await ctx.db
+                .query("sites")
+                .withIndex("by_org", (q) => q.eq("organizationId", user.organizationId))
+                .collect();
+
+            if (args.regionId) {
+                sites = sites.filter(s => s.regionId === args.regionId);
+            }
+            if (args.city) {
+                sites = sites.filter(s => s.city === args.city);
+            }
+            return sites;
+        }
+
         const ids = new Set<string>();
         if ((user as any).siteId) {
             const sid = (user as any).siteId.toString();
