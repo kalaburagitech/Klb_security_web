@@ -19,6 +19,8 @@ export default function VisitForm({ route, navigation }: any) {
     const [loading, setLoading] = useState(false);
     const [location, setLocation] = useState<any>(null);
     const [image, setImage] = useState<string | null>(null);
+    const [storageIdState, setStorageIdState] = useState<string | null>(null);
+    const [uploadingImage, setUploadingImage] = useState(false);
     const [reportIssue, setReportIssue] = useState(false);
     const [issueTitle, setIssueTitle] = useState('');
     const [priority, setPriority] = useState<'Low' | 'Medium' | 'High'>('Medium');
@@ -35,7 +37,40 @@ export default function VisitForm({ route, navigation }: any) {
             let loc = await Location.getCurrentPositionAsync({});
             setLocation(loc);
         })();
+
+        // Recovery for Android activity death during camera capture
+        const checkPendingResult = async () => {
+            try {
+                const result: any = await ImagePicker.getPendingResultAsync();
+                if (result) {
+                    const finalResult = Array.isArray(result) ? result[0] : result;
+                    if (finalResult && !finalResult.canceled && finalResult.assets && finalResult.assets.length > 0) {
+                        const uri = finalResult.assets[0].uri;
+                        setImage(uri);
+                        processImageUpload(uri);
+                    }
+                }
+            } catch (err) {
+                console.error("[VisitForm] Error checking pending camera result:", err);
+            }
+        };
+        checkPendingResult();
     }, []);
+
+    const processImageUpload = async (uri: string) => {
+        setUploadingImage(true);
+        try {
+            const sid = await uploadImage(uri);
+            setStorageIdState(sid);
+            console.log("[VisitForm] Image uploaded immediately:", sid);
+        } catch (err) {
+            console.error("[VisitForm] Immediate upload failed:", err);
+            Alert.alert("Upload Failed", "Could not upload the photo proof. Please try again.");
+            setImage(null);
+        } finally {
+            setUploadingImage(false);
+        }
+    };
 
     const handleImageCapture = async () => {
         const { status } = await ImagePicker.requestCameraPermissionsAsync();
@@ -52,10 +87,12 @@ export default function VisitForm({ route, navigation }: any) {
             });
 
             if (!result.canceled) {
-                // Small delay to allow camera activity to finish
+                const uri = result.assets[0].uri;
+                setImage(uri);
+                // Larger delay (300ms) to ensure Android camera activity fully completes before heavy upload
                 setTimeout(() => {
-                    setImage(result.assets[0].uri);
-                }, 100);
+                    processImageUpload(uri);
+                }, 300);
             }
         } catch (err) {
             console.error("Camera error:", err);
@@ -100,8 +137,8 @@ export default function VisitForm({ route, navigation }: any) {
                 return;
             }
 
-            let storageId = undefined;
-            if (image) {
+            let storageId = storageIdState;
+            if (image && !storageId) {
                 storageId = await uploadImage(image);
             }
 
@@ -154,13 +191,24 @@ export default function VisitForm({ route, navigation }: any) {
 
             <ScrollView contentContainerStyle={styles.scrollContent}>
                 <View style={styles.card}>
-                    <TouchableOpacity onPress={handleImageCapture} style={styles.imageContainer}>
-                        {image ? (
+                    <TouchableOpacity 
+                        onPress={handleImageCapture} 
+                        style={styles.imageContainer}
+                        disabled={uploadingImage}
+                    >
+                        {uploadingImage ? (
+                            <View style={styles.placeholderWrapper}>
+                                <ActivityIndicator color="#3b82f6" />
+                                <Text style={[styles.placeholderText, { marginTop: 8 }]}>Uploading Proof...</Text>
+                            </View>
+                        ) : image ? (
                             <View style={styles.previewWrapper}>
                                 <Image source={{ uri: image }} style={styles.previewImage} />
-                                <View style={styles.changeLabel}>
-                                    <Text style={styles.changeText}>Change</Text>
-                                </View>
+                                {storageIdState && (
+                                    <View style={styles.checkBadge}>
+                                        <Check color="white" size={16} />
+                                    </View>
+                                )}
                             </View>
                         ) : (
                             <View style={styles.placeholderWrapper}>

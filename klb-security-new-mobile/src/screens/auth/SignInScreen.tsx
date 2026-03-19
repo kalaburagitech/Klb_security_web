@@ -168,14 +168,7 @@ export default function SignInScreen() {
                                 </TouchableOpacity>
                             )}
 
-                            <TouchableOpacity
-                                onPress={() => navigation.navigate("SignUp")}
-                                style={{ marginTop: 24, alignSelf: 'center' }}
-                            >
-                                <Text style={{ color: '#64748b', fontSize: 14 }}>
-                                    Don't have an account? <Text style={{ color: '#2563eb', fontWeight: 'bold' }}>Register Here</Text>
-                                </Text>
-                            </TouchableOpacity>
+
                         </View>
 
                         <Text style={{ color: '#475569', fontSize: 10, textAlign: 'center', marginTop: 48, fontWeight: 'bold', letterSpacing: 2, textTransform: 'uppercase' }}>

@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, ActivityIndicator, Image } from 'react-native';
 import { useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowLeft, ShieldAlert, Clock, MapPin, AlertCircle, CheckCircle2, Filter, ChevronRight } from 'lucide-react-native';
@@ -122,6 +122,16 @@ export default function IssueReview() {
                         <Text style={styles.issueTitle}>{issue.title}</Text>
                         <Text style={styles.issueDesc}>{issue.description}</Text>
 
+                        {issue.imageId && (
+                            <View style={styles.imageContainer}>
+                                <Image 
+                                    source={{ uri: `https://gallant-grasshopper-633.convex.cloud/api/storage/${issue.imageId}` }}
+                                    style={styles.issueImage}
+                                    resizeMode="cover"
+                                />
+                            </View>
+                        )}
+
                         <View style={styles.cardFooter}>
                             <View style={styles.metaInfo}>
                                 <Clock size={14} color="#64748b" />
@@ -215,5 +225,17 @@ const styles = StyleSheet.create({
     resolveBtnText: { color: 'white', fontWeight: 'bold', fontSize: 14 },
     emptyState: { alignItems: 'center', marginTop: 100 },
     emptyTitle: { color: 'white', fontSize: 20, fontWeight: 'bold', marginTop: 24, marginBottom: 8 },
-    emptyText: { color: '#64748b', fontSize: 14, textAlign: 'center' }
+    emptyText: { color: '#64748b', fontSize: 14, textAlign: 'center' },
+    imageContainer: {
+        width: '100%',
+        height: 150,
+        borderRadius: 16,
+        overflow: 'hidden',
+        marginBottom: 20,
+        backgroundColor: 'rgba(255,255,255,0.02)',
+    },
+    issueImage: {
+        width: '100%',
+        height: '100%',
+    },
 });

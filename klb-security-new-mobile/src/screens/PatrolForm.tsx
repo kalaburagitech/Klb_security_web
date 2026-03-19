@@ -4,7 +4,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 // import { useQuery, useMutation } from 'convex/react';
 import { usePatrolStore } from '../store/usePatrolStore';
 import * as Location from 'expo-location';
-import { Shield, Camera, MapPin, MessageSquare, CheckCircle2, Trash2, AlertTriangle } from 'lucide-react-native';
+import { Shield, Camera, MapPin, MessageSquare, CheckCircle2, Trash2, AlertTriangle, Check } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 // import { api } from '../services/convex';
 import { logService } from '../services/api';
@@ -47,6 +47,8 @@ export default function PatrolForm() {
 
     const [comment, setComment] = useState('');
     const [image, setImage] = useState<string | null>(null);
+    const [storageIdState, setStorageIdState] = useState<string | null>(null);
+    const [uploadingImage, setUploadingImage] = useState(false);
     const [loading, setLoading] = useState(false);
     const [hasIssue, setHasIssue] = useState(false);
     const [issuePriority, setIssuePriority] = useState<'Low' | 'Medium' | 'High'>('Medium');
@@ -83,11 +85,39 @@ export default function PatrolForm() {
             }
         })();
 
-        return () => {
-            subscription?.remove();
+        // Recovery for Android activity death during camera capture
+        const checkPendingResult = async () => {
+            try {
+                const result: any = await ImagePicker.getPendingResultAsync();
+                if (result) {
+                    const finalResult = Array.isArray(result) ? result[0] : result;
+                    if (finalResult && !finalResult.canceled && finalResult.assets && finalResult.assets.length > 0) {
+                        const uri = finalResult.assets[0].uri;
+                        setImage(uri);
+                        processImageUpload(uri);
+                    }
+                }
+            } catch (err) {
+                console.error("[PatrolForm] Error checking pending camera result:", err);
+            }
         };
+        checkPendingResult();
     }, []);
 
+    const processImageUpload = async (uri: string) => {
+        setUploadingImage(true);
+        try {
+            const sid = await uploadImage(uri);
+            setStorageIdState(sid);
+            console.log("[PatrolForm] Image uploaded immediately:", sid);
+        } catch (err) {
+            console.error("[PatrolForm] Immediate upload failed:", err);
+            Alert.alert("Upload Failed", "Could not upload the photo proof. Please try again.");
+            setImage(null);
+        } finally {
+            setUploadingImage(false);
+        }
+    };
     const pickImage = async () => {
         const { status } = await ImagePicker.requestCameraPermissionsAsync();
         if (status !== 'granted') {
@@ -97,16 +127,15 @@ export default function PatrolForm() {
 
         try {
             const result = await ImagePicker.launchCameraAsync({
-                mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                mediaTypes: ['images'],
                 allowsEditing: false,
                 quality: 0.3,
             });
 
             if (!result.canceled) {
-                // Small delay to allow camera activity to finish before state update
-                setTimeout(() => {
-                    setImage(result.assets[0].uri);
-                }, 100);
+                const uri = result.assets[0].uri;
+                setImage(uri);
+                processImageUpload(uri);
             }
         } catch (err) {
             console.error("Camera error:", err);
@@ -128,8 +157,8 @@ export default function PatrolForm() {
 
         setLoading(true);
         try {
-            let storageId = undefined;
-            if (image) {
+            let storageId = storageIdState;
+            if (image && !storageId) {
                 try {
                     storageId = await uploadImage(image);
                 } catch (uploadErr: any) {
@@ -229,12 +258,26 @@ export default function PatrolForm() {
                 <Text style={styles.sectionLabel}>Evidence Photo</Text>
                 <View style={styles.imageSection}>
                     {image ? (
-                        <View style={styles.imagePreviewContainer}>
-                            <Image source={{ uri: image }} style={styles.imagePreview} />
-                            <TouchableOpacity style={styles.removeImageBtn} onPress={() => setImage(null)}>
-                                <Trash2 color="white" size={20} />
-                            </TouchableOpacity>
-                        </View>
+                        <TouchableOpacity 
+                            onPress={pickImage} 
+                            style={styles.imagePreviewContainer}
+                            disabled={uploadingImage}
+                        >
+                            {uploadingImage ? (
+                                <ActivityIndicator color="#3b82f6" />
+                            ) : image ? (
+                                <View style={{ position: 'relative' }}>
+                                    <Image source={{ uri: image }} style={styles.imagePreview} />
+                                    {storageIdState && (
+                                        <View style={styles.checkBadge}>
+                                            <Check color="white" size={14} />
+                                        </View>
+                                    )}
+                                </View>
+                            ) : (
+                                <Camera color="#64748b" size={24} />
+                            )}
+                        </TouchableOpacity>
                     ) : (
                         <TouchableOpacity style={styles.captureBtn} onPress={pickImage}>
                             <Camera color="#3b82f6" size={40} />
@@ -437,10 +480,27 @@ const styles = StyleSheet.create({
         borderRadius: 24,
         overflow: 'hidden',
         position: 'relative',
+        backgroundColor: '#0f172a', // Added background for when image is null but still a touchable area
+        justifyContent: 'center',
+        alignItems: 'center',
     },
     imagePreview: {
         width: '100%',
         height: '100%',
+    },
+    checkBadge: {
+        position: 'absolute',
+        top: 8,
+        right: 8,
+        width: 24,
+        height: 24,
+        borderRadius: 12,
+        backgroundColor: '#10b981',
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderWidth: 2,
+        borderColor: '#0f172a',
+        zIndex: 10,
     },
     removeImageBtn: {
         position: 'absolute',
