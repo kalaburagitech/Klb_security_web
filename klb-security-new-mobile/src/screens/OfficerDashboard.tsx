@@ -61,22 +61,18 @@ export default function OfficerDashboard() {
 
     React.useEffect(() => {
         if (organizationId && userId) {
-            const fetchPromise = isAdmin
-                ? siteService.getSitesByOrg(organizationId as string)
-                : siteService.getSitesByUser(userId as string);
+            const fetchPromise = isAdmin 
+                ? siteService.getSitesByOrg(organizationId as string, selectedRegionId || undefined, selectedCity || undefined)
+                : siteService.getSitesByUser(userId as string, selectedRegionId || undefined, selectedCity || undefined);
 
             fetchPromise
                 .then(res => {
-                    let filteredSites = res.data || [];
-                    if (selectedRegionId) {
-                        filteredSites = filteredSites.filter((s: any) => s.regionId === selectedRegionId);
-                    }
-                    if (selectedCity) {
-                        filteredSites = filteredSites.filter((s: any) => s.city === selectedCity);
-                    }
-                    setSites(filteredSites);
+                    setSites(res.data || []);
                 })
-                .catch(err => console.error("Error fetching sites:", err));
+                .catch(err => {
+                    console.error("Error fetching sites:", err);
+                    setSites([]);
+                });
         }
     }, [organizationId, userId, isAdmin, selectedRegionId, selectedCity]);
 

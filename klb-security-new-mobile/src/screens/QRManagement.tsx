@@ -29,7 +29,10 @@ export default function QRManagement() {
 
             fetchPromise
                 .then(res => setSites(res.data || []))
-                .catch(err => console.error("Error fetching sites:", err));
+                .catch(err => {
+                    console.error("Error fetching sites:", err);
+                    setSites([]);
+                });
         }
     }, [userId, organizationId, isAdmin]);
     

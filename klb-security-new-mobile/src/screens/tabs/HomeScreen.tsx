@@ -221,44 +221,21 @@ export default function HomeScreen() {
                 {/* Sites List - Only for non-Administrative roles (Guards) */}
                 {!isAdministrativeRole(customUser?.role) && (
                     <>
-                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                            <Text style={[styles.sectionTitle, { marginBottom: 0 }]}>Your Assigned Sites</Text>
-                            {canSelectAllSitesForVisits(customUser?.role) && (
-                                <TouchableOpacity 
-                                    style={styles.searchAllBtn}
-                                    onPress={() => navigation.navigate('SiteSelection')}
-                                >
-                                    <Search color="#3b82f6" size={14} />
-                                    <Text style={styles.searchAllText}>Search All</Text>
-                                </TouchableOpacity>
-                            )}
-                        </View>
-                        {sites?.map((site) => (
-                            <TouchableOpacity
-                                key={site._id}
-                                onPress={() => navigation.navigate('SiteSelection', { selectedSiteId: site._id })}
+                        <View style={{ marginBottom: 16 }}>
+                            <Text style={styles.sectionTitle}>Operations</Text>
+                            <TouchableOpacity 
+                                style={[styles.startPatrolBar, { backgroundColor: '#0f172a' }]}
+                                onPress={() => navigation.navigate('SiteSelection')}
                             >
-                                <View style={styles.siteCard}>
-                                    <View style={styles.siteMain}>
-                                        <View style={styles.siteIcon}>
-                                            <Building2 color="#64748b" size={24} />
-                                        </View>
-                                        <View style={styles.siteInfo}>
-                                            <Text style={styles.siteName}>{site.name}</Text>
-                                            <View style={styles.locationRow}>
-                                                <MapPin color="#94a3b8" size={14} />
-                                                <Text style={styles.locationText}>{site.locationName}</Text>
-                                            </View>
-                                        </View>
-                                        <View style={styles.siteBadge}>
-                                            <CheckCircle color="#10b981" size={14} />
-                                            <Text style={styles.siteBadgeText}>Ready</Text>
-                                        </View>
-                                    </View>
-                                    <SiteHistoryPreview siteId={site._id} />
+                                <View style={[styles.startIcon, { backgroundColor: '#10b981' }]}>
+                                    <Search color="white" size={isSmallScreen ? 20 : 24} />
+                                </View>
+                                <View style={styles.startPatrolContent}>
+                                    <Text style={styles.startTitle} numberOfLines={1}>Find Site & Start Patrol</Text>
+                                    <Text style={styles.startSub} numberOfLines={2}>Search all sites to begin your shift</Text>
                                 </View>
                             </TouchableOpacity>
-                        ))}
+                        </View>
                     </>
                 )}
             </ScrollView>

@@ -45,7 +45,7 @@ export default function SiteSelection() {
                     const useAllSites = canSelectAllSitesForVisits(customUser?.role);
 
                     const response = useAllSites && customUser?.organizationId
-                        ? await siteService.getSitesByOrg(customUser.organizationId)
+                        ? await siteService.getSitesByOrg(customUser.organizationId, selectedRegionId || undefined, selectedCity || undefined)
                         : await siteService.getSitesByUser(userId, selectedRegionId || undefined, selectedCity || undefined);
                     setSites(response.data);
                 } catch (error) {
