@@ -7,11 +7,13 @@ import { siteService, regionService, logService } from '../services/api';
 import { uploadImage } from '../services/upload';
 import { useCustomAuth } from '../context/AuthContext';
 import { usePatrolStore } from '../store/usePatrolStore';
+import { canSelectAllSitesForVisits } from '../utils/roleUtils';
 
 export default function VisitingReport() {
     const navigation = useNavigation<any>();
     const insets = useSafeAreaInsets();
-    const { userId } = useCustomAuth();
+    const { userId, customUser, organizationId } = useCustomAuth();
+    const canSelectAll = canSelectAllSitesForVisits(customUser?.role);
     const [searchQuery, setSearchQuery] = useState('');
     const [sites, setSites] = useState<any[]>([]);
     const [regions, setRegions] = useState<any[]>([]);
@@ -34,9 +36,13 @@ export default function VisitingReport() {
     useEffect(() => {
         if (userId && step === 'site') {
             setLoading(true);
-            siteService.getSitesByUser(userId, selectedRegionId || undefined, selectedCity || undefined)
+            const fetchPromise = (canSelectAll && organizationId)
+                ? siteService.getSitesByOrg(organizationId)
+                : siteService.getSitesByUser(userId, selectedRegionId || undefined, selectedCity || undefined);
+
+            fetchPromise
                 .then(res => {
-                    setSites(res.data);
+                    setSites(res.data || []);
                     setLoading(false);
                 })
                 .catch(err => {

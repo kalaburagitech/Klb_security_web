@@ -9,6 +9,7 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import { usePatrolStore } from '../store/usePatrolStore';
 import { useCustomAuth } from '../context/AuthContext';
 import { Modal, ScrollView } from 'react-native';
+import { isAdministrativeRole, canSelectAllSitesForVisits } from '../utils/roleUtils';
 
 export default function SiteSelection() {
     const insets = useSafeAreaInsets();
@@ -41,10 +42,11 @@ export default function SiteSelection() {
         if (userId && step === 'site') {
             const fetchSites = async () => {
                 try {
-                    // SGs only see their assigned sites, SOs see all (or by org)
-                    const response = customUser?.role === 'SG' 
-                        ? await siteService.getSitesByUser(userId, selectedRegionId || undefined, selectedCity || undefined)
-                        : await siteService.getAllSites();
+                    const useAllSites = canSelectAllSitesForVisits(customUser?.role);
+
+                    const response = useAllSites && customUser?.organizationId
+                        ? await siteService.getSitesByOrg(customUser.organizationId)
+                        : await siteService.getSitesByUser(userId, selectedRegionId || undefined, selectedCity || undefined);
                     setSites(response.data);
                 } catch (error) {
                     console.error("Error fetching sites:", error);

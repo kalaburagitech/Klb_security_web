@@ -11,13 +11,15 @@ import { Home, Scan, History, ShieldAlert, Settings, ClipboardList, Calendar } f
 import { View, TouchableOpacity, Text } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCustomAuth } from '../context/AuthContext';
+import { isAdministrativeRole, canAccessMonitoringDashboard } from '../utils/roleUtils';
 
 const Tab = createBottomTabNavigator();
 
 export default function TabNavigator({ navigation }: any) {
     const { customUser } = useCustomAuth();
-    const role = (customUser?.role || '').toLowerCase();
-    const isSO = role === 'so' || role === 'officer' || role === 'security officer' || role === 'admin';
+    const role = (customUser?.role || '');
+    const isMonitoring = canAccessMonitoringDashboard(role);
+    const isAdmin = isAdministrativeRole(role);
 
     const insets = useSafeAreaInsets();
     
@@ -42,14 +44,14 @@ export default function TabNavigator({ navigation }: any) {
         >
             <Tab.Screen
                 name="Home"
-                component={isSO ? OfficerDashboard : HomeScreen}
+                component={isMonitoring ? OfficerDashboard : HomeScreen}
                 options={{
                     tabBarIcon: ({ color }) => <Home color={color} size={24} />,
-                    tabBarLabel: isSO ? "Dashboard" : "Home"
+                    tabBarLabel: isMonitoring ? "Dashboard" : "Home"
                 }}
             />
 
-            {isSO ? (
+            {isMonitoring ? (
                 <>
                     <Tab.Screen
                         name="QRTools"

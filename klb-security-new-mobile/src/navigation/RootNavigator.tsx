@@ -60,7 +60,6 @@ export default function RootNavigator() {
             ) : (
                 <>
                     <Stack.Screen name="SignIn" component={SignInScreen} />
-                    <Stack.Screen name="SignUp" component={SignUpScreen} />
                 </>
             )}
         </Stack.Navigator>

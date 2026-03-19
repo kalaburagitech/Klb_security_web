@@ -81,7 +81,17 @@ export const userService = {
 };
 
 export const siteService = {
-    getSitesByOrg: (orgId: string) => api.get(`/sites/org/${orgId}`),
+    getSitesByOrg: (orgId: string, regionId?: string, city?: string) => {
+        let url = `/sites/org/${orgId}`;
+        const params = new URLSearchParams();
+        if (regionId) params.append('regionId', regionId);
+        if (city) params.append('city', city);
+
+        const queryString = params.toString();
+        if (queryString) url += `?${queryString}`;
+
+        return api.get(url);
+    },
     getSitesByIds: (ids: string[]) => api.post('/sites/list', { ids }),
     getSitesByUser: (userId: string, regionId?: string, city?: string) => {
         let url = `/sites/user/${userId}`;

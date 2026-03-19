@@ -5,36 +5,38 @@ import { Building2, User, Clock, ClipboardList, ChevronRight, MapPin, Search, Lo
 import { useNavigation } from '@react-navigation/native';
 // import { useQuery } from 'convex/react';
 // import { api } from '../services/convex';
-import { siteService, logService, regionService } from '../services/api';
+import { siteService, logService, regionService, attendanceService } from '../services/api';
 import { useCustomAuth } from '../context/AuthContext';
 import { usePatrolStore } from '../store/usePatrolStore';
 import { TextInput, Alert, Modal } from 'react-native';
+import { isAdministrativeRole } from '../utils/roleUtils';
 
 export default function OfficerDashboard() {
     const insets = useSafeAreaInsets();
     const navigation = useNavigation<any>();
     const { organizationId, userId, logout, customUser } = useCustomAuth();
-    const role = (customUser?.role || '').toLowerCase();
-    const isOfficer = role === 'officer' || role === 'so' || role === 'admin' || role === 'security officer';
+    const role = (customUser?.role || '');
+    const isAdmin = isAdministrativeRole(role);
+    const isOfficer = isAdmin; // For UI mapping to 'Monitoring Dashboard' title
     const [selectedSiteId, setSelectedSiteId] = useState<any>(null);
     const [searchQuery, setSearchQuery] = useState('');
-    
+
     const handleLogout = async () => {
         Alert.alert(
             "Logout",
             "Are you sure you want to logout?",
             [
                 { text: "Cancel", style: "cancel" },
-                { 
-                    text: "Logout", 
-                    style: "destructive", 
+                {
+                    text: "Logout",
+                    style: "destructive",
                     onPress: async () => {
                         try {
                             await logout();
                         } catch (err) {
                             console.error("Logout failed", err);
                         }
-                    } 
+                    }
                 }
             ]
         );
@@ -48,6 +50,7 @@ export default function OfficerDashboard() {
     const [showCityPicker, setShowCityPicker] = useState(false);
     const [patrolLogs, setPatrolLogs] = useState<any[]>([]);
     const [visitLogs, setVisitLogs] = useState<any[]>([]);
+    const [attendanceLogs, setAttendanceLogs] = useState<any[]>([]);
     const [showVisitMenu, setShowVisitMenu] = useState(false);
 
     React.useEffect(() => {
@@ -57,8 +60,12 @@ export default function OfficerDashboard() {
     }, []);
 
     React.useEffect(() => {
-        if (organizationId) {
-            siteService.getSitesByOrg(organizationId as string)
+        if (organizationId && userId) {
+            const fetchPromise = isAdmin
+                ? siteService.getSitesByOrg(organizationId as string)
+                : siteService.getSitesByUser(userId as string);
+
+            fetchPromise
                 .then(res => {
                     let filteredSites = res.data || [];
                     if (selectedRegionId) {
@@ -71,24 +78,28 @@ export default function OfficerDashboard() {
                 })
                 .catch(err => console.error("Error fetching sites:", err));
         }
-    }, [organizationId, selectedRegionId, selectedCity]);
+    }, [organizationId, userId, isAdmin, selectedRegionId, selectedCity]);
 
     React.useEffect(() => {
         if (organizationId) {
             logService.getPatrolLogs(organizationId as string, selectedSiteId || undefined)
                 .then(res => setPatrolLogs(res.data))
                 .catch(err => console.error("Error fetching patrol logs:", err));
-                
+
             logService.getVisitLogs(organizationId as string)
                 .then(res => setVisitLogs(res.data))
                 .catch(err => console.error("Error fetching visit logs:", err));
+
+            attendanceService.list({ organizationId: organizationId as string })
+                .then((res: any) => setAttendanceLogs(res.data || []))
+                .catch((err: any) => console.error("Error fetching attendance logs:", err));
         }
     }, [organizationId, selectedSiteId]);
 
-    const filteredPatrolLogs = patrolLogs?.filter(log => 
+    const filteredPatrolLogs = patrolLogs?.filter(log =>
         selectedSiteId ? log.siteId === selectedSiteId : sites.some(s => s._id === log.siteId)
     );
-    const filteredVisitLogs = visitLogs?.filter(log => 
+    const filteredVisitLogs = visitLogs?.filter(log =>
         selectedSiteId ? log.siteId === selectedSiteId : sites.some(s => s._id === log.siteId)
     );
 
@@ -99,10 +110,10 @@ export default function OfficerDashboard() {
     return (
         <SafeAreaView style={styles.container}>
             <View style={styles.header}>
-                <Text style={styles.title}>{isOfficer ? 'Monitoring Dashboard' : 'Officer Dashboard'}</Text>
+                <Text style={styles.title}>{isOfficer ? `Monitoring  [${role}]` : `Officer  [${role}]`}</Text>
                 <View style={{ flexDirection: 'row', gap: 10 }}>
-                    <TouchableOpacity 
-                        onPress={() => setShowRegionPicker(true)} 
+                    <TouchableOpacity
+                        onPress={() => setShowRegionPicker(true)}
                         style={[styles.regionFilterBtn, selectedRegionId ? styles.regionFilterActive : {}]}
                     >
                         <MapPin color={selectedRegionId ? "white" : "#64748b"} size={20} />
@@ -149,7 +160,7 @@ export default function OfficerDashboard() {
                         <Search color="#64748b" size={18} style={styles.searchIcon} />
                         <TextInput
                             style={styles.searchInput}
-                            placeholder="Search assigned sites..."
+                            placeholder={isAdmin ? "Search all organization sites..." : "Search assigned sites..."}
                             placeholderTextColor="#64748b"
                             value={searchQuery}
                             onChangeText={setSearchQuery}
@@ -220,6 +231,38 @@ export default function OfficerDashboard() {
                     </ScrollView>
                 </View>
 
+                {/* Recent Staff Attendance - Only for Monitoring Dashboard */}
+                {isOfficer && Array.isArray(attendanceLogs) && attendanceLogs.length > 0 && (
+                    <View style={[styles.actionSection, { marginBottom: 24 }]}>
+                        <View style={styles.sectionHeader}>
+                            <Text style={styles.sectionTitle}>Recent Staff Attendance</Text>
+                            <TouchableOpacity onPress={() => navigation.navigate('Attendance')}>
+                                <Text style={styles.viewAllText}>View All</Text>
+                            </TouchableOpacity>
+                        </View>
+                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12 }}>
+                            {attendanceLogs.slice(0, 5).map((log, i) => (
+                                <View key={log._id || i} style={styles.attendanceMiniCard}>
+                                    <View style={styles.attendanceUserRow}>
+                                        <View style={styles.miniUserIcon}>
+                                            <User color="#2563eb" size={14} />
+                                        </View>
+                                        <Text style={styles.attendanceName} numberOfLines={1}>{log.name}</Text>
+                                    </View>
+                                    <View style={styles.attendanceStatusRow}>
+                                        <Clock color="#64748b" size={10} />
+                                        <Text style={styles.attendanceTime}>
+                                            {log.checkOutTime ? 'Out: ' : 'In: '}
+                                            {new Date(log.checkOutTime || log.checkInTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                        </Text>
+                                    </View>
+                                    <Text style={styles.attendanceLoc} numberOfLines={1}>{log.city || log.region}</Text>
+                                </View>
+                            ))}
+                        </ScrollView>
+                    </View>
+                )}
+
                 {selectedSiteId ? (
                     <View style={styles.activeSiteSection}>
                         <View style={styles.activeSiteHeader}>
@@ -229,7 +272,7 @@ export default function OfficerDashboard() {
                                     {sites?.find(s => s._id === selectedSiteId)?.name || 'Unknown Site'}
                                 </Text>
                             </View>
-                            <TouchableOpacity 
+                            <TouchableOpacity
                                 style={styles.changeSiteBtn}
                                 onPress={() => setSelectedSiteId(null)}
                             >
@@ -263,7 +306,7 @@ export default function OfficerDashboard() {
                                 <ClipboardList color="#3b82f6" size={18} />
                                 <Text style={styles.cardTitle}>Recent Activity</Text>
                             </View>
-                            {filteredPatrolLogs && filteredPatrolLogs.length > 0 ? (
+                            {Array.isArray(filteredPatrolLogs) && filteredPatrolLogs.length > 0 ? (
                                 filteredPatrolLogs.slice(0, 3).map((log, i) => (
                                     <View key={log._id} style={styles.logRow}>
                                         <View style={[styles.logDot, { backgroundColor: log.distance > 100 ? '#ef4444' : '#22c55e' }]} />
@@ -284,7 +327,7 @@ export default function OfficerDashboard() {
                                 <MapPin color="#3b82f6" size={18} />
                                 <Text style={styles.cardTitle}>Visiting Reports</Text>
                             </View>
-                            {filteredVisitLogs && filteredVisitLogs.length > 0 ? (
+                            {Array.isArray(filteredVisitLogs) && filteredVisitLogs.length > 0 ? (
                                 filteredVisitLogs.slice(0, 3).map((log) => (
                                     <View key={log._id} style={styles.logRow}>
                                         <View style={[styles.logDot, { backgroundColor: '#3b82f6' }]} />
@@ -507,8 +550,8 @@ export default function OfficerDashboard() {
             <View style={{ height: insets.bottom }} />
 
             {/* WhatsApp Style FAB */}
-            <TouchableOpacity 
-                style={[styles.fab, { bottom: insets.bottom + 20 }]} 
+            <TouchableOpacity
+                style={[styles.fab, { bottom: insets.bottom + 20 }]}
                 onPress={() => setShowVisitMenu(true)}
                 activeOpacity={0.8}
             >
@@ -520,15 +563,15 @@ export default function OfficerDashboard() {
 
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#020617' },
-    header: { 
-        flexDirection: 'row', 
-        justifyContent: 'space-between', 
-        alignItems: 'center', 
+    header: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
         paddingHorizontal: 24,
         paddingTop: 24,
         paddingBottom: 12
     },
-    title: { fontSize: 28, fontWeight: 'bold', color: 'white' },
+    title: { fontSize: 24, fontWeight: 'bold', color: 'white' }, // Reduced font size for multi-word titles
     regionFilterBtn: {
         width: 44,
         height: 44,
@@ -622,19 +665,19 @@ const styles = StyleSheet.create({
         color: 'white',
         fontSize: 15,
     },
-    siteSelector: { 
+    siteSelector: {
         marginBottom: 32,
     },
-    sectionTitle: { 
-        fontSize: 12, 
-        fontWeight: 'bold' as const, 
-        color: '#475569', 
-        textTransform: 'uppercase', 
-        letterSpacing: 1.5, 
-        marginBottom: 20 
+    sectionTitle: {
+        fontSize: 12,
+        fontWeight: 'bold' as const,
+        color: '#475569',
+        textTransform: 'uppercase',
+        letterSpacing: 1.5,
+        marginBottom: 20
     },
-    siteGrid: { 
-        gap: 12 
+    siteGrid: {
+        gap: 12
     },
     siteCard: {
         flexDirection: 'row',
@@ -712,9 +755,9 @@ const styles = StyleSheet.create({
         fontSize: 12,
         fontWeight: '600' as const,
     },
-    statsGrid: { 
+    statsGrid: {
         flexDirection: 'row',
-        gap: 12 
+        gap: 12
     },
     statCard: {
         flex: 1,
@@ -727,13 +770,13 @@ const styles = StyleSheet.create({
         borderColor: 'rgba(255, 255, 255, 0.05)',
         gap: 12,
     },
-    statIconBox: { 
-        width: 44, 
-        height: 44, 
-        borderRadius: 12, 
-        backgroundColor: 'rgba(59, 130, 246, 0.1)', 
-        justifyContent: 'center', 
-        alignItems: 'center' 
+    statIconBox: {
+        width: 44,
+        height: 44,
+        borderRadius: 12,
+        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+        justifyContent: 'center',
+        alignItems: 'center'
     },
     statLabel: { color: '#64748b', fontSize: 11, fontWeight: 'bold' as const, textTransform: 'uppercase' },
     statValue: { color: 'white', fontSize: 16, fontWeight: 'bold' as const, marginTop: 2 },
@@ -751,10 +794,10 @@ const styles = StyleSheet.create({
         marginBottom: 20,
     },
     cardTitle: { color: 'white', fontSize: 16, fontWeight: 'bold' as const },
-    logRow: { 
-        flexDirection: 'row', 
-        alignItems: 'center', 
-        gap: 12, 
+    logRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
         marginBottom: 12,
         padding: 12,
         backgroundColor: 'rgba(255, 255, 255, 0.02)',
@@ -883,15 +926,71 @@ const styles = StyleSheet.create({
         width: 64,
         height: 64,
         borderRadius: 32,
-        backgroundColor: '#2563eb',
+        backgroundColor: '#10b981',
         justifyContent: 'center',
         alignItems: 'center',
         shadowColor: "#000",
         shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.4,
-        shadowRadius: 10,
-        elevation: 10,
+        shadowOpacity: 0.3,
+        shadowRadius: 12,
+        elevation: 8,
         borderWidth: 2,
         borderColor: 'rgba(255, 255, 255, 0.2)',
+    },
+    // New Attendance Styles
+    sectionHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 16,
+    },
+    viewAllText: {
+        fontSize: 12,
+        color: '#3b82f6',
+        fontWeight: 'bold',
+    },
+    attendanceMiniCard: {
+        width: 160,
+        backgroundColor: '#0f172a',
+        borderRadius: 20,
+        padding: 16,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.05)',
+        gap: 8,
+    },
+    attendanceUserRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+    miniUserIcon: {
+        width: 24,
+        height: 24,
+        borderRadius: 12,
+        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    attendanceName: {
+        color: 'white',
+        fontSize: 13,
+        fontWeight: 'bold',
+        flex: 1,
+    },
+    attendanceStatusRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+    },
+    attendanceTime: {
+        color: '#94a3b8',
+        fontSize: 11,
+        fontWeight: '600',
+    },
+    attendanceLoc: {
+        color: '#3b82f6',
+        fontSize: 11,
+        fontWeight: 'bold',
+        marginTop: 2,
     },
 });

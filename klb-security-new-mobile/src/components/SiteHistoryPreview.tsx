@@ -4,23 +4,28 @@ import { View, Text, StyleSheet } from 'react-native';
 // import { api } from '../services/convex';
 import { logService } from '../services/api';
 import { Clock } from 'lucide-react-native';
+import { useCustomAuth } from '../context/AuthContext';
 
 export function SiteHistoryPreview({ siteId }: { siteId: any }) {
     const [logs, setLogs] = React.useState<any[]>([]);
 
-    React.useEffect(() => {
-        if (siteId) {
-            // Need org id, assume globally available or stored in state but for now just passing empty or modifying backend
-            // For now, getPatrolLogs expects (orgId, siteId), let's just pass dummy orgId for this preview 
-            // since orgId from AuthContext is ideal but isn't passed as prop immediately here.
-            // Ideally passing orgId from parent is best, we'll try to fetch with empty or 'default' if it fails
-            logService.getPatrolLogs('', siteId)
-                .then(res => setLogs(res.data))
-                .catch(err => console.error("Error fetching logs for preview:", err));
-        }
-    }, [siteId]);
+    const { organizationId } = useCustomAuth();
 
-    if (!logs || logs.length === 0) return null;
+    React.useEffect(() => {
+        if (siteId && organizationId) {
+            logService.getPatrolLogs(organizationId, siteId)
+                .then(res => {
+                    // Ensure we always have an array
+                    setLogs(Array.isArray(res.data) ? res.data : []);
+                })
+                .catch(err => {
+                    console.error("Error fetching logs for preview:", err);
+                    setLogs([]);
+                });
+        }
+    }, [siteId, organizationId]);
+
+    if (!Array.isArray(logs) || logs.length === 0) return null;
 
     return (
         <View style={styles.container}>

@@ -69,7 +69,9 @@ export default function AttendanceHistoryScreen() {
         return (
             record.name?.toLowerCase().includes(query) ||
             record.empId?.toLowerCase().includes(query) ||
-            record.region?.toLowerCase().includes(query)
+            record.region?.toLowerCase().includes(query) ||
+            record.city?.toLowerCase().includes(query) ||
+            record.siteName?.toLowerCase().includes(query)
         );
     });
 
@@ -193,7 +195,11 @@ export default function AttendanceHistoryScreen() {
                                     </View>
                                     <View style={styles.regionRow}>
                                         <MapPin color="#3b82f6" size={12} />
-                                        <Text style={styles.regionName}>{item.region}</Text>
+                                        <Text style={styles.regionName}>
+                                            {item.siteName ? `${item.siteName} • ` : ''}
+                                            {item.city ? `${item.city}, ` : ''}
+                                            {item.region}
+                                        </Text>
                                     </View>
                                 </View>
                             </View>

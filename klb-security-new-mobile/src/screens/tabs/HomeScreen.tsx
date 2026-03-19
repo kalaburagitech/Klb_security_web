@@ -5,11 +5,13 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 // import { api } from '../../services/convex';
 import { siteService, pointService } from '../../services/api';
 import { usePatrolStore } from '../../store/usePatrolStore';
-import { Scan, Clock, CheckCircle, AlertTriangle, Building2, MapPin, LogOut } from 'lucide-react-native';
-import { useNavigation } from '@react-navigation/native';
+import { Scan, Clock, CheckCircle, AlertTriangle, Building2, MapPin, LogOut, QrCode, GraduationCap, SunMoon, Plus, X, Search } from 'lucide-react-native';
+import { useNavigation, useIsFocused } from '@react-navigation/native';
 import { useCustomAuth } from '../../context/AuthContext';
 import { SiteHistoryPreview } from '../../components/SiteHistoryPreview';
 import { useMutation } from 'convex/react';
+import { isAdministrativeRole, canSelectAllSitesForVisits } from '../../utils/roleUtils';
+import { Modal } from 'react-native';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const isSmallScreen = SCREEN_WIDTH < 375;
@@ -21,14 +23,15 @@ export default function HomeScreen() {
     const [activeSession, setActiveSession] = useState<any>(null); // Still need to migrate getActiveSession
     const [sites, setSites] = useState<any[]>([]);
     const [elapsedMs, setElapsedMs] = useState(0);
+    const [showVisitMenu, setShowVisitMenu] = useState(false);
     const sessionMinutes = 60;
 
     React.useEffect(() => {
         if (userId) {
             const fetchSites = async () => {
                 try {
-                    const response = await siteService.getAllSites();
-                    setSites(response.data);
+                    const response = await siteService.getSitesByUser(userId);
+                    setSites(response.data || []);
                 } catch (error) {
                     console.error("Error fetching sites:", error);
                 }
@@ -176,21 +179,20 @@ export default function HomeScreen() {
                             </View>
                         </TouchableOpacity>
                         <TouchableOpacity
-                            style={[styles.startPatrolBar, { backgroundColor: '#1e1b4b', borderColor: '#312e81' }]}
-                            onPress={() => navigation.navigate('MarkAttendance')}
+                            style={[styles.startPatrolBar, { backgroundColor: '#1e1b4b', borderColor: '#312e81', marginTop: 12 }]}
+                            onPress={() => setShowVisitMenu(true)}
                         >
-                            <View style={[styles.startIcon, { backgroundColor: '#4338ca' }]}>
-                                <CheckCircle color="white" size={isSmallScreen ? 20 : 24} />
+                            <View style={[styles.startIcon, { backgroundColor: '#3b82f6' }]}>
+                                <QrCode color="white" size={isSmallScreen ? 20 : 24} />
                             </View>
                             <View style={styles.startPatrolContent}>
-                                <Text style={styles.startTitle} numberOfLines={1}>Mark Attendance</Text>
+                                <Text style={styles.startTitle} numberOfLines={1}>Site Visits</Text>
                                 <Text 
-                                    style={[styles.startSub, { color: '#818cf8' }]} 
-                                    numberOfLines={3}
+                                    style={[styles.startSub, { color: '#93c5fd' }]} 
+                                    numberOfLines={2}
                                     ellipsizeMode="tail"
-                                    allowFontScaling={false}
                                 >
-                                    {isSmallScreen ? 'Check in or check out' : 'Check in or check out using face recognition'}
+                                    Day/Night Checks & Trainer Visits
                                 </Text>
                             </View>
                         </TouchableOpacity>
@@ -216,10 +218,21 @@ export default function HomeScreen() {
                     </View>
                 </View>
 
-                {/* Sites List - Only for non-SG */}
-                {customUser?.role !== 'SG' && (
+                {/* Sites List - Only for non-Administrative roles (Guards) */}
+                {!isAdministrativeRole(customUser?.role) && (
                     <>
-                        <Text style={styles.sectionTitle}>Your Assigned Sites</Text>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                            <Text style={[styles.sectionTitle, { marginBottom: 0 }]}>Your Assigned Sites</Text>
+                            {canSelectAllSitesForVisits(customUser?.role) && (
+                                <TouchableOpacity 
+                                    style={styles.searchAllBtn}
+                                    onPress={() => navigation.navigate('SiteSelection')}
+                                >
+                                    <Search color="#3b82f6" size={14} />
+                                    <Text style={styles.searchAllText}>Search All</Text>
+                                </TouchableOpacity>
+                            )}
+                        </View>
                         {sites?.map((site) => (
                             <TouchableOpacity
                                 key={site._id}
@@ -249,6 +262,84 @@ export default function HomeScreen() {
                     </>
                 )}
             </ScrollView>
+
+            <Modal
+                visible={showVisitMenu}
+                transparent={true}
+                animationType="slide"
+                onRequestClose={() => setShowVisitMenu(false)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                        <View style={styles.modalHeader}>
+                            <View>
+                                <Text style={styles.modalTitle}>Visit Operations</Text>
+                                <Text style={styles.modalSub}>Select activity to perform</Text>
+                            </View>
+                            <TouchableOpacity onPress={() => setShowVisitMenu(false)}>
+                                <X color="#64748b" size={24} />
+                            </TouchableOpacity>
+                        </View>
+                        <View style={styles.visitOptionsGrid}>
+                            <TouchableOpacity
+                                style={styles.visitOptionCard}
+                                onPress={() => {
+                                    setShowVisitMenu(false);
+                                    navigation.navigate('SiteSelection', { isVisit: true, visitType: 'setup' });
+                                }}
+                            >
+                                <View style={[styles.visitOptionIcon, { backgroundColor: '#3b82f6' }]}>
+                                    <QrCode color="white" size={24} />
+                                </View>
+                                <Text style={styles.visitOptionText}>QR Tool</Text>
+                                <Text style={styles.visitOptionDesc}>Configure sites</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                style={styles.visitOptionCard}
+                                onPress={() => {
+                                    setShowVisitMenu(false);
+                                    navigation.navigate('SiteSelection', { isVisit: true, visitType: 'Trainer' });
+                                }}
+                            >
+                                <View style={[styles.visitOptionIcon, { backgroundColor: '#8b5cf6' }]}>
+                                    <GraduationCap color="white" size={24} />
+                                </View>
+                                <Text style={styles.visitOptionText}>Trainer</Text>
+                                <Text style={styles.visitOptionDesc}>Activity training</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                style={styles.visitOptionCard}
+                                onPress={() => {
+                                    setShowVisitMenu(false);
+                                    navigation.navigate('SiteSelection', { isVisit: true, visitType: 'SiteCheckDay' });
+                                }}
+                            >
+                                <View style={[styles.visitOptionIcon, { backgroundColor: '#f59e0b' }]}>
+                                    <SunMoon color="white" size={24} />
+                                </View>
+                                <Text style={styles.visitOptionText}>Day Check</Text>
+                                <Text style={styles.visitOptionDesc}>Day shift audit</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                style={styles.visitOptionCard}
+                                onPress={() => {
+                                    setShowVisitMenu(false);
+                                    navigation.navigate('SiteSelection', { isVisit: true, visitType: 'SiteCheckNight' });
+                                }}
+                            >
+                                <View style={[styles.visitOptionIcon, { backgroundColor: '#1e293b' }]}>
+                                    <Clock color="white" size={24} />
+                                </View>
+                                <Text style={styles.visitOptionText}>Night Check</Text>
+                                <Text style={styles.visitOptionDesc}>Night shift audit</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
             <View style={{ height: insets.bottom }} />
         </SafeAreaView >
     );
@@ -608,5 +699,83 @@ const styles = StyleSheet.create({
         fontWeight: '800',
         textTransform: 'uppercase',
         letterSpacing: 0.5,
+    },
+    searchAllBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 12,
+        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+        borderWidth: 1,
+        borderColor: 'rgba(59, 130, 246, 0.15)',
+    },
+    searchAllText: {
+        color: '#3b82f6',
+        fontSize: 12,
+        fontWeight: '900',
+        textTransform: 'uppercase',
+    },
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0, 0, 0, 0.7)',
+        justifyContent: 'flex-end',
+    },
+    modalContent: {
+        backgroundColor: '#0f172a',
+        borderTopLeftRadius: 32,
+        borderTopRightRadius: 32,
+        paddingBottom: 40,
+    },
+    modalHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        padding: 24,
+        borderBottomWidth: 1,
+        borderBottomColor: 'rgba(255, 255, 255, 0.05)',
+    },
+    modalTitle: {
+        fontSize: 20,
+        fontWeight: 'bold',
+        color: 'white',
+    },
+    modalSub: {
+        color: '#64748b',
+        fontSize: 12,
+        marginTop: 2,
+    },
+    visitOptionsGrid: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        padding: 20,
+        gap: 12,
+    },
+    visitOptionCard: {
+        width: (SCREEN_WIDTH - 52) / 2,
+        backgroundColor: '#1e293b',
+        borderRadius: 24,
+        padding: 20,
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.05)',
+    },
+    visitOptionIcon: {
+        width: 48,
+        height: 48,
+        borderRadius: 16,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 12,
+    },
+    visitOptionText: {
+        color: 'white',
+        fontSize: 16,
+        fontWeight: 'bold',
+    },
+    visitOptionDesc: {
+        color: '#64748b',
+        fontSize: 11,
+        marginTop: 4,
     },
 });

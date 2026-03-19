@@ -7,10 +7,12 @@ import { siteService, logService } from '../../services/api';
 import { Clock, MapPin, ChevronRight, Filter, AlertTriangle, Building2, Search, X } from 'lucide-react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { useCustomAuth } from '../../context/AuthContext';
+import { isAdministrativeRole } from '../../utils/roleUtils';
 
 export default function HistoryScreen() {
     const insets = useSafeAreaInsets();
-    const { organizationId } = useCustomAuth();
+    const { organizationId, userId, customUser } = useCustomAuth();
+    const isAdmin = isAdministrativeRole(customUser?.role);
     const route = useRoute<any>();
     const [selectedFilterSite, setSelectedFilterSite] = useState<string | null>(route?.params?.siteId || null);
     
@@ -19,12 +21,16 @@ export default function HistoryScreen() {
     const [logs, setLogs] = useState<any[]>([]);
     
     useEffect(() => {
-        if (organizationId) {
-            siteService.getAllSites()
-                .then(res => setAllSites(res.data))
+        if (organizationId && userId) {
+            const fetchPromise = isAdmin 
+                ? siteService.getSitesByOrg(organizationId)
+                : siteService.getSitesByUser(userId);
+
+            fetchPromise
+                .then(res => setAllSites(res.data || []))
                 .catch(err => console.error("Error fetching sites:", err));
         }
-    }, [organizationId]);
+    }, [organizationId, userId, isAdmin]);
     
     useEffect(() => {
         if (organizationId) {

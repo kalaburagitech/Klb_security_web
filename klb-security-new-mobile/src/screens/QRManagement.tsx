@@ -7,11 +7,13 @@ import { useNavigation } from '@react-navigation/native';
 // import { api } from '../services/convex';
 import { siteService, pointService } from '../services/api';
 import { useCustomAuth } from '../context/AuthContext';
+import { isAdministrativeRole } from '../utils/roleUtils';
 import * as Location from 'expo-location';
 
 export default function QRManagement() {
     const navigation = useNavigation<any>();
-    const { userId } = useCustomAuth();
+    const { userId, customUser, organizationId } = useCustomAuth();
+    const isAdmin = isAdministrativeRole(customUser?.role);
     const [selectedSiteId, setSelectedSiteId] = useState<any>(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [isUpdatingSite, setIsUpdatingSite] = useState(false);
@@ -20,12 +22,16 @@ export default function QRManagement() {
     const [points, setPoints] = useState<any[]>([]);
     
     React.useEffect(() => {
-        if (userId) {
-            siteService.getAllSites()
-                .then(res => setSites(res.data))
+        if (userId && organizationId) {
+            const fetchPromise = isAdmin
+                ? siteService.getSitesByOrg(organizationId)
+                : siteService.getSitesByUser(userId);
+
+            fetchPromise
+                .then(res => setSites(res.data || []))
                 .catch(err => console.error("Error fetching sites:", err));
         }
-    }, [userId]);
+    }, [userId, organizationId, isAdmin]);
     
     React.useEffect(() => {
         if (selectedSiteId) {
