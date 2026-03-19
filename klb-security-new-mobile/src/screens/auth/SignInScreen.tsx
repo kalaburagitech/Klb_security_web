@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, TextInput, Platform, Alert, ScrollView, KeyboardAvoidingView, TouchableWithoutFeedback, Keyboard } from 'react-native';
+import { View, Text, TouchableOpacity, TextInput, Platform, Alert, ScrollView, KeyboardAvoidingView, TouchableWithoutFeedback, Keyboard, Image } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Shield, ChevronRight } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
@@ -86,12 +86,14 @@ export default function SignInScreen() {
                         contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 32, justifyContent: 'center' }}
                         keyboardShouldPersistTaps="handled"
                     >
-                        <View style={{ alignItems: 'center', marginBottom: 48 }}>
-                            <View style={{ width: 80, height: 80, backgroundColor: 'rgba(37, 99, 235, 0.2)', borderRadius: 32, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(37, 99, 235, 0.3)', marginBottom: 24 }}>
-                                <Shield color="#2563eb" size={40} />
-                            </View>
-                            <Text style={{ color: 'white', fontSize: 32, fontWeight: 'bold', textAlign: 'center', letterSpacing: -0.5 }}>Security OS</Text>
-                            <Text style={{ color: '#64748b', fontSize: 14, textAlign: 'center', marginTop: 8, fontWeight: '500' }}>Command Center Authentication</Text>
+                        <View style={{ alignItems: 'center', marginBottom: 40 }}>
+                            <Image 
+                                source={require('../../../assets/images/logo.png')} 
+                                style={{ width: 100, height: 100, marginBottom: 20 }}
+                                resizeMode="contain"
+                            />
+                            <Text style={{ color: 'white', fontSize: 24, fontWeight: '900', textAlign: 'center', letterSpacing: 2 }}>KALABURAGI TECH</Text>
+                            <Text style={{ color: '#64748b', fontSize: 12, textAlign: 'center', marginTop: 4, fontWeight: 'bold', letterSpacing: 1 }}>SECURE • RELIABLE • TECH</Text>
                         </View>
 
                         <View style={{ gap: 20 }}>
@@ -101,9 +103,14 @@ export default function SignInScreen() {
                                     autoCapitalize="none"
                                     keyboardType="phone-pad"
                                     value={mobileNumber}
-                                    placeholder="+91 9108080161"
+                                    placeholder="Enter 10-digit number"
                                     placeholderTextColor="#475569"
-                                    onChangeText={(text) => setMobileNumber(text)}
+                                    maxLength={10}
+                                    onChangeText={(text) => {
+                                        // Only allow digits and limit to 10
+                                        const formatted = text.replace(/[^0-9]/g, '').slice(0, 10);
+                                        setMobileNumber(formatted);
+                                    }}
                                     style={{ color: 'white', fontSize: 16, paddingVertical: 12, paddingHorizontal: 0 }}
                                     editable={!isOtpSent && !loading}
                                     selectTextOnFocus={true}

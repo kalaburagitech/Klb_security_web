@@ -95,19 +95,32 @@ export default function PatrolForm() {
             return;
         }
 
-        const result = await ImagePicker.launchCameraAsync({
-            mediaTypes: ImagePicker.MediaTypeOptions.Images,
-            allowsEditing: true,
-            aspect: [4, 3],
-            quality: 0.4,
-        });
+        try {
+            const result = await ImagePicker.launchCameraAsync({
+                mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                allowsEditing: false,
+                quality: 0.3,
+            });
 
-        if (!result.canceled) {
-            setImage(result.assets[0].uri);
+            if (!result.canceled) {
+                // Small delay to allow camera activity to finish before state update
+                setTimeout(() => {
+                    setImage(result.assets[0].uri);
+                }, 100);
+            }
+        } catch (err) {
+            console.error("Camera error:", err);
+            Alert.alert("Camera Error", "Failed to open camera or capture photo.");
         }
     };
 
+    const canSubmit = validation?.isWithinRange && !loading;
+
     const handleSubmit = async () => {
+        if (!canSubmit) {
+            Alert.alert("Permission Denied", "You must be within 100m of the point to submit.");
+            return;
+        }
         if (!comment && !image) {
             Alert.alert("Evidence Required", "Please provide a comment or a photo.");
             return;
@@ -282,9 +295,9 @@ export default function PatrolForm() {
                 </View>
 
                 <TouchableOpacity
-                    style={[styles.submitBtn, (loading || (!comment && !image)) && styles.submitBtnDisabled]}
+                    style={[styles.submitBtn, (loading || (!comment && !image) || !validation?.isWithinRange) && styles.submitBtnDisabled]}
                     onPress={handleSubmit}
-                    disabled={loading || (!comment && !image)}
+                    disabled={loading || (!comment && !image) || !validation?.isWithinRange}
                 >
                     {loading ? (
                         <ActivityIndicator color="white" />
@@ -420,7 +433,7 @@ const styles = StyleSheet.create({
         fontWeight: '600',
     },
     imagePreviewContainer: {
-        height: 180,
+        height: 80, // Smaller WhatsApp style preview
         borderRadius: 24,
         overflow: 'hidden',
         position: 'relative',

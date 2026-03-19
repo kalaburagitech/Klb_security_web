@@ -65,11 +65,20 @@ export default function SiteSelection() {
 
     const handleSelectSite = (site: any) => {
         setCurrentSite(site);
-        if (visitType) {
+        if (visitType === 'setup') {
+            navigation.navigate('QRScanner', { 
+                mode: 'setup',
+                siteId: site._id,
+                siteName: site.name,
+            });
+        } else if (visitType) {
             navigation.navigate('VisitForm', { 
                 type: visitType,
                 siteId: site._id,
                 siteName: site.name,
+                siteLat: site.latitude,
+                siteLng: site.longitude,
+                allowedRadius: site.allowedRadius || 100,
                 organizationId: customUser?.organizationId
             });
         } else {

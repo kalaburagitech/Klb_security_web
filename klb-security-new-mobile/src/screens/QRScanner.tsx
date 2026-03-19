@@ -112,6 +112,7 @@ export default function QRScanner() {
                 navigation.navigate('CreatePoint', {
                     mode: 'setup',
                     siteId,
+                    siteName: targetSite?.name || siteName,
                     pointId,
                     pointName,
                     qrCode: data,

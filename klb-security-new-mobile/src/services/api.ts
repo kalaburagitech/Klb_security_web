@@ -23,7 +23,7 @@ const api = axios.create({
 api.interceptors.request.use(
     (config) => {
         if (__DEV__) {
-            console.log(`[API Request] ${config.method?.toUpperCase()} ${config.url}`, config.data || '');
+            // console.log(`[API Request] ${config.method?.toUpperCase()} ${config.url}`, config.data || '');
         }
         return config;
     },
@@ -39,7 +39,7 @@ api.interceptors.request.use(
 api.interceptors.response.use(
     (response) => {
         if (__DEV__) {
-            console.log(`[API Response] ${response.status} ${response.config.url}`, response.data);
+            // console.log(`[API Response] ${response.status} ${response.config.url}`, response.data);
         }
         return response;
     },

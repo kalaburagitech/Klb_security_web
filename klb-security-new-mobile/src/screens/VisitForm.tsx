@@ -14,7 +14,7 @@ export default function VisitForm({ route, navigation }: any) {
     const { customUser } = useCustomAuth();
     const currentUser = customUser;
 
-    const { siteId, siteName, qrCode, organizationId, isManual, type } = route.params || {};
+    const { siteId, siteName, qrCode, organizationId, isManual, type, siteLat, siteLng, allowedRadius } = route.params || {};
     const [remark, setRemark] = useState('');
     const [loading, setLoading] = useState(false);
     const [location, setLocation] = useState<any>(null);
@@ -44,17 +44,43 @@ export default function VisitForm({ route, navigation }: any) {
             return;
         }
 
-        const result = await ImagePicker.launchCameraAsync({
-            mediaTypes: ['images'],
-            allowsEditing: true,
-            aspect: [4, 3],
-            quality: 0.4,
-        });
+        try {
+            const result = await ImagePicker.launchCameraAsync({
+                mediaTypes: ['images'],
+                allowsEditing: false, 
+                quality: 0.3,
+            });
 
-        if (!result.canceled) {
-            setImage(result.assets[0].uri);
+            if (!result.canceled) {
+                // Small delay to allow camera activity to finish
+                setTimeout(() => {
+                    setImage(result.assets[0].uri);
+                }, 100);
+            }
+        } catch (err) {
+            console.error("Camera error:", err);
+            Alert.alert("Camera Error", "Failed to open camera or capture photo.");
         }
     };
+
+    const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+        const R = 6371e3; // metres
+        const φ1 = (lat1 * Math.PI) / 180;
+        const φ2 = (lat2 * Math.PI) / 180;
+        const Δφ = ((lat2 - lat1) * Math.PI) / 180;
+        const Δλ = ((lon2 - lon1) * Math.PI) / 180;
+        const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+            Math.cos(φ1) * Math.cos(φ2) *
+            Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return R * c; // in metres
+    };
+
+    const currentDistance = location && siteLat && siteLng 
+        ? calculateDistance(location.coords.latitude, location.coords.longitude, siteLat, siteLng)
+        : null;
+
+    const isAtSite = !siteLat || !siteLng || (currentDistance !== null && currentDistance <= (allowedRadius || 100));
 
     const handleSubmit = async () => {
         if (!location) {
@@ -132,11 +158,8 @@ export default function VisitForm({ route, navigation }: any) {
                         {image ? (
                             <View style={styles.previewWrapper}>
                                 <Image source={{ uri: image }} style={styles.previewImage} />
-                                <View style={styles.checkBadge}>
-                                    <Check color="white" size={14} />
-                                </View>
                                 <View style={styles.changeLabel}>
-                                    <Text style={styles.changeText}>Change Photo</Text>
+                                    <Text style={styles.changeText}>Change</Text>
                                 </View>
                             </View>
                         ) : (
@@ -150,13 +173,7 @@ export default function VisitForm({ route, navigation }: any) {
                     </TouchableOpacity>
                 </View>
 
-                <View style={[styles.infoRow, styles.card]}>
-                    <ClipboardList color="#3b82f6" size={20} />
-                    <View style={styles.infoTextContainer}>
-                        <Text style={styles.infoLabel}>QR Identifier</Text>
-                        <Text style={styles.infoValue}>{qrCode || (isManual ? "Manual Entry" : "Scanned")}</Text>
-                    </View>
-                </View>
+
 
                 <View style={[styles.infoRow, styles.card, { justifyContent: 'space-between' }]}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
@@ -231,8 +248,8 @@ export default function VisitForm({ route, navigation }: any) {
 
                 <TouchableOpacity
                     onPress={handleSubmit}
-                    disabled={loading}
-                    style={[styles.submitBtn, loading && styles.submitBtnDisabled]}
+                    disabled={!isAtSite || loading}
+                    style={[styles.submitBtn, (!isAtSite || loading) && styles.submitBtnDisabled]}
                 >
                     {loading ? (
                         <ActivityIndicator color="white" />
@@ -243,6 +260,15 @@ export default function VisitForm({ route, navigation }: any) {
                         </>
                     )}
                 </TouchableOpacity>
+
+                {!isAtSite && (
+                    <View style={styles.warningBox}>
+                        <ShieldAlert color="#ef4444" size={16} />
+                        <Text style={styles.warningText}>
+                            You are too far from this site ({Math.round(currentDistance || 0)}m). Please go to the site ({allowedRadius || 100}m range) to submit.
+                        </Text>
+                    </View>
+                )}
             </ScrollView>
             <View style={{ height: insets.bottom }} />
         </SafeAreaView>
@@ -258,8 +284,8 @@ const styles = StyleSheet.create({
     siteSubtitle: { color: '#3b82f6', fontSize: 14, fontWeight: '600', marginTop: 4 },
     scrollContent: { padding: 24, gap: 16, paddingBottom: 60 },
     card: { backgroundColor: '#0f172a', borderRadius: 24, borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)', overflow: 'hidden' },
-    imageContainer: { minHeight: 160, justifyContent: 'center', alignItems: 'center' },
-    previewWrapper: { width: '100%', height: 200, position: 'relative' },
+    imageContainer: { minHeight: 80, justifyContent: 'center', alignItems: 'center' },
+    previewWrapper: { width: '100%', height: 80, position: 'relative' },
     previewImage: { width: '100%', height: '100%' },
     checkBadge: { position: 'absolute', top: 12, right: 12, width: 28, height: 28, borderRadius: 14, backgroundColor: '#10b981', justifyContent: 'center', alignItems: 'center' },
     changeLabel: { position: 'absolute', bottom: 12, left: 12, backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
@@ -294,4 +320,19 @@ const styles = StyleSheet.create({
     submitBtn: { backgroundColor: '#2563eb', height: 64, borderRadius: 24, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, marginTop: 12 },
     submitBtnDisabled: { backgroundColor: '#1e293b', opacity: 0.5 },
     submitBtnText: { color: 'white', fontSize: 18, fontWeight: 'bold' },
+    warningBox: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: 'rgba(239, 68, 68, 0.1)',
+        padding: 12,
+        borderRadius: 12,
+        marginTop: 12,
+        gap: 8,
+    },
+    warningText: {
+        color: '#f43f5e',
+        fontSize: 12,
+        fontWeight: '600',
+        flex: 1,
+    },
 });

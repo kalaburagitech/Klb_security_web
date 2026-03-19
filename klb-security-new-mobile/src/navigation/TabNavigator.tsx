@@ -9,14 +9,18 @@ import IssueReview from '../screens/IssueReview';
 import VisitingReport from '../screens/VisitingReport';
 import { Home, Scan, History, ShieldAlert, Settings, ClipboardList, Calendar } from 'lucide-react-native';
 import { View, TouchableOpacity, Text } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCustomAuth } from '../context/AuthContext';
 
 const Tab = createBottomTabNavigator();
 
 export default function TabNavigator({ navigation }: any) {
     const { customUser } = useCustomAuth();
-    const isSO = customUser?.role === 'SO' || customUser?.role === 'Officer' || customUser?.role === 'Security Officer';
+    const role = (customUser?.role || '').toLowerCase();
+    const isSO = role === 'so' || role === 'officer' || role === 'security officer' || role === 'admin';
 
+    const insets = useSafeAreaInsets();
+    
     return (
         <Tab.Navigator
             screenOptions={{
@@ -24,8 +28,8 @@ export default function TabNavigator({ navigation }: any) {
                 tabBarStyle: {
                     backgroundColor: '#0f172a',
                     borderTopColor: 'rgba(255,255,255,0.05)',
-                    height: 80,
-                    paddingBottom: 20,
+                    height: 60 + insets.bottom,
+                    paddingBottom: insets.bottom > 0 ? insets.bottom : 10,
                     paddingTop: 10,
                 },
                 tabBarActiveTintColor: '#2563eb',

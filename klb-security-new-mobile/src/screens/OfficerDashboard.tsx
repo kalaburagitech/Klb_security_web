@@ -13,7 +13,9 @@ import { TextInput, Alert, Modal } from 'react-native';
 export default function OfficerDashboard() {
     const insets = useSafeAreaInsets();
     const navigation = useNavigation<any>();
-    const { organizationId, userId, logout } = useCustomAuth();
+    const { organizationId, userId, logout, customUser } = useCustomAuth();
+    const role = (customUser?.role || '').toLowerCase();
+    const isOfficer = role === 'officer' || role === 'so' || role === 'admin' || role === 'security officer';
     const [selectedSiteId, setSelectedSiteId] = useState<any>(null);
     const [searchQuery, setSearchQuery] = useState('');
     
@@ -97,7 +99,7 @@ export default function OfficerDashboard() {
     return (
         <SafeAreaView style={styles.container}>
             <View style={styles.header}>
-                <Text style={styles.title}>Officer Dashboard</Text>
+                <Text style={styles.title}>{isOfficer ? 'Monitoring Dashboard' : 'Officer Dashboard'}</Text>
                 <View style={{ flexDirection: 'row', gap: 10 }}>
                     <TouchableOpacity 
                         onPress={() => setShowRegionPicker(true)} 
@@ -300,7 +302,7 @@ export default function OfficerDashboard() {
                     </View>
                 ) : (
                     <View style={styles.siteSelector}>
-                        <Text style={styles.sectionTitle}>Select Site to Monitor</Text>
+                        <Text style={styles.sectionTitle}>{isOfficer ? 'Monitor Organization Sites' : 'Select Site to Monitor'}</Text>
                         <View style={styles.siteGrid}>
                             {sites?.filter(site => site.name.toLowerCase().includes(searchQuery.toLowerCase())).map(site => (
                                 <TouchableOpacity
@@ -447,14 +449,14 @@ export default function OfficerDashboard() {
                                 style={styles.visitOptionCard}
                                 onPress={() => {
                                     setShowVisitMenu(false);
-                                    navigation.navigate('SiteSelection', { isVisit: true, visitType: 'QR' });
+                                    navigation.navigate('SiteSelection', { isVisit: true, visitType: 'setup' });
                                 }}
                             >
                                 <View style={[styles.visitOptionIcon, { backgroundColor: '#3b82f6' }]}>
                                     <QrCode color="white" size={24} />
                                 </View>
-                                <Text style={styles.visitOptionText}>QR Visit</Text>
-                                <Text style={styles.visitOptionDesc}>Standard site visit</Text>
+                                <Text style={styles.visitOptionText}>QR Tool</Text>
+                                <Text style={styles.visitOptionDesc}>Configure sites</Text>
                             </TouchableOpacity>
 
                             <TouchableOpacity
@@ -506,7 +508,7 @@ export default function OfficerDashboard() {
 
             {/* WhatsApp Style FAB */}
             <TouchableOpacity 
-                style={styles.fab} 
+                style={[styles.fab, { bottom: insets.bottom + 20 }]} 
                 onPress={() => setShowVisitMenu(true)}
                 activeOpacity={0.8}
             >
@@ -877,7 +879,6 @@ const styles = StyleSheet.create({
     },
     fab: {
         position: 'absolute',
-        bottom: 30,
         right: 30,
         width: 64,
         height: 64,

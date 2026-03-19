@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, TextInput, Platform, ScrollView, Alert, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, TextInput, Platform, ScrollView, Alert, StyleSheet, Image } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Shield, ChevronRight, CheckCircle2 } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
@@ -43,11 +43,13 @@ export default function SignUpScreen() {
         <SafeAreaView style={{ flex: 1, backgroundColor: '#020617' }}>
             <ScrollView contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 32, paddingVertical: 48, justifyContent: 'center' }}>
                 <View style={{ alignItems: 'center', marginBottom: 32 }}>
-                    <View style={{ width: 64, height: 64, backgroundColor: 'rgba(37, 99, 235, 0.2)', borderRadius: 24, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(37, 99, 235, 0.3)', marginBottom: 16 }}>
-                        <Shield color="#2563eb" size={32} />
-                    </View>
-                    <Text style={{ color: 'white', fontSize: 24, fontWeight: 'bold', textAlign: 'center', letterSpacing: -0.5 }}>Create Account</Text>
-                    <Text style={{ color: '#64748b', fontSize: 14, textAlign: 'center', marginTop: 4, fontWeight: '500' }}>Join Security OS Network</Text>
+                    <Image 
+                        source={require('../../../assets/images/logo.png')} 
+                        style={{ width: 80, height: 80, marginBottom: 16 }}
+                        resizeMode="contain"
+                    />
+                    <Text style={{ color: 'white', fontSize: 24, fontWeight: '900', textAlign: 'center', letterSpacing: 2 }}>KALABURAGI TECH</Text>
+                    <Text style={{ color: '#64748b', fontSize: 12, textAlign: 'center', marginTop: 4, fontWeight: 'bold', letterSpacing: 1 }}>NEW OFFICER REGISTRATION</Text>
                 </View>
 
                 <View style={{ gap: 16 }}>

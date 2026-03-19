@@ -238,8 +238,10 @@ export default function MarkAttendanceScreen() {
                         {
                             text: 'OK',
                             onPress: () => {
-                                // Keep the person detected so they can see updated status
-                            }
+                            setTimeout(() => {
+                                navigation.navigate('MainTabs');
+                            }, 300);
+                        }
                         }
                     ]
                 );

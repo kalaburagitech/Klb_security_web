@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, TextInput, ScrollView, Alert, ActivityIndicator, Image, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ChevronLeft, MapPin, QrCode, CheckCircle, Loader2, Camera, Check, RefreshCw } from 'lucide-react-native';
+import { ChevronLeft, MapPin, QrCode, CheckCircle, Loader2, Camera, Check, RefreshCw, Building2 } from 'lucide-react-native';
 import * as Location from 'expo-location';
 import { useCustomAuth } from '../context/AuthContext';
 import { pointService } from '../services/api';
 
 export default function CreatePointScreen({ navigation, route }: any) {
     const { organizationId } = useCustomAuth();
-    const { mode, siteId, pointId, pointName, qrCode, lat, lng } = route.params || {};
+    const { mode, siteId, siteName, pointId, pointName, qrCode, lat, lng } = route.params || {};
 
     const [name, setName] = useState(pointName || '');
     const [loading, setLoading] = useState(false);
@@ -89,10 +89,18 @@ export default function CreatePointScreen({ navigation, route }: any) {
 
             <ScrollView contentContainerStyle={styles.content}>
                 <View style={styles.infoCard}>
-                    <Text style={styles.infoLabel}>QR CODE DETECTED</Text>
+                    <Text style={styles.infoLabel}>SITE NAME</Text>
                     <View style={styles.qrRow}>
-                        <QrCode color="#2563eb" size={20} />
-                        <Text style={styles.qrData}>{qrCode}</Text>
+                        <Building2 color="#3b82f6" size={20} />
+                        <Text style={styles.qrData}>{siteName || "General Site"}</Text>
+                    </View>
+                </View>
+
+                <View style={[styles.infoCard, { borderLeftWidth: 4, borderLeftColor: '#3b82f6', opacity: 0.8 }]}>
+                    <Text style={styles.infoLabel}>QR CODE DETECTED (READ-ONLY)</Text>
+                    <View style={styles.qrRow}>
+                        <QrCode color="#64748b" size={20} />
+                        <Text style={[styles.qrData, { color: '#64748b' }]}>{qrCode}</Text>
                     </View>
                 </View>
 
@@ -101,7 +109,7 @@ export default function CreatePointScreen({ navigation, route }: any) {
                     <View style={styles.inputBox}>
                         <TextInput
                             style={styles.input}
-                            placeholder="e.g., Underground Gate"
+                            placeholder="e.g., Gate Water Park"
                             placeholderTextColor="#475569"
                             value={name}
                             onChangeText={setName}

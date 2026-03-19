@@ -16,6 +16,7 @@ import QRManagement from '../screens/QRManagement';
 import VisitingReport from '../screens/VisitingReport';
 import EnrollmentScreen from '../screens/EnrollmentScreen';
 import MarkAttendanceScreen from '../screens/MarkAttendanceScreen';
+import SplashScreen from '../screens/SplashScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -23,6 +24,11 @@ import { useCustomAuth } from '../context/AuthContext';
 
 export default function RootNavigator() {
     const { isCustomSignedIn, isLoading: isCustomLoading } = useCustomAuth();
+    const [splashDone, setSplashDone] = React.useState(false);
+
+    if (!splashDone) {
+        return <SplashScreen onFinish={() => setSplashDone(true)} />;
+    }
 
     if (isCustomLoading) return null;
 
