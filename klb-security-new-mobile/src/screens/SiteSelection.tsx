@@ -14,7 +14,8 @@ import { isAdministrativeRole, canSelectAllSitesForVisits } from '../utils/roleU
 export default function SiteSelection() {
     const insets = useSafeAreaInsets();
     const navigation = useNavigation<any>();
-    const route = useRoute<any>();    const { userId, customUser } = useCustomAuth();
+    const route = useRoute<any>();
+    const { userId, organizationId, customUser } = useCustomAuth();
     const [sites, setSites] = useState<any[]>([]);
     const [regions, setRegions] = useState<any[]>([]);
     const { lastRegionId, lastCity, setLastSelection } = usePatrolStore();
@@ -49,8 +50,12 @@ export default function SiteSelection() {
         if (userId && step === 'site') {
             const fetchSites = async () => {
                 try {
-                    // Backend handles role-based site listing: listSitesByUser returns all sites for Admins
-                    const response = await siteService.getSitesByUser(userId, selectedRegionId || undefined, selectedCity || undefined);
+                    const isAdmin = isAdministrativeRole(customUser?.role);
+                    const fetchMethod = isAdmin && organizationId ? 
+                        siteService.getSitesByOrg(organizationId, selectedRegionId || undefined, selectedCity || undefined) :
+                        siteService.getSitesByUser(userId, selectedRegionId || undefined, selectedCity || undefined);
+
+                    const response = await fetchMethod;
                     setSites(response.data);
                 } catch (error) {
                     console.error("Error fetching sites:", error);

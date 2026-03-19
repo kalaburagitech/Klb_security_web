@@ -63,9 +63,11 @@ export default function OfficerDashboard() {
     React.useEffect(() => {
         if (organizationId && userId) {
             // Backend handle: listSitesByUser now returns all sites for Admins/Officers
-            const fetchPromise = siteService.getSitesByUser(userId as string, selectedRegionId || undefined, selectedCity || undefined);
+            const fetchMethod = isAdmin ?
+                siteService.getSitesByOrg(organizationId, selectedRegionId || undefined, selectedCity || undefined) :
+                siteService.getSitesByUser(userId as string, selectedRegionId || undefined, selectedCity || undefined);
 
-            fetchPromise
+            fetchMethod
                 .then(res => {
                     setSites(res.data || []);
                 })

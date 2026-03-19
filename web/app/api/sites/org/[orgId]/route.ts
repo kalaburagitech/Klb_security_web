@@ -9,8 +9,16 @@ export async function GET(
 ) {
   try {
     const { orgId } = await params;
-    console.log(`[API] GET /api/sites/org/${orgId} - Request received`);
-    const sites = await convex.query(api.sites.listSitesByOrg, { organizationId: orgId as Id<"organizations"> });
+    const { searchParams } = new URL(req.url);
+    const regionId = searchParams.get("regionId");
+    const city = searchParams.get("city");
+
+    console.log(`[API] GET /api/sites/org/${orgId} - Request received (regionId: ${regionId}, city: ${city})`);
+    const sites = await convex.query(api.sites.listSitesByOrg, { 
+      organizationId: orgId as Id<"organizations">,
+      regionId: regionId || undefined,
+      city: city || undefined
+    });
     console.log(`[API] GET /api/sites/org/${orgId} - Success: ${sites?.length || 0} sites found`);
     return NextResponse.json(sites);
   } catch (error) {
