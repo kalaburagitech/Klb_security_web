@@ -21,6 +21,7 @@ export default defineSchema({
             v.literal("Security Officer"),
             v.literal("SG"),
             v.literal("SO"),
+            v.literal("Higher Officer"),
             v.literal("NEW_USER")
         ),
         organizationId: v.id("organizations"),

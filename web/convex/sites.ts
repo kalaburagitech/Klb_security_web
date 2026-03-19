@@ -107,8 +107,18 @@ export const listSitesByUser = query({
         const user = await ctx.db.get(args.userId);
         if (!user) return [];
 
-        const adminRoles = ["Owner", "Officer", "Manager", "Deployment Manager", "SO", "Security Officer", "Admin"];
-        const isAdministrative = adminRoles.includes(user.role as string);
+        const adminRoles = [
+            "admin",
+            "owner",
+            "officer",
+            "higher officer",
+            "manager",
+            "deployment manager",
+            "so",
+            "security officer"
+        ];
+        const userRole = (user.role as string || '').toLowerCase().trim();
+        const isAdministrative = adminRoles.includes(userRole);
 
         if (isAdministrative) {
             console.log(`[Convex] User ${args.userId} is administrative (${user.role}). Fetching all organization sites.`);
