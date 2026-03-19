@@ -45,8 +45,8 @@ export default function OfficerDashboard() {
     const [sites, setSites] = useState<any[]>([]);
     const [regions, setRegions] = useState<any[]>([]);
     const { lastRegionId, lastCity, setLastSelection } = usePatrolStore();
-    const [selectedRegionId, setSelectedRegionId] = useState<string | null>(lastRegionId);
-    const [selectedCity, setSelectedCity] = useState<string | null>(lastCity);
+    const [selectedRegionId, setSelectedRegionId] = useState<string | null>(lastRegionId || customUser?.regionId || null);
+    const [selectedCity, setSelectedCity] = useState<string | null>(lastCity || customUser?.city || null);
     const [showRegionPicker, setShowRegionPicker] = useState(false);
     const [showCityPicker, setShowCityPicker] = useState(false);
     const [patrolLogs, setPatrolLogs] = useState<any[]>([]);
@@ -79,25 +79,47 @@ export default function OfficerDashboard() {
 
     React.useEffect(() => {
         if (organizationId) {
-            logService.getPatrolLogs(organizationId as string, selectedSiteId || undefined)
+            // Fetch logs based on current filters (site, region, city)
+            logService.getPatrolLogs(
+                organizationId as string, 
+                selectedSiteId || undefined,
+                selectedRegionId || undefined,
+                selectedCity || undefined
+            )
                 .then(res => setPatrolLogs(res.data))
                 .catch(err => {
                     console.error("Error fetching patrol logs:", err);
                     showError("Logs Error", "Failed to load patrol history.");
                 });
-
-            logService.getVisitLogs(organizationId as string)
+ 
+            logService.getVisitLogs(
+                organizationId as string, 
+                selectedSiteId || undefined,
+                selectedRegionId || undefined,
+                selectedCity || undefined
+            )
                 .then(res => setVisitLogs(res.data))
                 .catch(err => {
                     console.error("Error fetching visit logs:", err);
                     showError("Logs Error", "Failed to load visit history.");
                 });
-
-            attendanceService.list({ organizationId: organizationId as string })
-                .then((res: any) => setAttendanceLogs(res.data || []))
+ 
+            // Attendance filtering - using region filter if available
+            attendanceService.list({ 
+                organizationId: organizationId as string,
+                region: selectedRegionId || undefined, // Backend uses 'region' field
+            })
+                .then((res: any) => {
+                    let logs = res.data || [];
+                    // Additional frontend filter for city since attendance table might not be fully indexed for it
+                    if (selectedCity) {
+                        logs = logs.filter((l: any) => l.city === selectedCity);
+                    }
+                    setAttendanceLogs(logs);
+                })
                 .catch((err: any) => console.error("Error fetching attendance logs:", err));
         }
-    }, [organizationId, selectedSiteId]);
+    }, [organizationId, selectedSiteId, selectedRegionId, selectedCity]);
 
     const filteredPatrolLogs = patrolLogs?.filter(log =>
         selectedSiteId ? log.siteId === selectedSiteId : sites.some(s => s._id === log.siteId)
@@ -174,7 +196,10 @@ export default function OfficerDashboard() {
 
                         <TouchableOpacity
                             style={[styles.actionCard, { backgroundColor: '#1e1b4b', borderColor: '#312e81', width: 140 }]}
-                            onPress={() => navigation.navigate('IssueReview')}
+                            onPress={() => navigation.navigate('IssueReview', {
+                                regionId: selectedRegionId,
+                                city: selectedCity
+                            })}
                         >
                             <View style={[styles.actionIconBox, { backgroundColor: '#ef4444' }]}>
                                 <ShieldAlert color="white" size={24} />

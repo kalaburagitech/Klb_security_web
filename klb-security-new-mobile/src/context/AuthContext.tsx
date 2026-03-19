@@ -9,6 +9,8 @@ interface CustomUser {
     organizationId: string;
     siteId?: string;
     siteIds?: string[];
+    regionId?: string;
+    city?: string;
 }
 
 interface AuthContextType {

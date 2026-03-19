@@ -18,12 +18,19 @@ export default function SiteSelection() {
     const [sites, setSites] = useState<any[]>([]);
     const [regions, setRegions] = useState<any[]>([]);
     const { lastRegionId, lastCity, setLastSelection } = usePatrolStore();
-    const [selectedRegionId, setSelectedRegionId] = useState<string | null>(lastRegionId);
-    const [selectedCity, setSelectedCity] = useState<string | null>(lastCity);
+    
+    // Fallback to user profile if store is empty
+    const initialRegion = lastRegionId || customUser?.regionId || null;
+    const initialCity = lastCity || customUser?.city || null;
+
+    const [selectedRegionId, setSelectedRegionId] = useState<string | null>(initialRegion);
+    const [selectedCity, setSelectedCity] = useState<string | null>(initialCity);
     const [showRegionPicker, setShowRegionPicker] = useState(false);
     const [showCityPicker, setShowCityPicker] = useState(false);
+    const { isVisit, visitType } = route.params || {};
+
     const [step, setStep] = useState<'region' | 'city' | 'site'>(
-        lastRegionId ? (lastCity ? 'site' : 'city') : 'region'
+        initialRegion ? (initialCity ? 'site' : 'city') : 'region'
     );
 
     React.useEffect(() => {
@@ -59,8 +66,6 @@ export default function SiteSelection() {
         site.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         site.locationName.toLowerCase().includes(searchQuery.toLowerCase())
     );
-
-    const { isVisit, visitType } = route.params || {};
 
     const handleSelectSite = (site: any) => {
         setCurrentSite(site);

@@ -10,11 +10,15 @@ export async function GET(
     const { orgId } = await params;
     const { searchParams } = new URL(req.url);
     const siteId = searchParams.get("siteId");
+    const regionId = searchParams.get("regionId");
+    const city = searchParams.get("city");
 
     try {
         const issues = await fetchQuery(api.logs.listIssuesByOrg, {
             organizationId: orgId as any,
             siteId: (siteId as any) || undefined,
+            regionId: regionId || undefined,
+            city: city || undefined,
         });
 
         return NextResponse.json(issues, { headers: corsHeaders() });

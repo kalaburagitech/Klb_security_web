@@ -3,14 +3,16 @@ import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, ActivityIn
 import { useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowLeft, ShieldAlert, Clock, MapPin, AlertCircle, CheckCircle2, Filter, ChevronRight } from 'lucide-react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 // import { useQuery, useMutation } from 'convex/react';
 import { useCustomAuth } from '../context/AuthContext';
 import { issueService } from '../services/api';
 
 export default function IssueReview() {
     const navigation = useNavigation<any>();
+    const route = useRoute<any>();
     const { organizationId } = useCustomAuth();
+    const { regionId, city } = route.params || {};
     const [statusFilter, setStatusFilter] = useState<'open' | 'closed'>('open');
     const [priorityFilter, setPriorityFilter] = useState<string | null>(null);
     const [issues, setIssues] = useState<any[]>([]);
@@ -26,7 +28,12 @@ export default function IssueReview() {
         if (!organizationId) return;
         setLoading(true);
         try {
-            const res = await issueService.getIssuesByOrg(organizationId);
+            const res = await issueService.getIssuesByOrg(
+                organizationId, 
+                undefined, 
+                regionId, 
+                city
+            );
             setIssues(res.data || []);
         } catch (err) {
             console.error("Failed to fetch issues", err);
@@ -37,7 +44,7 @@ export default function IssueReview() {
 
     React.useEffect(() => {
         fetchIssues();
-    }, [organizationId]);
+    }, [organizationId, regionId, city]);
 
     const handleResolve = async (id: string) => {
         Alert.alert(

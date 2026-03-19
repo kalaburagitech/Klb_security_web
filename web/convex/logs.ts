@@ -58,7 +58,12 @@ export const createPatrolLog = mutation({
 });
 
 export const listPatrolLogs = query({
-    args: { organizationId: v.id("organizations"), siteId: v.optional(v.id("sites")) },
+    args: { 
+        organizationId: v.id("organizations"), 
+        siteId: v.optional(v.id("sites")),
+        regionId: v.optional(v.string()),
+        city: v.optional(v.string())
+    },
     handler: async (ctx, args) => {
         let logs;
         if (args.siteId) {
@@ -67,6 +72,28 @@ export const listPatrolLogs = query({
                 .withIndex("by_site", (q) => q.eq("siteId", args.siteId as Id<"sites">))
                 .order("desc")
                 .collect();
+        } else if (args.regionId || args.city) {
+            // Filter by region/city via site lookup
+            const sites = await ctx.db
+                .query("sites")
+                .withIndex("by_org", (q) => q.eq("organizationId", args.organizationId))
+                .collect();
+            
+            const filteredSiteIds = new Set(
+                sites.filter(s => {
+                    let matchesRegion = !args.regionId || s.regionId === args.regionId;
+                    let matchesCity = !args.city || s.city === args.city;
+                    return matchesRegion && matchesCity;
+                }).map(s => s._id)
+            );
+            
+            logs = await ctx.db
+                .query("patrolLogs")
+                .withIndex("by_org", (q) => q.eq("organizationId", args.organizationId))
+                .order("desc")
+                .collect();
+            
+            logs = logs.filter(log => filteredSiteIds.has(log.siteId as any));
         } else {
             logs = await ctx.db
                 .query("patrolLogs")
@@ -218,13 +245,37 @@ export const countVisitLogsByType = query({
 });
 
 export const listVisitLogs = query({
-    args: { organizationId: v.id("organizations") },
+    args: { 
+        organizationId: v.id("organizations"),
+        siteId: v.optional(v.id("sites")),
+        regionId: v.optional(v.string()),
+        city: v.optional(v.string())
+    },
     handler: async (ctx, args) => {
-        const logs = await ctx.db
+        let logs = await ctx.db
             .query("visitLogs")
             .withIndex("by_org", (q) => q.eq("organizationId", args.organizationId))
             .order("desc")
             .collect();
+
+        if (args.siteId) {
+            logs = logs.filter(l => l.siteId === args.siteId);
+        } else if (args.regionId || args.city) {
+            const sites = await ctx.db
+                .query("sites")
+                .withIndex("by_org", (q) => q.eq("organizationId", args.organizationId))
+                .collect();
+            
+            const filteredSiteIds = new Set(
+                sites.filter(s => {
+                    let matchesRegion = !args.regionId || s.regionId === args.regionId;
+                    let matchesCity = !args.city || s.city === args.city;
+                    return matchesRegion && matchesCity;
+                }).map(s => s._id)
+            );
+            
+            logs = logs.filter(log => filteredSiteIds.has(log.siteId as any));
+        }
 
         return await Promise.all(
             logs.map(async (log) => {

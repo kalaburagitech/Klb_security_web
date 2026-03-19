@@ -116,11 +116,25 @@ export const pointService = {
 };
 
 export const logService = {
-    getPatrolLogs: (orgId: string, siteId?: string) =>
-        api.get(`/logs/patrol/org/${orgId}${siteId ? `?siteId=${siteId}` : ''}`),
-    getPatrolLogsByUser: (userId: string) => api.get(`/logs/patrol/user/${userId}`),
-    getVisitLogs: (orgId: string) => api.get(`/logs/visit/org/${orgId}`),
-    getVisitLogsByUser: (userId: string) => api.get(`/logs/visit/user/${userId}`),
+    getPatrolLogs: (orgId: string, siteId?: string, regionId?: string, city?: string) => {
+        let url = `/logs/patrol/org/${orgId}`;
+        const params = new URLSearchParams();
+        if (siteId) params.append('siteId', siteId);
+        if (regionId) params.append('regionId', regionId);
+        if (city) params.append('city', city);
+        const query = params.toString();
+        return api.get(query ? `${url}?${query}` : url);
+    },
+    getVisitLogs: (orgId: string, siteId?: string, regionId?: string, city?: string) => {
+        let url = `/logs/visit/org/${orgId}`;
+        const params = new URLSearchParams();
+        if (siteId) params.append('siteId', siteId);
+        if (regionId) params.append('regionId', regionId);
+        if (city) params.append('city', city);
+        const query = params.toString();
+        return api.get(query ? `${url}?${query}` : url);
+    },
+    getLogsByUser: (userId: string) => api.get(`/logs/user/${userId}`),
     createPatrolLog: (logData: any) => api.post('/logs/patrol', logData),
     createDualLog: (logData: any) => api.post('/logs/dual', logData),
     validatePatrolPoint: (siteId: string, qrCodeId: string, userLat: number, userLon: number, guardId: string) =>
@@ -209,8 +223,15 @@ export const attendanceService = {
 };
 
 export const issueService = {
-    getIssuesByOrg: (orgId: string, siteId?: string) =>
-        api.get(`/logs/issues/org/${orgId}${siteId ? `?siteId=${siteId}` : ''}`),
+    getIssuesByOrg: (orgId: string, siteId?: string, regionId?: string, city?: string) => {
+        let url = `/logs/issues/org/${orgId}`;
+        const params = new URLSearchParams();
+        if (siteId) params.append('siteId', siteId);
+        if (regionId) params.append('regionId', regionId);
+        if (city) params.append('city', city);
+        const query = params.toString();
+        return api.get(query ? `${url}?${query}` : url);
+    },
     resolveIssue: (issueId: string) => api.post('/logs/issues/resolve', { issueId }),
 };
 

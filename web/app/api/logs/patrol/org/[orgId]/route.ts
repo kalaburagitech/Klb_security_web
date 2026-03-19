@@ -11,10 +11,14 @@ export async function GET(
     const { orgId } = await params;
     const { searchParams } = new URL(req.url);
     const siteId = searchParams.get("siteId");
+    const regionId = searchParams.get("regionId");
+    const city = searchParams.get("city");
 
     const logs = await convex.query(api.logs.listPatrolLogs, {
       organizationId: orgId as Id<"organizations">,
-      siteId: siteId ? siteId as Id<"sites"> : undefined
+      siteId: siteId ? siteId as Id<"sites"> : undefined,
+      regionId: regionId || undefined,
+      city: city || undefined
     });
     return NextResponse.json(logs);
   } catch (error: any) {

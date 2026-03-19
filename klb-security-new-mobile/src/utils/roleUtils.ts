@@ -2,21 +2,14 @@
  * Roles that can monitor ALL sites in the organization.
  */
 export const isAdministrativeRole = (role?: string): boolean => {
-    const normalizedRole = (role || '').toLowerCase().trim();
-    const adminRoles = [
-        'officer',
-        'admin',
-        'manager',
-        'deployment manager',
-        'deploymentmanager',
-        'owner',
-        'higher officer',
-        'higherofficer',
-        'so',
-        'security officer',
-        'securityofficer'
-    ];
-    return adminRoles.includes(normalizedRole);
+    const rawRole = (role || '').toLowerCase().trim();
+    return (
+        rawRole.includes('admin') ||
+        rawRole.includes('owner') ||
+        rawRole.includes('officer') ||
+        rawRole.includes('manager') ||
+        rawRole.includes('so')
+    );
 };
 
 /**
