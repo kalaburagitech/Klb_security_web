@@ -17,12 +17,14 @@ export async function GET(
     const isValidId = (id: string | null) => id && id !== "undefined" && id !== "null";
     const effectiveOrgId = (orgId === 'all' || !isValidId(orgId)) ? undefined : orgId as any;
 
-    const logs = await fetchQuery(api.logs.listPatrolLogs, {
-      organizationId: effectiveOrgId,
+    const queryArgs: any = {
       siteId: isValidId(siteId) ? (siteId as any) : undefined,
       regionId: regionId || undefined,
-      city: city || undefined
-    });
+      city: city || undefined,
+    };
+    if (effectiveOrgId) queryArgs.organizationId = effectiveOrgId;
+
+    const logs = await fetchQuery(api.logs.listPatrolLogs, queryArgs);
     return NextResponse.json(logs, { headers: corsHeaders() });
   } catch (error: any) {
     console.error("[API] Logs Patrol Org error:", error);

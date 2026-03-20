@@ -17,12 +17,14 @@ export async function GET(
     const effectiveOrgId = (orgId === 'all' || !isValidId(orgId)) ? undefined : orgId as any;
 
     try {
-        const issues = await fetchQuery(api.logs.listIssuesByOrg, {
-            organizationId: effectiveOrgId,
+        const queryArgs: any = {
             siteId: isValidId(siteId) ? (siteId as any) : undefined,
             regionId: regionId || undefined,
             city: city || undefined,
-        });
+        };
+        if (effectiveOrgId) queryArgs.organizationId = effectiveOrgId;
+
+        const issues = await fetchQuery(api.logs.listIssuesByOrg, queryArgs);
 
         return NextResponse.json(issues, { headers: corsHeaders() });
     } catch (error: any) {
