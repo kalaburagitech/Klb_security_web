@@ -13,7 +13,8 @@ export const isAdministrativeRole = (role?: string): boolean => {
     return (
         rawRole.includes('owner') ||
         rawRole.includes('manager') ||
-        rawRole.includes('officer')
+        rawRole.includes('officer') ||
+        rawRole.includes('so')
     );
 };
 

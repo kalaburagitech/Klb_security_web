@@ -110,8 +110,9 @@ export const listSitesByUser = query({
         const rawRole = (user.role as string || '').toLowerCase().trim();
         
         const isActuallyAdmin = 
-            rawRole === "owner" || 
-            rawRole === "manager" || 
+            rawRole.includes("owner") || 
+            rawRole.includes("manager") || 
+            rawRole.includes("officer") ||
             rawRole === "deployment manager" || 
             rawRole === "higher officer";
 

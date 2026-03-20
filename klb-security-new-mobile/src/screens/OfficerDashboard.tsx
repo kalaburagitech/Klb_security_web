@@ -45,8 +45,8 @@ export default function OfficerDashboard() {
     const [sites, setSites] = useState<any[]>([]);
     const [regions, setRegions] = useState<any[]>([]);
     const { lastRegionId, lastCity, setLastSelection } = usePatrolStore();
-    const [selectedRegionId, setSelectedRegionId] = useState<string | null>(isAdmin ? null : (lastRegionId || customUser?.regionId || null));
-    const [selectedCity, setSelectedCity] = useState<string | null>(isAdmin ? null : (lastCity || customUser?.city || null));
+    const [selectedRegionId, setSelectedRegionId] = useState<string | null>(lastRegionId || (isAdmin ? null : customUser?.regionId) || null);
+    const [selectedCity, setSelectedCity] = useState<string | null>(lastCity || (isAdmin ? null : customUser?.city) || null);
     const [showRegionPicker, setShowRegionPicker] = useState(false);
     const [showCityPicker, setShowCityPicker] = useState(false);
     const [patrolLogs, setPatrolLogs] = useState<any[]>([]);
@@ -54,14 +54,8 @@ export default function OfficerDashboard() {
     const [attendanceLogs, setAttendanceLogs] = useState<any[]>([]);
     const [showVisitMenu, setShowVisitMenu] = useState(false);
 
-    // Role + auth are loaded async. 
-    // We no longer reset filters for admins here, as they now need to use them for monitoring.
-    React.useEffect(() => {
-        if (isAdmin) {
-            // Initially, we can leave filters as null to show "All"
-            // But we don't force-clear them on every role change if they were already set.
-        }
-    }, [isAdmin]);
+    // Role + auth are loaded async. If the user becomes admin (Owner/Manager/Officer) after initial render,
+    // reset filters so admins see ALL organization sites (no region/city filtering).
 
     React.useEffect(() => {
         regionService.getRegions()
@@ -71,11 +65,26 @@ export default function OfficerDashboard() {
 
     React.useEffect(() => {
         if (organizationId && userId) {
-            // Unified fetch: siteService.getSitesByUser handles both admins (returns all org sites) 
-            // and regular users (returns assigned sites), and both support region/city filtering.
-            siteService.getSitesByUser(userId as string, selectedRegionId || undefined, selectedCity || undefined)
+            const fetchMethod = isAdmin ? 
+                siteService.getAllSites() : 
+                siteService.getSitesByUser(userId, selectedRegionId || undefined, selectedCity || undefined);
+
+            fetchMethod
                 .then(res => {
-                    setSites(res.data || []);
+                    let data = res.data || [];
+                    
+                    if (isAdmin) {
+                        data = data.filter((site: any) => {
+                            const matchesOrg = site.organizationId === organizationId;
+                            const rSearch = selectedRegionId?.toLowerCase().trim();
+                            const cSearch = selectedCity?.toLowerCase().trim();
+                            const matchesRegion = !rSearch || site.regionId?.toLowerCase().trim() === rSearch;
+                            const matchesCity = !cSearch || site.city?.toLowerCase().trim() === cSearch;
+                            return matchesOrg && matchesRegion && matchesCity;
+                        });
+                    }
+                    
+                    setSites(data);
                 })
                 .catch(err => {
                     console.error("Error fetching sites:", err);
@@ -115,7 +124,7 @@ export default function OfficerDashboard() {
             // Attendance filtering - using region filter if available
             attendanceService.list({ 
                 organizationId: organizationId as string,
-                region: selectedRegionId || undefined, // Backend uses 'region' field
+                region: regions.find(r => r.regionId === selectedRegionId)?.regionName || undefined, 
             })
                 .then((res: any) => {
                     let logs = res.data || [];
@@ -202,7 +211,7 @@ export default function OfficerDashboard() {
                                     )}
                                 </View>
                             ) : (
-                                <Text style={{ color: '#64748b', fontSize: 13 }}>All Regions & Cities</Text>
+                                <Text style={{ color: '#64748b', fontSize: 13 }}>All Regions</Text>
                             )}
                         </View>
                         <TouchableOpacity
@@ -390,7 +399,7 @@ export default function OfficerDashboard() {
                 ) : (
                     <View style={styles.siteSelector}>
                         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                            <Text style={styles.sectionTitle}>{isOfficer ? 'Monitor Organisation Sites' : 'Select Site to Monitor'}</Text>
+                            <Text style={styles.sectionTitle}>{isOfficer ? 'All Sites Monitor' : 'Select Site to Monitor'}</Text>
                         </View>
 
                         <View style={styles.siteGrid}>
@@ -441,6 +450,8 @@ export default function OfficerDashboard() {
                                 style={[styles.regionOption, !selectedRegionId && styles.regionOptionSelected]}
                                 onPress={() => {
                                     setSelectedRegionId(null);
+                                    setSelectedCity(null);
+                                    setLastSelection(null, null);
                                     setShowRegionPicker(false);
                                 }}
                             >

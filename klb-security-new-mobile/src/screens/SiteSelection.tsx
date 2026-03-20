@@ -22,8 +22,8 @@ export default function SiteSelection() {
     const { lastRegionId, lastCity, setLastSelection } = usePatrolStore();
     
     // Fallback to user profile if store is empty
-    const initialRegion = isAdmin ? null : (lastRegionId || customUser?.regionId || null);
-    const initialCity = isAdmin ? null : (lastCity || customUser?.city || null);
+    const initialRegion = lastRegionId || customUser?.regionId || null;
+    const initialCity = lastCity || customUser?.city || null;
 
     const [selectedRegionId, setSelectedRegionId] = useState<string | null>(initialRegion);
     const [selectedCity, setSelectedCity] = useState<string | null>(initialCity);
@@ -32,18 +32,11 @@ export default function SiteSelection() {
     const { isVisit, visitType } = route.params || {};
 
     const [step, setStep] = useState<'region' | 'city' | 'site'>(
-        isAdmin ? 'site' : (initialRegion ? (initialCity ? 'site' : 'city') : 'region')
+        initialRegion ? (initialCity ? 'site' : 'city') : 'region'
     );
 
     // Auth state loads async; if the role changes to admin after first render,
     // reset region/city filters and jump directly to the site list.
-    React.useEffect(() => {
-        if (isAdmin) {
-            setSelectedRegionId(null);
-            setSelectedCity(null);
-            setStep('site');
-        }
-    }, [isAdmin]);
 
     React.useEffect(() => {
         const fetchRegions = async () => {
@@ -273,6 +266,19 @@ export default function SiteSelection() {
                             </TouchableOpacity>
                         </View>
                         <ScrollView>
+                            <TouchableOpacity
+                                style={[styles.regionOption, !selectedRegionId && styles.regionOptionSelected]}
+                                onPress={() => {
+                                    setSelectedRegionId(null);
+                                    setSelectedCity(null);
+                                    setLastSelection(null, null);
+                                    setShowRegionPicker(false);
+                                }}
+                            >
+                                <Text style={[styles.regionOptionText, !selectedRegionId && styles.regionOptionTextSelected]}>
+                                    All Regions
+                                </Text>
+                            </TouchableOpacity>
                             {regions.map((r) => (
                                 <TouchableOpacity
                                     key={r.regionId}
@@ -310,6 +316,18 @@ export default function SiteSelection() {
                             </TouchableOpacity>
                         </View>
                         <ScrollView>
+                            <TouchableOpacity
+                                style={[styles.regionOption, !selectedCity && styles.regionOptionSelected]}
+                                onPress={() => {
+                                    setSelectedCity(null);
+                                    setLastSelection(selectedRegionId, null);
+                                    setShowCityPicker(false);
+                                }}
+                            >
+                                <Text style={[styles.regionOptionText, !selectedCity && styles.regionOptionTextSelected]}>
+                                    All Cities
+                                </Text>
+                            </TouchableOpacity>
                             {regions.find(r => r.regionId === selectedRegionId)?.cities?.map((city: string) => (
                                 <TouchableOpacity
                                     key={city}
