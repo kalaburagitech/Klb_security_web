@@ -18,6 +18,8 @@ export default function UserManagement() {
     const [showEditCityList, setShowEditCityList] = useState(false);
     const [isDeletingId, setIsDeletingId] = useState<Id<"users"> | null>(null);
     const [searchQuery, setSearchQuery] = useState("");
+    const [siteSearchQuery, setSiteSearchQuery] = useState("");
+    const [editSiteSearchQuery, setEditSiteSearchQuery] = useState("");
     const [selectedSiteIds, setSelectedSiteIds] = useState<Id<"sites">[]>([]);
 
     const [newName, setNewName] = useState("");
@@ -99,6 +101,7 @@ export default function UserManagement() {
             setNewRegionId("");
             setNewCity("");
             setSelectedSiteIds([]);
+            setSiteSearchQuery("");
             toast.success("User added successfully");
         } catch (error: any) {
             console.error("Failed to create user:", error);
@@ -450,28 +453,69 @@ export default function UserManagement() {
                                 </select>
                             </div>
                             <div>
-                                <label className="text-xs font-medium text-muted-foreground uppercase">Assigned Sites</label>
-                                <div className="mt-2 space-y-2 max-h-40 overflow-y-auto custom-scrollbar bg-neutral-900/50 p-3 rounded-xl border border-white/10">
-                                    {sites?.map(s => (
-                                        <label key={s._id} className="flex items-center gap-3 cursor-pointer group">
-                                            <input
-                                                type="checkbox"
-                                                checked={selectedSiteIds.includes(s._id)}
-                                                onChange={e => {
-                                                    if (e.target.checked) {
-                                                        setSelectedSiteIds([...selectedSiteIds, s._id]);
-                                                    } else {
-                                                        setSelectedSiteIds(selectedSiteIds.filter(id => id !== s._id));
-                                                    }
-                                                }}
-                                                className="w-4 h-4 rounded border-white/20 bg-white/5 text-primary focus:ring-primary/50"
-                                            />
-                                            <span className="text-sm text-white/70 group-hover:text-white">{s.name}</span>
-                                        </label>
-                                    ))}
-                                    {(!sites || sites.length === 0) && (
-                                        <div className="text-xs text-muted-foreground italic">No sites available</div>
-                                    )}
+                                <label className="text-xs font-medium text-muted-foreground uppercase flex items-center justify-between">
+                                    Assigned Sites
+                                    {selectedSiteIds.length > 0 && <span className="text-primary font-bold">{selectedSiteIds.length} selected</span>}
+                                </label>
+                                <div className="mt-1 relative group mb-2">
+                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground group-focus-within:text-primary transition-colors" />
+                                    <input 
+                                        type="text" 
+                                        placeholder="Search sites to assign..." 
+                                        value={siteSearchQuery}
+                                        onChange={e => setSiteSearchQuery(e.target.value)}
+                                        className="w-full pl-9 pr-4 py-2 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:ring-1 focus:ring-primary/50 text-xs text-white" 
+                                    />
+                                </div>
+                                <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar bg-neutral-900/50 p-2 rounded-xl border border-white/10">
+                                    {(() => {
+                                        const filteredSites = sites?.filter(s => 
+                                            s.name.toLowerCase().includes(siteSearchQuery.toLowerCase()) ||
+                                            s.locationName.toLowerCase().includes(siteSearchQuery.toLowerCase())
+                                        ) || [];
+
+                                        return (
+                                            <>
+                                                {filteredSites.map(s => {
+                                                    const isSelected = selectedSiteIds.includes(s._id);
+                                                    return (
+                                                        <button
+                                                            key={s._id}
+                                                            type="button"
+                                                            onClick={() => {
+                                                                if (isSelected) {
+                                                                    setSelectedSiteIds(selectedSiteIds.filter(id => id !== s._id));
+                                                                } else {
+                                                                    setSelectedSiteIds([...selectedSiteIds, s._id]);
+                                                                }
+                                                            }}
+                                                            className={cn(
+                                                                "w-full flex items-center justify-between p-2 rounded-lg border transition-all text-left group",
+                                                                isSelected ? "bg-primary/10 border-primary/30" : "bg-white/5 border-white/5 hover:bg-white/10"
+                                                            )}
+                                                        >
+                                                            <div className="min-w-0">
+                                                                <div className={cn("text-xs font-medium truncate", isSelected ? "text-primary" : "text-white")}>{s.name}</div>
+                                                                <div className="text-[10px] text-muted-foreground truncate">{s.locationName}</div>
+                                                            </div>
+                                                            {isSelected ? (
+                                                                <div className="w-4 h-4 rounded-full bg-primary flex items-center justify-center">
+                                                                    <Plus className="w-3 h-3 text-primary-foreground rotate-45" />
+                                                                </div>
+                                                            ) : (
+                                                                <Plus className="w-4 h-4 text-muted-foreground group-hover:text-white" />
+                                                            )}
+                                                        </button>
+                                                    );
+                                                })}
+                                                {filteredSites.length === 0 && (
+                                                    <div className="py-8 text-center">
+                                                        <p className="text-xs text-muted-foreground italic">No matching sites found</p>
+                                                    </div>
+                                                )}
+                                            </>
+                                        );
+                                    })()}
                                 </div>
                             </div>
                             <div className="space-y-2 py-2 border-y border-white/5">
@@ -601,29 +645,70 @@ export default function UserManagement() {
                                 </select>
                             </div>
                             <div>
-                                <label className="text-xs font-medium text-muted-foreground uppercase">Assigned Sites</label>
-                                <div className="mt-2 space-y-2 max-h-40 overflow-y-auto custom-scrollbar bg-neutral-900/50 p-3 rounded-xl border border-white/10">
-                                    {sites?.map(s => (
-                                        <label key={s._id} className="flex items-center gap-3 cursor-pointer group">
-                                            <input
-                                                type="checkbox"
-                                                checked={editingUser.siteIds?.includes(s._id) || false}
-                                                onChange={e => {
-                                                    const currentSiteIds = editingUser.siteIds || [];
-                                                    if (e.target.checked) {
-                                                        setEditingUser({ ...editingUser, siteIds: [...currentSiteIds, s._id] });
-                                                    } else {
-                                                        setEditingUser({ ...editingUser, siteIds: currentSiteIds.filter(id => id !== s._id) });
-                                                    }
-                                                }}
-                                                className="w-4 h-4 rounded border-white/20 bg-white/5 text-primary focus:ring-primary/50"
-                                            />
-                                            <span className="text-sm text-white/70 group-hover:text-white">{s.name}</span>
-                                        </label>
-                                    ))}
-                                    {(!sites || sites.length === 0) && (
-                                        <div className="text-xs text-muted-foreground italic">No sites available</div>
-                                    )}
+                                <label className="text-xs font-medium text-muted-foreground uppercase flex items-center justify-between">
+                                    Assigned Sites
+                                    {editingUser.siteIds && editingUser.siteIds.length > 0 && <span className="text-primary font-bold">{editingUser.siteIds.length} assigned</span>}
+                                </label>
+                                <div className="mt-1 relative group mb-2">
+                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground group-focus-within:text-primary transition-colors" />
+                                    <input 
+                                        type="text" 
+                                        placeholder="Search sites to assign..." 
+                                        value={editSiteSearchQuery}
+                                        onChange={e => setEditSiteSearchQuery(e.target.value)}
+                                        className="w-full pl-9 pr-4 py-2 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:ring-1 focus:ring-primary/50 text-xs text-white" 
+                                    />
+                                </div>
+                                <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar bg-neutral-900/50 p-2 rounded-xl border border-white/10">
+                                    {(() => {
+                                        const filteredSites = sites?.filter(s => 
+                                            s.name.toLowerCase().includes(editSiteSearchQuery.toLowerCase()) ||
+                                            s.locationName.toLowerCase().includes(editSiteSearchQuery.toLowerCase())
+                                        ) || [];
+
+                                        return (
+                                            <>
+                                                {filteredSites.map(s => {
+                                                    const isSelected = editingUser.siteIds?.includes(s._id);
+                                                    return (
+                                                        <button
+                                                            key={s._id}
+                                                            type="button"
+                                                            onClick={() => {
+                                                                const currentSiteIds = editingUser.siteIds || [];
+                                                                if (isSelected) {
+                                                                    setEditingUser({ ...editingUser, siteIds: currentSiteIds.filter(id => id !== s._id) });
+                                                                } else {
+                                                                    setEditingUser({ ...editingUser, siteIds: [...currentSiteIds, s._id] });
+                                                                }
+                                                            }}
+                                                            className={cn(
+                                                                "w-full flex items-center justify-between p-2 rounded-lg border transition-all text-left group",
+                                                                isSelected ? "bg-primary/10 border-primary/30" : "bg-white/5 border-white/5 hover:bg-white/10"
+                                                            )}
+                                                        >
+                                                            <div className="min-w-0">
+                                                                <div className={cn("text-xs font-medium truncate", isSelected ? "text-primary" : "text-white")}>{s.name}</div>
+                                                                <div className="text-[10px] text-muted-foreground truncate">{s.locationName}</div>
+                                                            </div>
+                                                            {isSelected ? (
+                                                                <div className="w-4 h-4 rounded-full bg-primary flex items-center justify-center">
+                                                                    <Plus className="w-3 h-3 text-primary-foreground rotate-45" />
+                                                                </div>
+                                                            ) : (
+                                                                <Plus className="w-4 h-4 text-muted-foreground group-hover:text-white" />
+                                                            )}
+                                                        </button>
+                                                    );
+                                                })}
+                                                {filteredSites.length === 0 && (
+                                                    <div className="py-8 text-center">
+                                                        <p className="text-xs text-muted-foreground italic">No matching sites found</p>
+                                                    </div>
+                                                )}
+                                            </>
+                                        );
+                                    })()}
                                 </div>
                             </div>
                             <div className="space-y-2 py-2 border-y border-white/5">

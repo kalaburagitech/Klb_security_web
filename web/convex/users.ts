@@ -109,6 +109,7 @@ export const create = mutation({
             name: args.name,
             role: args.role,
             organizationId: args.organizationId,
+            siteId: (args.siteIds && args.siteIds.length > 0) ? args.siteIds[0] : undefined,
             siteIds: args.siteIds,
             email: args.email,
             mobileNumber: args.mobileNumber,
@@ -159,6 +160,9 @@ export const update = mutation({
 
     handler: async (ctx, args) => {
         const { id, ...data } = args;
+        if (data.siteIds) {
+            (data as any).siteId = (data.siteIds.length > 0) ? data.siteIds[0] : undefined;
+        }
         await ctx.db.patch(id, data);
         return id;
     },
@@ -225,7 +229,9 @@ export const listBySite = query({
             .collect();
 
         return users.filter(
-            (user) => user.siteIds?.includes(args.siteId)
+            (user) => 
+                (user.siteIds && user.siteIds.includes(args.siteId)) || 
+                user.siteId === args.siteId
         );
     },
 });
