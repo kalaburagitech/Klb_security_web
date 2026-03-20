@@ -109,18 +109,11 @@ export const listSitesByUser = query({
 
         const rawRole = (user.role as string || '').toLowerCase().trim();
         
-        const isAdministrative = 
-            rawRole.includes("owner") || 
-            rawRole.includes("manager") || 
-            rawRole.includes("officer") ||
-            rawRole.includes("deployment manager") ||
-            rawRole.includes("higher officer");
-
-        const isActuallyAdmin = isAdministrative && 
-            !rawRole.includes("security officer") && 
-            rawRole !== "so" && 
-            rawRole !== "sg" && 
-            rawRole !== "new_user";
+        const isActuallyAdmin = 
+            rawRole === "owner" || 
+            rawRole === "manager" || 
+            rawRole === "deployment manager" || 
+            rawRole === "higher officer";
 
         if (isActuallyAdmin) {
             console.log(`[Convex] User ${args.userId} identifies as administrative (${user.role}). Fetching all organization sites.`);
