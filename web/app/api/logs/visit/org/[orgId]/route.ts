@@ -14,8 +14,10 @@ export async function GET(
     const regionId = searchParams.get("regionId");
     const city = searchParams.get("city");
 
+    const effectiveOrgId = orgId === 'all' ? undefined : orgId as Id<"organizations">;
+
     const logs = await convex.query(api.logs.listVisitLogs, {
-      organizationId: orgId as Id<"organizations">,
+      organizationId: effectiveOrgId,
       siteId: siteId ? siteId as Id<"sites"> : undefined,
       regionId: regionId || undefined,
       city: city || undefined

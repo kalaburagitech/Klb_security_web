@@ -7,11 +7,12 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 // import { useQuery, useMutation } from 'convex/react';
 import { useCustomAuth } from '../context/AuthContext';
 import { issueService } from '../services/api';
+import { isAdministrativeRole } from '../utils/roleUtils';
 
 export default function IssueReview() {
     const navigation = useNavigation<any>();
     const route = useRoute<any>();
-    const { organizationId } = useCustomAuth();
+    const { organizationId, customUser } = useCustomAuth();
     const { regionId, city } = route.params || {};
     const [statusFilter, setStatusFilter] = useState<'open' | 'closed'>('open');
     const [priorityFilter, setPriorityFilter] = useState<string | null>(null);
@@ -25,11 +26,14 @@ export default function IssueReview() {
     });
 
     const fetchIssues = async () => {
-        if (!organizationId) return;
+        const isAdmin = isAdministrativeRole(customUser?.role);
+        const effectiveOrgId = isAdmin ? 'all' : (organizationId as string);
+        if (!effectiveOrgId) return;
+
         setLoading(true);
         try {
             const res = await issueService.getIssuesByOrg(
-                organizationId, 
+                effectiveOrgId, 
                 undefined, 
                 regionId, 
                 city

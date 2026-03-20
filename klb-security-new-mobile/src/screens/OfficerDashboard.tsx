@@ -75,12 +75,11 @@ export default function OfficerDashboard() {
                     
                     if (isAdmin) {
                         data = data.filter((site: any) => {
-                            const matchesOrg = site.organizationId === organizationId;
                             const rSearch = selectedRegionId?.toLowerCase().trim();
                             const cSearch = selectedCity?.toLowerCase().trim();
                             const matchesRegion = !rSearch || site.regionId?.toLowerCase().trim() === rSearch;
                             const matchesCity = !cSearch || site.city?.toLowerCase().trim() === cSearch;
-                            return matchesOrg && matchesRegion && matchesCity;
+                            return matchesRegion && matchesCity;
                         });
                     }
                     
@@ -95,10 +94,12 @@ export default function OfficerDashboard() {
     }, [organizationId, userId, isAdmin, selectedRegionId, selectedCity]);
 
     React.useEffect(() => {
-        if (organizationId) {
+        if (organizationId || isAdmin) {
+            const effectiveOrgId = isAdmin ? 'all' : (organizationId as string);
+
             // Fetch logs based on current filters (site, region, city)
             logService.getPatrolLogs(
-                organizationId as string, 
+                effectiveOrgId, 
                 selectedSiteId || undefined,
                 selectedRegionId || undefined,
                 selectedCity || undefined
@@ -110,7 +111,7 @@ export default function OfficerDashboard() {
                 });
  
             logService.getVisitLogs(
-                organizationId as string, 
+                effectiveOrgId, 
                 selectedSiteId || undefined,
                 selectedRegionId || undefined,
                 selectedCity || undefined
@@ -123,7 +124,7 @@ export default function OfficerDashboard() {
  
             // Attendance filtering - using region filter if available
             attendanceService.list({ 
-                organizationId: organizationId as string,
+                organizationId: isAdmin ? undefined : (organizationId as string),
                 region: regions.find(r => r.regionId === selectedRegionId)?.regionName || undefined, 
             })
                 .then((res: any) => {
@@ -136,7 +137,7 @@ export default function OfficerDashboard() {
                 })
                 .catch((err: any) => console.error("Error fetching attendance logs:", err));
         }
-    }, [organizationId, selectedSiteId, selectedRegionId, selectedCity]);
+    }, [organizationId, selectedSiteId, selectedRegionId, selectedCity, isAdmin]);
 
     const filteredPatrolLogs = patrolLogs?.filter(log =>
         selectedSiteId ? log.siteId === selectedSiteId : sites.some(s => s._id === log.siteId)

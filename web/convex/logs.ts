@@ -59,7 +59,7 @@ export const createPatrolLog = mutation({
 
 export const listPatrolLogs = query({
     args: { 
-        organizationId: v.id("organizations"), 
+        organizationId: v.optional(v.id("organizations")), 
         siteId: v.optional(v.id("sites")),
         regionId: v.optional(v.string()),
         city: v.optional(v.string())
@@ -75,7 +75,7 @@ export const listPatrolLogs = query({
         } else if (args.regionId || args.city) {
             // Filter by region/city via site lookup
             const sites = await (args.organizationId 
-                ? ctx.db.query("sites").withIndex("by_org", (q) => q.eq("organizationId", args.organizationId))
+                ? ctx.db.query("sites").withIndex("by_org", (q) => q.eq("organizationId", args.organizationId!))
                 : ctx.db.query("sites")
             ).collect();
             
@@ -89,7 +89,7 @@ export const listPatrolLogs = query({
             
             const logsQuery = ctx.db.query("patrolLogs");
             const allLogs = await (args.organizationId
-                ? logsQuery.withIndex("by_org", (q) => q.eq("organizationId", args.organizationId))
+                ? logsQuery.withIndex("by_org", (q) => q.eq("organizationId", args.organizationId as any))
                 : logsQuery
             ).order("desc").collect();
             
@@ -97,7 +97,7 @@ export const listPatrolLogs = query({
         } else if (args.organizationId) {
             logs = await ctx.db
                 .query("patrolLogs")
-                .withIndex("by_org", (q) => q.eq("organizationId", args.organizationId))
+                .withIndex("by_org", (q) => q.eq("organizationId", args.organizationId!))
                 .order("desc")
                 .collect();
         } else {
@@ -209,10 +209,15 @@ export const countVisitLogsByType = query({
         city: v.optional(v.string()),
     },
     handler: async (ctx, args) => {
-        let logs = await ctx.db
-            .query("visitLogs")
-            .withIndex("by_org", (q) => q.eq("organizationId", args.organizationId))
-            .collect();
+        let logs;
+        if (args.organizationId) {
+            logs = await ctx.db
+                .query("visitLogs")
+                .withIndex("by_org", (q) => q.eq("organizationId", args.organizationId!))
+                .collect();
+        } else {
+            logs = await ctx.db.query("visitLogs").collect();
+        }
 
         if (args.siteId) {
             const sId = args.siteId as any;
@@ -248,23 +253,32 @@ export const countVisitLogsByType = query({
 
 export const listVisitLogs = query({
     args: { 
-        organizationId: v.id("organizations"),
+        organizationId: v.optional(v.id("organizations")),
         siteId: v.optional(v.id("sites")),
         regionId: v.optional(v.string()),
         city: v.optional(v.string())
     },
     handler: async (ctx, args) => {
-        let logs = await ctx.db
-            .query("visitLogs")
-            .withIndex("by_org", (q) => q.eq("organizationId", args.organizationId))
-            .order("desc")
-            .collect();
-
+        let logs;
         if (args.siteId) {
-            logs = logs.filter(l => l.siteId === args.siteId);
-        } else if (args.regionId || args.city) {
+            logs = await ctx.db
+                .query("visitLogs")
+                .withIndex("by_site", (q) => q.eq("siteId", args.siteId as any))
+                .order("desc")
+                .collect();
+        } else if (args.organizationId) {
+            logs = await ctx.db
+                .query("visitLogs")
+                .withIndex("by_org", (q) => q.eq("organizationId", args.organizationId as any))
+                .order("desc")
+                .collect();
+        } else {
+            logs = await ctx.db.query("visitLogs").order("desc").collect();
+        }
+
+        if (!args.siteId && (args.regionId || args.city)) {
             const sites = await (args.organizationId
-                ? ctx.db.query("sites").withIndex("by_org", (q) => q.eq("organizationId", args.organizationId))
+                ? ctx.db.query("sites").withIndex("by_org", (q) => q.eq("organizationId", args.organizationId as any))
                 : ctx.db.query("sites")
             ).collect();
             
@@ -287,7 +301,7 @@ export const listVisitLogs = query({
                 // Lookup the point by qrCode to get the name
                 const point = await ctx.db
                     .query("patrolPoints")
-                    .withIndex("by_org", (q) => q.eq("organizationId", args.organizationId))
+                    .withIndex("by_org", (q) => q.eq("organizationId", (args.organizationId || log.organizationId) as any))
                     .filter((q) => q.eq(q.field("qrCode"), log.qrData))
                     .first();
 
@@ -402,13 +416,22 @@ export const listIssuesByOrg = query({
         if (args.siteId) {
             issues = await ctx.db
                 .query("issues")
-                .withIndex("by_org", (q) => q.eq("organizationId", args.organizationId!))
-                .filter((q) => q.eq(q.field("siteId"), args.siteId))
+                .withIndex("by_site", (q) => q.eq("siteId", args.siteId as any))
                 .order("desc")
                 .collect();
-        } else if (args.regionId || args.city) {
-            const sites = await (args.organizationId 
-                ? ctx.db.query("sites").withIndex("by_org", (q) => q.eq("organizationId", args.organizationId!))
+        } else if (args.organizationId) {
+            issues = await ctx.db
+                .query("issues")
+                .withIndex("by_org", (q) => q.eq("organizationId", args.organizationId as any))
+                .order("desc")
+                .collect();
+        } else {
+            issues = await ctx.db.query("issues").order("desc").collect();
+        }
+
+        if (!args.siteId && (args.regionId || args.city)) {
+             const sites = await (args.organizationId 
+                ? ctx.db.query("sites").withIndex("by_org", (q) => q.eq("organizationId", args.organizationId as any))
                 : ctx.db.query("sites")
             ).collect();
             
@@ -420,20 +443,7 @@ export const listIssuesByOrg = query({
                 }).map(s => s._id)
             );
             
-            const allIssues = await (args.organizationId
-                ? ctx.db.query("issues").withIndex("by_org", (q) => q.eq("organizationId", args.organizationId!))
-                : ctx.db.query("issues")
-            ).order("desc").collect();
-            
-            issues = allIssues.filter(issue => filteredSiteIds.has(issue.siteId));
-        } else if (args.organizationId) {
-            issues = await ctx.db
-                .query("issues")
-                .withIndex("by_org", (q) => q.eq("organizationId", args.organizationId!))
-                .order("desc")
-                .collect();
-        } else {
-            issues = await ctx.db.query("issues").order("desc").collect();
+            issues = issues.filter(issue => filteredSiteIds.has(issue.siteId));
         }
 
         const enrichedIssues = await Promise.all(
@@ -690,7 +700,7 @@ export const countIssuesByOrg = query({
         } else if (args.organizationId) {
             issues = await ctx.db
                 .query("issues")
-                .withIndex("by_org", (q) => q.eq("organizationId", args.organizationId!))
+                .withIndex("by_org", (q) => q.eq("organizationId", args.organizationId))
                 .collect();
         } else {
             issues = await ctx.db.query("issues").collect();

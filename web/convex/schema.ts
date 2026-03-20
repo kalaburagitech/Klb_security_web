@@ -106,7 +106,7 @@ export default defineSchema({
         longitude: v.number(),
         createdAt: v.number(),
         organizationId: v.id("organizations"),
-    }).index("by_org", ["organizationId"]),
+    }).index("by_org", ["organizationId"]).index("by_site", ["siteId"]),
 
     issues: defineTable({
         siteId: v.id("sites"),
@@ -117,7 +117,7 @@ export default defineSchema({
         status: v.union(v.literal("open"), v.literal("closed")),
         timestamp: v.number(),
         organizationId: v.id("organizations"),
-    }).index("by_org", ["organizationId"]),
+    }).index("by_org", ["organizationId"]).index("by_site", ["siteId"]),
 
     logs: defineTable({
         type: v.union(v.literal("patrol"), v.literal("visit"), v.literal("issue")),

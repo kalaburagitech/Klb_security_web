@@ -13,9 +13,11 @@ export async function GET(
     const regionId = searchParams.get("regionId");
     const city = searchParams.get("city");
 
+    const effectiveOrgId = orgId === 'all' ? undefined : orgId as any;
+
     try {
         const issues = await fetchQuery(api.logs.listIssuesByOrg, {
-            organizationId: orgId as any,
+            organizationId: effectiveOrgId,
             siteId: (siteId as any) || undefined,
             regionId: regionId || undefined,
             city: city || undefined,
