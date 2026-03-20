@@ -555,9 +555,10 @@ export default function SiteManagement() {
                                 </div>
                             ) : (() => {
                                 const filtered = users?.filter(u =>
-                                    u.name.toLowerCase().includes(assignSearchQuery.toLowerCase()) ||
-                                    u.email?.toLowerCase().includes(assignSearchQuery.toLowerCase()) ||
-                                    u.mobileNumber?.toLowerCase().includes(assignSearchQuery.toLowerCase())
+                                    u.role !== "NEW_USER" &&
+                                    (u.name.toLowerCase().includes(assignSearchQuery.toLowerCase()) ||
+                                     u.email?.toLowerCase().includes(assignSearchQuery.toLowerCase()) ||
+                                     u.mobileNumber?.toLowerCase().includes(assignSearchQuery.toLowerCase()))
                                 ) || [];
 
                                 const sorted = [...filtered].sort((a, b) => {
@@ -1042,10 +1043,10 @@ function SiteOfficersList({ siteId, onRemove }: { siteId: Id<"sites">, onRemove:
                             e.stopPropagation();
                             onRemove(officer._id);
                         }}
-                        className="p-1 hover:bg-red-500/10 rounded text-muted-foreground hover:text-red-500 transition-colors opacity-0 group-hover/item:opacity-100"
+                        className="p-1.5 hover:bg-red-500/20 rounded-lg text-red-400 opacity-0 group-hover/item:opacity-100 transition-all duration-200"
                         title="Remove Officer"
                     >
-                        <UserMinus className="w-3 h-3" />
+                        <UserMinus className="w-3.5 h-3.5" />
                     </button>
                 </div>
             ))}
