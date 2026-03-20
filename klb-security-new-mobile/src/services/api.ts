@@ -7,9 +7,10 @@ import { Platform, Alert } from 'react-native';
 // IMPORTANT: Do not hardcode production here. Expo dev should call the dev/local API.
 // `__DEV__` is provided by React Native tooling.
 const PROD_URL = 'https://klb-security-web.vercel.app/api';
-const DEV_URL = 'https://klb-security-web.vercel.app/api';
+// const DEV_URL = 'http://192.168.1.10:3000/api'; // Local dev example
 
-export const API_URL = __DEV__ ? DEV_URL : PROD_URL;
+// export const API_URL = __DEV__ ? DEV_URL : PROD_URL;
+export const API_URL = PROD_URL; // Force Production URL
 
 // Face Recognition API URL
 export const FACE_RECOGNITION_API_URL = 'https://rawly-unmeditative-isaura.ngrok-free.dev/api';

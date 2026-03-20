@@ -1,10 +1,10 @@
-import { NextRequest, NextResponse } from "next/server";
-import { convex } from "@/lib/convexClient";
+import { NextResponse } from "next/server";
+import { fetchQuery } from "convex/nextjs";
 import { api } from "@/convex/_generated/api.js";
-import { Id } from "@/convex/_generated/dataModel";
+import { corsHeaders } from "@/lib/cors";
 
 export async function GET(
-  req: NextRequest,
+  req: Request,
   { params }: { params: Promise<{ orgId: string }> }
 ) {
   try {
@@ -15,21 +15,21 @@ export async function GET(
     const city = searchParams.get("city");
 
     const isValidId = (id: string | null) => id && id !== "undefined" && id !== "null";
-    const effectiveOrgId = (orgId === 'all' || !isValidId(orgId)) ? undefined : orgId as Id<"organizations">;
+    const effectiveOrgId = (orgId === 'all' || !isValidId(orgId)) ? undefined : orgId as any;
 
-    const logs = await convex.query(api.logs.listVisitLogs, {
+    const logs = await fetchQuery(api.logs.listVisitLogs, {
       organizationId: effectiveOrgId,
-      siteId: isValidId(siteId) ? siteId as Id<"sites"> : undefined,
+      siteId: isValidId(siteId) ? (siteId as any) : undefined,
       regionId: regionId || undefined,
       city: city || undefined
     });
-    return NextResponse.json(logs, { headers: {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type, Authorization",
-    }});
-  } catch (error) {
+    return NextResponse.json(logs, { headers: corsHeaders() });
+  } catch (error: any) {
     console.error("[API] Logs Visit Org error:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json({ error: error.message || "Internal server error" }, { status: 500, headers: corsHeaders() });
   }
+}
+
+export async function OPTIONS() {
+  return NextResponse.json({}, { headers: corsHeaders() });
 }
