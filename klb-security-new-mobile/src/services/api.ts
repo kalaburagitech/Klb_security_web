@@ -6,8 +6,8 @@ import { Platform, Alert } from 'react-native';
 //
 // IMPORTANT: Do not hardcode production here. Expo dev should call the dev/local API.
 // `__DEV__` is provided by React Native tooling.
-const PROD_URL = 'http://192.168.0.110:3000/api';
-const DEV_URL = 'http://192.168.0.110:3000/api';
+const PROD_URL = 'https://klb-security-web.vercel.app/api';
+const DEV_URL = 'https://klb-security-web.vercel.app/api';
 
 export const API_URL = __DEV__ ? DEV_URL : PROD_URL;
 

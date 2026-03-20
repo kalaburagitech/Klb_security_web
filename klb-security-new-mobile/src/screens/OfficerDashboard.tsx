@@ -54,12 +54,12 @@ export default function OfficerDashboard() {
     const [attendanceLogs, setAttendanceLogs] = useState<any[]>([]);
     const [showVisitMenu, setShowVisitMenu] = useState(false);
 
-    // Role + auth are loaded async. If the user becomes admin (Owner/Manager/Officer) after initial render,
-    // reset filters so admins see ALL organization sites (no region/city filtering).
+    // Role + auth are loaded async. 
+    // We no longer reset filters for admins here, as they now need to use them for monitoring.
     React.useEffect(() => {
         if (isAdmin) {
-            setSelectedRegionId(null);
-            setSelectedCity(null);
+            // Initially, we can leave filters as null to show "All"
+            // But we don't force-clear them on every role change if they were already set.
         }
     }, [isAdmin]);
 
@@ -71,12 +71,9 @@ export default function OfficerDashboard() {
 
     React.useEffect(() => {
         if (organizationId && userId) {
-            // Backend handle: listSitesByUser now returns all sites for Admins/Officers
-            const fetchMethod = isAdmin ?
-                siteService.getAllSites() :
-                siteService.getSitesByUser(userId as string, selectedRegionId || undefined, selectedCity || undefined);
-
-            fetchMethod
+            // Unified fetch: siteService.getSitesByUser handles both admins (returns all org sites) 
+            // and regular users (returns assigned sites), and both support region/city filtering.
+            siteService.getSitesByUser(userId as string, selectedRegionId || undefined, selectedCity || undefined)
                 .then(res => {
                     setSites(res.data || []);
                 })
