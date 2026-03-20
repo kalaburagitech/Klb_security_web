@@ -1020,12 +1020,18 @@ export default function SiteManagement() {
 }
 
 
-function SiteOfficersList({ siteId, onRemove }: { siteId: Id<"sites">, onRemove: (id: Id<"users">) => void }) {
-    const rawOfficers = useQuery(api.users.listBySite, { siteId });
-    const officers = rawOfficers;
+function SiteOfficersList({ siteId, allUsers, onRemove }: { 
+    siteId: Id<"sites">, 
+    allUsers: any[] | undefined,
+    onRemove: (id: Id<"users">) => void 
+}) {
+    const officers = allUsers?.filter(u => 
+        (u.siteIds && u.siteIds.includes(siteId)) || 
+        u.siteId === siteId
+    );
 
-    if (officers === undefined) return <div className="text-xs text-muted-foreground italic">Loading officers...</div>;
-    if (officers.length === 0) return <div className="text-xs text-muted-foreground italic">No officers assigned to this site.</div>;
+    if (allUsers === undefined) return <div className="text-xs text-muted-foreground italic">Loading officers...</div>;
+    if (!officers || officers.length === 0) return <div className="text-xs text-muted-foreground italic">No officers assigned to this site.</div>;
 
     return (
         <div className="flex flex-wrap gap-2">
@@ -1043,7 +1049,7 @@ function SiteOfficersList({ siteId, onRemove }: { siteId: Id<"sites">, onRemove:
                             e.stopPropagation();
                             onRemove(officer._id);
                         }}
-                        className="p-1.5 hover:bg-red-500/20 rounded-lg text-red-400 opacity-0 group-hover/item:opacity-100 transition-all duration-200"
+                        className="p-1.5 bg-white/5 hover:bg-red-500/20 rounded-lg text-red-400 group-hover/item:bg-red-500/10 transition-all duration-200"
                         title="Remove Officer"
                     >
                         <UserMinus className="w-3.5 h-3.5" />
