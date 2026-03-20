@@ -454,8 +454,15 @@ export const listIssuesByOrg = query({
                 return matchesRegion && matchesCity;
             });
 
-            const filteredSiteIds = new Set(filteredSites.map(s => s._id));
-            issues = issues.filter(issue => filteredSiteIds.has(issue.siteId));
+            const issuePromises = filteredSites.map(site => 
+                ctx.db.query("issues")
+                    .withIndex("by_site", q => q.eq("siteId", site._id))
+                    .order("desc")
+                    .collect()
+            );
+            
+            const issueResults = await Promise.all(issuePromises);
+            issues = issueResults.flat().sort((a, b) => b.timestamp - a.timestamp);
         }
 
         const enrichedIssues = await Promise.all(
