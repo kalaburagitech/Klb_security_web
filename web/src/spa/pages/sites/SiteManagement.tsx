@@ -529,7 +529,7 @@ export default function SiteManagement() {
                         <div className="p-4 sm:p-6 border-b border-white/5 flex items-center justify-between">
                             <h3 className="text-lg font-semibold text-white flex items-center gap-2">
                                 <UserPlus className="w-5 h-5 text-primary" />
-                                Assign Officer
+                                Assign Users
                             </h3>
                             <button onClick={() => setIsAssignModalOpen(false)}><X className="w-5 h-5 text-muted-foreground" /></button>
                         </div>
@@ -541,7 +541,7 @@ export default function SiteManagement() {
                                     type="text"
                                     value={assignSearchQuery}
                                     onChange={(e) => setAssignSearchQuery(e.target.value)}
-                                    placeholder="Search officers..."
+                                    placeholder="Search users..."
                                     className="w-full pl-10 pr-4 py-2 bg-white/5 border border-white/10 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-primary/50 text-white"
                                 />
                             </div>
@@ -604,10 +604,8 @@ export default function SiteManagement() {
                                                                 permissions: officer.permissions
                                                             } as any);
                                                             toast.success(`${officer.name} assigned successfully`);
-                                                            setIsAssignModalOpen(false);
-                                                            setAssignSearchQuery("");
                                                         } catch (error: any) {
-                                                            console.error("Failed to assign officer:", error);
+                                                            console.error("Failed to assign user:", error);
                                                             toast.error(error.code === "ValidationFailed" ? "Invalid user data" : (error.message || "Failed to assign user"));
                                                         }
                                                     }}
@@ -660,6 +658,18 @@ export default function SiteManagement() {
                                     </>
                                 );
                             })()}
+                        </div>
+
+                        <div className="p-4 border-t border-white/5 bg-white/5 flex justify-end">
+                            <button
+                                onClick={() => {
+                                    setIsAssignModalOpen(false);
+                                    setAssignSearchQuery("");
+                                }}
+                                className="px-6 py-2 bg-primary text-primary-foreground rounded-xl text-sm font-semibold hover:opacity-90 transition-all shadow-lg"
+                            >
+                                Done
+                            </button>
                         </div>
                     </div>
                 </div>
