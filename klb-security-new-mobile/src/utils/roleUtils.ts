@@ -3,12 +3,17 @@
  */
 export const isAdministrativeRole = (role?: string): boolean => {
     const rawRole = (role || '').toLowerCase().trim();
+    
+    // Explicit exclusions for staff roles
+    if (rawRole.includes('security officer') || rawRole === 'so' || rawRole === 'sg' || rawRole === 'new_user') {
+        return false;
+    }
+
+    // Keyword matching for monitoring/administrative roles
     return (
-        rawRole.includes('admin') ||
         rawRole.includes('owner') ||
-        rawRole.includes('officer') ||
         rawRole.includes('manager') ||
-        rawRole.includes('so')
+        rawRole.includes('officer')
     );
 };
 

@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import dynamic from "next/dynamic";
 import { Layout } from "../../../components/Layout";
-import { Plus, MapPin, Search, Loader2, Edit2, Trash2, X, Building, ChevronDown, ChevronRight, Clock, Users, UserPlus, UserMinus } from "lucide-react";
+import { Plus, MapPin, Search, Loader2, Edit2, Trash2, X, Building, ChevronDown, ChevronRight, Clock, Users, UserPlus, UserMinus, Check } from "lucide-react";
 import { cn } from "../../../lib/utils";
 import { useQuery, useMutation } from "convex/react";
 const MapPicker = dynamic(() => import("../../../components/MapPicker").then(mod => mod.MapPicker), { ssr: false });
@@ -548,56 +548,118 @@ export default function SiteManagement() {
                         </div>
 
                         <div className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar">
-                            {users?.filter(u =>
-                                (u.role === "Officer" || u.role === "Security Officer" || u.role === "SG" || u.role === "SO") &&
-                                !u.siteIds?.includes(assigningSiteId!) &&
-                                u.name.toLowerCase().includes(assignSearchQuery.toLowerCase())
-                            ).map(officer => (
-                                <button
-                                    key={officer._id}
-                                    onClick={async () => {
-                                        if (!assigningSiteId) return;
-                                        try {
-                                            const currentSiteIds = officer.siteIds || [];
-                                            await updateUser({
-                                                id: officer._id,
-                                                name: officer.name,
-                                                role: officer.role as any,
-                                                email: officer.email,
-                                                mobileNumber: officer.mobileNumber,
-                                                organizationId: officer.organizationId,
-                                                siteIds: [...currentSiteIds, assigningSiteId],
-                                                permissions: officer.permissions
-                                            } as any);
-                                            toast.success(`${officer.name} assigned successfully`);
-                                            setIsAssignModalOpen(false);
-                                            setAssignSearchQuery("");
-                                        } catch (error: any) {
-                                            console.error("Failed to assign officer:", error);
-                                            toast.error(error.code === "ValidationFailed" ? "Invalid officer data" : (error.message || "Failed to assign officer"));
-                                        }
-                                    }}
-                                    className="w-full flex items-center gap-3 p-3 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-all group"
-                                >
-                                    <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center font-bold text-primary group-hover:scale-110 transition-transform">
-                                        {officer.name.charAt(0)}
-                                    </div>
-                                    <div className="text-left">
-                                        <div className="text-sm font-medium text-white">{officer.name}</div>
-                                        <div className="text-xs text-muted-foreground">{officer.role}</div>
-                                    </div>
-                                    <Plus className="w-4 h-4 ml-auto text-muted-foreground group-hover:text-primary transition-colors" />
-                                </button>
-                            ))}
-                            {users?.filter(u =>
-                                (u.role === "Officer" || u.role === "Security Officer" || u.role === "SG" || u.role === "SO") &&
-                                !u.siteIds?.includes(assigningSiteId!) &&
-                                u.name.toLowerCase().includes(assignSearchQuery.toLowerCase())
-                            ).length === 0 && (
-                                    <div className="text-center py-8 text-muted-foreground text-sm italic">
-                                        No available officers found
-                                    </div>
-                                )}
+                            {users === undefined ? (
+                                <div className="flex flex-col items-center justify-center py-12 space-y-4">
+                                    <div className="w-8 h-8 border-4 border-primary/30 border-t-primary rounded-full animate-spin" />
+                                    <div className="text-sm text-muted-foreground animate-pulse font-medium">Fetching organization users...</div>
+                                </div>
+                            ) : (() => {
+                                const filtered = users?.filter(u =>
+                                    u.name.toLowerCase().includes(assignSearchQuery.toLowerCase()) ||
+                                    u.email?.toLowerCase().includes(assignSearchQuery.toLowerCase()) ||
+                                    u.mobileNumber?.toLowerCase().includes(assignSearchQuery.toLowerCase())
+                                ) || [];
+
+                                const sorted = [...filtered].sort((a, b) => {
+                                    const query = assignSearchQuery.toLowerCase();
+                                    if (!query) return a.name.localeCompare(b.name);
+                                    
+                                    const aStarts = a.name.toLowerCase().startsWith(query);
+                                    const bStarts = b.name.toLowerCase().startsWith(query);
+                                    
+                                    if (aStarts && !bStarts) return -1;
+                                    if (!aStarts && bStarts) return 1;
+                                    
+                                    return a.name.localeCompare(b.name);
+                                });
+
+                                return (
+                                    <>
+                                        {sorted.length > 0 && (
+                                            <div className="flex items-center justify-between px-1 pb-2">
+                                                <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest pl-1">All Organization Users ({sorted.length})</div>
+                                                {assignSearchQuery && (
+                                                    <div className="text-[10px] text-primary font-medium bg-primary/10 px-2 py-0.5 rounded-full">Search Result</div>
+                                                )}
+                                            </div>
+                                        )}
+                                        {sorted.map(officer => {
+                                            const isAssigned = officer.siteIds?.includes(assigningSiteId!);
+                                            return (
+                                                <button
+                                                    key={officer._id}
+                                                    disabled={isAssigned}
+                                                    onClick={async () => {
+                                                        if (!assigningSiteId || isAssigned) return;
+                                                        try {
+                                                            const currentSiteIds = officer.siteIds || [];
+                                                            await updateUser({
+                                                                id: officer._id,
+                                                                name: officer.name,
+                                                                role: officer.role as any,
+                                                                email: officer.email,
+                                                                mobileNumber: officer.mobileNumber,
+                                                                organizationId: officer.organizationId,
+                                                                siteIds: [...currentSiteIds, assigningSiteId],
+                                                                permissions: officer.permissions
+                                                            } as any);
+                                                            toast.success(`${officer.name} assigned successfully`);
+                                                            setIsAssignModalOpen(false);
+                                                            setAssignSearchQuery("");
+                                                        } catch (error: any) {
+                                                            console.error("Failed to assign officer:", error);
+                                                            toast.error(error.code === "ValidationFailed" ? "Invalid user data" : (error.message || "Failed to assign user"));
+                                                        }
+                                                    }}
+                                                    className={cn(
+                                                        "w-full flex items-center gap-3 p-3 border rounded-xl transition-all group",
+                                                        isAssigned 
+                                                            ? "bg-emerald-500/5 border-emerald-500/20 cursor-default" 
+                                                            : "bg-white/5 border-white/10 hover:bg-white/10"
+                                                    )}
+                                                >
+                                                    <div className={cn(
+                                                        "w-10 h-10 rounded-full flex items-center justify-center font-bold transition-transform",
+                                                        isAssigned ? "bg-emerald-500/20 text-emerald-500" : "bg-primary/20 text-primary group-hover:scale-110"
+                                                    )}>
+                                                        {isAssigned ? <Check className="w-5 h-5" /> : officer.name.charAt(0)}
+                                                    </div>
+                                                    <div className="text-left flex-1 min-w-0">
+                                                        <div className="flex items-center gap-2">
+                                                            <div className="text-sm font-medium text-white truncate">{officer.name}</div>
+                                                            {isAssigned && (
+                                                                <span className="text-[10px] bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full font-bold uppercase tracking-tighter">Assigned</span>
+                                                            )}
+                                                        </div>
+                                                        <div className="text-xs text-muted-foreground flex items-center gap-2 truncate">
+                                                            <span>{officer.role}</span>
+                                                            {officer.mobileNumber && (
+                                                                <>
+                                                                    <span className="w-1 h-1 rounded-full bg-slate-600" />
+                                                                    <span>{officer.mobileNumber}</span>
+                                                                </>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                    {!isAssigned && <Plus className="w-4 h-4 ml-auto text-muted-foreground group-hover:text-primary transition-colors" />}
+                                                </button>
+                                            );
+                                        })}
+                                        {sorted.length === 0 && (
+                                            <div className="flex flex-col items-center justify-center py-12 text-center">
+                                                <Users className="w-12 h-12 text-white/5 mb-3" />
+                                                <div className="text-sm text-muted-foreground italic font-medium">No available users found matching your search</div>
+                                                <button 
+                                                    onClick={() => setAssignSearchQuery("")}
+                                                    className="mt-4 text-xs text-primary hover:underline font-semibold"
+                                                >
+                                                    Clear search
+                                                </button>
+                                            </div>
+                                        )}
+                                    </>
+                                );
+                            })()}
                         </div>
                     </div>
                 </div>

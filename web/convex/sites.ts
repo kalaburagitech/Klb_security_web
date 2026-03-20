@@ -109,15 +109,20 @@ export const listSitesByUser = query({
 
         const rawRole = (user.role as string || '').toLowerCase().trim();
         
-        // Broad administrative keyword matching 
         const isAdministrative = 
-            rawRole.includes("admin") || 
             rawRole.includes("owner") || 
-            rawRole.includes("officer") || 
             rawRole.includes("manager") || 
-            rawRole.includes("so");
+            rawRole.includes("officer") ||
+            rawRole.includes("deployment manager") ||
+            rawRole.includes("higher officer");
 
-        if (isAdministrative) {
+        const isActuallyAdmin = isAdministrative && 
+            !rawRole.includes("security officer") && 
+            rawRole !== "so" && 
+            rawRole !== "sg" && 
+            rawRole !== "new_user";
+
+        if (isActuallyAdmin) {
             console.log(`[Convex] User ${args.userId} identifies as administrative (${user.role}). Fetching all organization sites.`);
             let sites = await ctx.db
                 .query("sites")

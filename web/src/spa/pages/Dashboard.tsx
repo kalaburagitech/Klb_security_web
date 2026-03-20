@@ -55,31 +55,31 @@ export default function Dashboard() {
     } : "skip") as any
   );
   const patrolLogsCount = useQuery(
-    isOwner ? api.logs.countPatrolLogsByOrg : api.logs.countPatrolLogsByOrg,
-    (isOwner ? {} : orgIdToUse ? { 
+    api.logs.countPatrolLogsByOrg,
+    { 
       organizationId: orgIdToUse, 
       siteId: siteIdToUse,
       regionId: selectedRegionId || undefined,
       city: selectedCity || undefined
-    } : "skip") as any
+    }
   );
   const openIssuesCount = useQuery(
-    isOwner ? api.logs.countAllIssues : api.logs.countIssuesByOrg,
-    (isOwner ? {} : orgIdToUse ? { 
+    api.logs.countIssuesByOrg,
+    { 
       organizationId: orgIdToUse, 
       siteId: siteIdToUse,
       regionId: selectedRegionId || undefined,
       city: selectedCity || undefined
-    } : "skip") as any
+    }
   );
   const issuesList = useQuery(
-    isOwner ? api.logs.listAllIssues : api.logs.listIssuesByOrg,
-    (isOwner ? {} : orgIdToUse ? { 
+    api.logs.listIssuesByOrg,
+    { 
       organizationId: orgIdToUse, 
       siteId: siteIdToUse,
       regionId: selectedRegionId || undefined,
       city: selectedCity || undefined
-    } : "skip") as any
+    }
   );
   const visitStats = useQuery(
     api.logs.countVisitLogsByType,
@@ -209,26 +209,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Site Filter Bar */}
-        <div className="flex flex-col sm:flex-row sm:items-center gap-4 bg-white/5 border border-white/10 p-4 rounded-2xl">
-          <div className="flex items-center gap-2">
-            <MapPin className="w-4 h-4 text-primary" />
-            <span className="text-sm font-semibold text-muted-foreground">Filter by Site:</span>
-          </div>
-          <div className="flex-1 max-w-sm">
-            {orgIdToUse ? (
-              <SearchableSitePicker
-                organizationId={orgIdToUse}
-                selectedSiteId={selectedSiteId}
-                onSelect={setSelectedSiteId}
-                regionId={selectedRegionId || undefined}
-                city={selectedCity || undefined}
-              />
-            ) : (
-              <div className="h-10 bg-white/5 border border-white/10 rounded-xl animate-pulse" />
-            )}
-          </div>
-        </div>
+        {/* Filter bar removed as requested */}
 
         {/* Quick Actions Bar */}
         <div className="flex flex-col sm:flex-row sm:items-center gap-4 bg-white/5 border border-white/10 p-4 rounded-2xl">
