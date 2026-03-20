@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Building2, User, Clock, ClipboardList, ChevronRight, MapPin, Search, LogOut, X, CheckCircle, Scan, ShieldAlert, Plus, QrCode, GraduationCap, SunMoon } from 'lucide-react-native';
+import { Building2, User, Clock, ClipboardList, ChevronRight, MapPin, Search, LogOut, X, CheckCircle, Scan, ShieldAlert, Plus, QrCode, GraduationCap, SunMoon, Menu, Calendar as CalendarIcon } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 // import { useQuery } from 'convex/react';
 // import { api } from '../services/convex';
@@ -21,6 +21,7 @@ export default function OfficerDashboard() {
     const isOfficer = isAdmin; // For UI mapping to 'Monitoring Dashboard' title
     const [selectedSiteId, setSelectedSiteId] = useState<any>(null);
     const [searchQuery, setSearchQuery] = useState('');
+    const [isMenuOpen, setIsMenuOpen] = useState(false);
 
     const handleLogout = async () => {
         Alert.alert(
@@ -153,14 +154,75 @@ export default function OfficerDashboard() {
     return (
         <SafeAreaView style={styles.container}>
             <View style={styles.header}>
-                <Text style={styles.title}>{isOfficer ? `Monitoring  [${role}]` : `Officer  [${role}]`}</Text>
+                <TouchableOpacity onPress={() => setIsMenuOpen(true)} style={styles.menuBtn}>
+                    <Menu color="white" size={24} />
+                </TouchableOpacity>
+                <Text style={styles.title}>{isAdmin ? "Global Monitor" : "System Monitor"}</Text>
                 <View style={{ flexDirection: 'row', gap: 10 }}>
                     <TouchableOpacity onPress={handleLogout} style={styles.logoutBtn}>
                         <LogOut color="#ef4444" size={16} />
-                        <Text style={styles.logoutText}>Logout</Text>
                     </TouchableOpacity>
                 </View>
             </View>
+
+            {/* Premium Menu Overlay */}
+            {isMenuOpen && (
+                <View style={styles.menuOverlay}>
+                    <SafeAreaView style={{ flex: 1 }}>
+                        <View style={styles.menuHeader}>
+                            <Text style={styles.menuTitle}>Navigation</Text>
+                            <TouchableOpacity onPress={() => setIsMenuOpen(false)} style={styles.closeBtn}>
+                                <X color="white" size={24} />
+                            </TouchableOpacity>
+                        </View>
+                        <View style={styles.menuContent}>
+                            <TouchableOpacity 
+                                style={styles.menuItem} 
+                                onPress={() => { setIsMenuOpen(false); navigation.navigate('MainTabs', { screen: 'History' }); }}
+                            >
+                                <View style={[styles.menuIcon, { backgroundColor: '#3b82f6' }]}>
+                                    <ClipboardList color="white" size={20} />
+                                </View>
+                                <Text style={styles.menuText}>Log History</Text>
+                                <ChevronRight color="#475569" size={20} />
+                            </TouchableOpacity>
+                            
+                            <TouchableOpacity 
+                                style={styles.menuItem} 
+                                onPress={() => { setIsMenuOpen(false); navigation.navigate('MainTabs', { screen: 'Attendance' }); }}
+                            >
+                                <View style={[styles.menuIcon, { backgroundColor: '#10b981' }]}>
+                                    <CalendarIcon color="white" size={20} />
+                                </View>
+                                <Text style={styles.menuText}>Attendance</Text>
+                                <ChevronRight color="#475569" size={20} />
+                            </TouchableOpacity>
+
+                            <TouchableOpacity 
+                                style={styles.menuItem} 
+                                onPress={() => { setIsMenuOpen(false); navigation.navigate('IssueReview'); }}
+                            >
+                                <View style={[styles.menuIcon, { backgroundColor: '#ef4444' }]}>
+                                    <ShieldAlert color="white" size={20} />
+                                </View>
+                                <Text style={styles.menuText}>Issue Tracker</Text>
+                                <ChevronRight color="#475569" size={20} />
+                            </TouchableOpacity>
+
+                            <TouchableOpacity 
+                                style={styles.menuItem} 
+                                onPress={() => { setIsMenuOpen(false); navigation.navigate('QRManagement'); }}
+                            >
+                                <View style={[styles.menuIcon, { backgroundColor: '#f59e0b' }]}>
+                                    <Menu color="white" size={20} />
+                                </View>
+                                <Text style={styles.menuText}>QR Tools</Text>
+                                <ChevronRight color="#475569" size={20} />
+                            </TouchableOpacity>
+                        </View>
+                    </SafeAreaView>
+                </View>
+            )}
 
 
             <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -404,7 +466,14 @@ export default function OfficerDashboard() {
                         </View>
 
                         <View style={styles.siteGrid}>
-                            {sites?.filter(site => site.name.toLowerCase().includes(searchQuery.toLowerCase())).map(site => (
+                            {sites?.filter(site => {
+                                const query = searchQuery.toLowerCase().trim();
+                                return (
+                                    site.name.toLowerCase().includes(query) ||
+                                    (site.locationName && site.locationName.toLowerCase().includes(query)) ||
+                                    (site.city && site.city.toLowerCase().includes(query))
+                                );
+                            }).map(site => (
                                 <TouchableOpacity
                                     key={site._id}
                                     style={styles.siteCard}
@@ -1067,5 +1136,65 @@ const styles = StyleSheet.create({
         color: '#3b82f6',
         fontSize: 12,
         fontWeight: '600',
+    },
+    // Premium Menu Styles
+    menuBtn: {
+        padding: 8,
+        borderRadius: 12,
+        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    },
+    menuOverlay: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: '#020617',
+        zIndex: 1000,
+    },
+    menuHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        padding: 24,
+        borderBottomWidth: 1,
+        borderBottomColor: 'rgba(255, 255, 255, 0.05)',
+    },
+    menuTitle: {
+        color: 'white',
+        fontSize: 24,
+        fontWeight: 'bold',
+    },
+    closeBtn: {
+        padding: 8,
+        borderRadius: 12,
+        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    },
+    menuContent: {
+        padding: 24,
+        gap: 16,
+    },
+    menuItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#0f172a',
+        padding: 16,
+        borderRadius: 20,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.05)',
+        gap: 16,
+    },
+    menuIcon: {
+        width: 44,
+        height: 44,
+        borderRadius: 12,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    menuText: {
+        color: 'white',
+        fontSize: 16,
+        fontWeight: '600',
+        flex: 1,
     },
 });

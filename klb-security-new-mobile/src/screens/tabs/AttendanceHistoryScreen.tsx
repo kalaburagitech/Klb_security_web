@@ -4,31 +4,48 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Clock, MapPin, ChevronRight, Filter, CheckCircle, X, Search, Calendar } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useCustomAuth } from '../../context/AuthContext';
-import { attendanceService } from '../../services/api';
+import { attendanceService, regionService } from '../../services/api';
+import { isAdministrativeRole } from '../../utils/roleUtils';
+import { Modal } from 'react-native';
 
 export default function AttendanceHistoryScreen() {
     const insets = useSafeAreaInsets();
-    const { organizationId } = useCustomAuth();
+    const { customUser, organizationId } = useCustomAuth();
+    const role = (customUser?.role || '');
+    const isAdmin = isAdministrativeRole(role);
     const navigation = useNavigation<any>();
     
     const [attendanceRecords, setAttendanceRecords] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
-    const [selectedDate, setSelectedDate] = useState<string | null>(null);
+    const [selectedDate, setSelectedDate] = useState<string | null>(new Date().toISOString().split('T')[0]);
     const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
     const [searchQuery, setSearchQuery] = useState('');
+    const [isCalendarVisible, setIsCalendarVisible] = useState(false);
+    const [regions, setRegions] = useState<any[]>([]);
+    const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
+    const [selectedCity, setSelectedCity] = useState<string | null>(null);
+    const [showRegionPicker, setShowRegionPicker] = useState(false);
 
     useEffect(() => {
         fetchAttendanceRecords();
-    }, [organizationId, selectedDate]);
+    }, [organizationId, selectedDate, isAdmin, selectedRegion]);
+
+    useEffect(() => {
+        if (isAdmin) {
+            regionService.getRegions()
+                .then(res => setRegions(res.data || []))
+                .catch(err => console.error("Error fetching regions:", err));
+        }
+    }, [isAdmin]);
 
     const fetchAttendanceRecords = async () => {
         try {
             setLoading(true);
-            const today = new Date().toISOString().split('T')[0];
             const filters: any = {
-                organizationId,
-                date: selectedDate || today,
+                organizationId: isAdmin ? undefined : organizationId,
+                date: selectedDate,
+                region: selectedRegion || undefined,
             };
             
             const response = await attendanceService.list(filters);
@@ -54,8 +71,12 @@ export default function AttendanceHistoryScreen() {
     };
 
     const formatDate = (dateStr: string) => {
-        const date = new Date(dateStr);
-        return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+        try {
+            const date = new Date(dateStr);
+            return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+        } catch {
+            return dateStr;
+        }
     };
 
     const formatTime = (timestamp: number) => {
@@ -65,13 +86,14 @@ export default function AttendanceHistoryScreen() {
 
     const filteredRecords = attendanceRecords.filter(record => {
         if (!searchQuery) return true;
-        const query = searchQuery.toLowerCase();
+        const query = searchQuery.toLowerCase().trim();
         return (
-            record.name?.toLowerCase().includes(query) ||
-            record.empId?.toLowerCase().includes(query) ||
-            record.region?.toLowerCase().includes(query) ||
-            record.city?.toLowerCase().includes(query) ||
-            record.siteName?.toLowerCase().includes(query)
+            (record.name && record.name.toLowerCase().includes(query)) ||
+            (record.empId && record.empId.toLowerCase().includes(query)) ||
+            (record.region && record.region.toLowerCase().includes(query)) ||
+            (record.city && record.city.toLowerCase().includes(query)) ||
+            (record.siteName && record.siteName.toLowerCase().includes(query)) ||
+            (record.empCode && record.empCode.toLowerCase().includes(query))
         );
     });
 
@@ -90,29 +112,116 @@ export default function AttendanceHistoryScreen() {
         return options;
     };
 
+    const showDatePicker = () => {
+        // Since I can't easily add a complex modal or library right now without breaking things,
+        // I'll enhance the date selection or keep it simple but functional.
+        // I will add a "Custom Date" or just expand the list for now.
+    };
+
     return (
         <SafeAreaView style={styles.container}>
             <View style={styles.header}>
-                <View>
-                    <Text style={styles.title}>Attendance History</Text>
-                    <Text style={styles.subTitle}>
-                        {selectedDate ? formatDate(selectedDate) : 'Today\'s records'}
-                    </Text>
+                <View style={{ flexDirection: 'row', gap: 12 }}>
+                    <TouchableOpacity 
+                        style={styles.filterBtn}
+                        onPress={() => setShowRegionPicker(!showRegionPicker)}
+                    >
+                        <MapPin color={selectedRegion ? "#2563eb" : "#64748b"} size={20} />
+                    </TouchableOpacity>
+                    <TouchableOpacity 
+                        style={styles.filterBtn}
+                        onPress={() => setIsCalendarVisible(true)}
+                    >
+                        <Calendar color="#2563eb" size={20} />
+                    </TouchableOpacity>
                 </View>
-                <TouchableOpacity 
-                    style={styles.filterBtn}
-                    onPress={() => setSelectedDate(null)}
-                >
-                    <Filter color="#2563eb" size={20} />
-                </TouchableOpacity>
             </View>
+
+            {showRegionPicker && isAdmin && (
+                <View style={styles.regionPickerContainer}>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dateScroll}>
+                        <TouchableOpacity
+                            style={[styles.dateChip, !selectedRegion && styles.activeDateChip]}
+                            onPress={() => setSelectedRegion(null)}
+                        >
+                            <Text style={[styles.dateChipText, !selectedRegion && styles.activeDateChipText]}>
+                                All Regions
+                            </Text>
+                        </TouchableOpacity>
+                        {regions.map((reg) => (
+                            <TouchableOpacity
+                                key={reg._id}
+                                style={[styles.dateChip, selectedRegion === reg.regionId && styles.activeDateChip]}
+                                onPress={() => setSelectedRegion(reg.regionId)}
+                            >
+                                <Text style={[styles.dateChipText, selectedRegion === reg.regionId && styles.activeDateChipText]}>
+                                    {reg.regionName}
+                                </Text>
+                            </TouchableOpacity>
+                        ))}
+                    </ScrollView>
+                </View>
+            )}
+
+            {/* Premium Calendar Modal */}
+            <Modal
+                visible={isCalendarVisible}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setIsCalendarVisible(false)}
+            >
+                <TouchableOpacity 
+                    style={styles.modalOverlay} 
+                    activeOpacity={1} 
+                    onPress={() => setIsCalendarVisible(false)}
+                >
+                    <View style={styles.calendarContainer}>
+                        <View style={styles.calendarHeader}>
+                            <Text style={styles.calendarTitle}>Select Date</Text>
+                            <TouchableOpacity onPress={() => setIsCalendarVisible(false)}>
+                                <X color="#64748b" size={20} />
+                            </TouchableOpacity>
+                        </View>
+                        <View style={styles.daysGrid}>
+                            {Array.from({ length: 31 }, (_, i) => {
+                                const day = i + 1;
+                                const date = new Date();
+                                date.setDate(day);
+                                const dStr = date.toISOString().split('T')[0];
+                                const isSelected = selectedDate === dStr;
+                                return (
+                                    <TouchableOpacity 
+                                        key={day} 
+                                        style={[styles.dayCell, isSelected && styles.activeDayCell]}
+                                        onPress={() => {
+                                            setSelectedDate(dStr);
+                                            setIsCalendarVisible(false);
+                                        }}
+                                    >
+                                        <Text style={[styles.dayText, isSelected && styles.activeDayText]}>{day}</Text>
+                                    </TouchableOpacity>
+                                );
+                            })}
+                        </View>
+                        <TouchableOpacity 
+                            style={styles.todayBtn}
+                            onPress={() => {
+                                setSelectedDate(new Date().toISOString().split('T')[0]);
+                                setIsCalendarVisible(false);
+                            }}
+                        >
+                            <Text style={styles.todayBtnText}>Today</Text>
+                        </TouchableOpacity>
+                    </View>
+                </TouchableOpacity>
+            </Modal>
 
             <View style={styles.filterContainer}>
                 <View style={styles.searchBar}>
                     <Search color="#64748b" size={16} />
                     <TextInput
                         style={styles.searchInput}
-                        placeholder="Search by name, ID, or region..."
+                        placeholder="Search name, ID, site or region..."
                         placeholderTextColor="#475569"
                         value={searchQuery}
                         onChangeText={setSearchQuery}
@@ -516,5 +625,77 @@ const styles = StyleSheet.create({
         color: '#64748b',
         fontSize: 15,
         textAlign: 'center',
+    },
+    // Premium Calendar Styles
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0, 0, 0, 0.7)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    calendarContainer: {
+        width: '90%',
+        backgroundColor: '#0f172a',
+        borderRadius: 24,
+        padding: 20,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.1)',
+    },
+    calendarHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 20,
+        paddingBottom: 15,
+        borderBottomWidth: 1,
+        borderBottomColor: 'rgba(255, 255, 255, 0.05)',
+    },
+    calendarTitle: {
+        color: 'white',
+        fontSize: 18,
+        fontWeight: 'bold',
+    },
+    daysGrid: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 8,
+        justifyContent: 'center',
+    },
+    dayCell: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    },
+    activeDayCell: {
+        backgroundColor: '#2563eb',
+    },
+    dayText: {
+        color: '#94a3b8',
+        fontSize: 14,
+        fontWeight: '600',
+    },
+    activeDayText: {
+        color: 'white',
+    },
+    todayBtn: {
+        marginTop: 20,
+        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+        paddingVertical: 12,
+        borderRadius: 12,
+        alignItems: 'center',
+    },
+    todayBtnText: {
+        color: '#3b82f6',
+        fontSize: 14,
+        fontWeight: 'bold',
+    },
+    regionPickerContainer: {
+        backgroundColor: '#0f172a',
+        paddingVertical: 10,
+        borderBottomWidth: 1,
+        borderBottomColor: 'rgba(255, 255, 255, 0.05)',
     },
 });

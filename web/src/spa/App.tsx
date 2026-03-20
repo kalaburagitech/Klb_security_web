@@ -10,6 +10,7 @@ import PatrolPoints from "./pages/points/PatrolPoints";
 import Settings from "./pages/settings/Settings";
 import OrganizationManagement from "./pages/organizations/OrganizationManagement";
 import RegionManagement from "./pages/regions/RegionManagement";
+import AttendancePage from "./pages/attendance/AttendancePage";
 import Login from "./pages/auth/Login";
 import Restricted from "./pages/auth/Restricted";
 import AuthHandler from "../components/AuthHandler";
@@ -134,6 +135,14 @@ function App() {
                         element={
                           <ProtectedRoute permission="issues">
                             <IssueTracker />
+                          </ProtectedRoute>
+                        }
+                      />
+                      <Route
+                        path="/attendance"
+                        element={
+                          <ProtectedRoute permission="attendance">
+                            <AttendancePage />
                           </ProtectedRoute>
                         }
                       />

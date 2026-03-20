@@ -10,6 +10,7 @@ import {
     Settings,
     Building2,
     Globe,
+    Calendar,
     X
 } from "lucide-react";
 import { useUser } from "@clerk/nextjs";
@@ -26,6 +27,7 @@ const navItems = [
     { name: "Patrol Points", icon: QrCode, href: "/patrol-points", permission: "patrolPoints" },
     { name: "Patrol Logs", icon: ClipboardList, href: "/patrol-logs", permission: "patrolLogs" },
     { name: "Visit Logs", icon: ClipboardList, href: "/visit-logs", permission: "visitLogs" },
+    { name: "Attendance", icon: Calendar, href: "/attendance", permission: "attendance" },
     { name: "Issue Tracker", icon: ShieldAlert, href: "/issues", permission: "issues" },
     { name: "Analytics", icon: BarChart3, href: "/analytics", permission: "analytics" },
 ];
