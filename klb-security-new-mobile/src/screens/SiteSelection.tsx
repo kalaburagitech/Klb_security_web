@@ -175,13 +175,22 @@ export default function SiteSelection() {
                         />
                     </View>
 
-                    <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 12, paddingHorizontal: 24, marginBottom: 8 }}>
-                        <TouchableOpacity onPress={() => setStep('city')}>
-                            <Text style={{ color: '#3b82f6', fontSize: 12 }}>Change City</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity onPress={() => setStep('region')}>
-                            <Text style={{ color: '#3b82f6', fontSize: 12 }}>Change Region</Text>
-                        </TouchableOpacity>
+                    <View style={styles.filterSummary}>
+                        <View style={{ flex: 1 }}>
+                            <Text style={styles.filterLabel}>Current Filter</Text>
+                            <Text style={styles.filterValue}>
+                                {regions.find(r => r.regionId === selectedRegionId)?.regionName || 'All Regions'}
+                                {selectedCity ? ` • ${selectedCity}` : ''}
+                            </Text>
+                        </View>
+                        <View style={{ flexDirection: 'row', gap: 12 }}>
+                            <TouchableOpacity onPress={() => setStep('city')}>
+                                <Text style={styles.changeFilterText}>City</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={() => setStep('region')}>
+                                <Text style={styles.changeFilterText}>Region</Text>
+                            </TouchableOpacity>
+                        </View>
                     </View>
 
                     <FlatList
@@ -533,5 +542,34 @@ const styles = StyleSheet.create({
     emptyText: {
         color: '#64748b',
         fontSize: 16,
+    },
+    filterSummary: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: 'rgba(59, 130, 246, 0.08)',
+        marginHorizontal: 24,
+        padding: 16,
+        borderRadius: 18,
+        marginBottom: 16,
+        borderWidth: 1,
+        borderColor: 'rgba(59, 130, 246, 0.2)',
+    },
+    filterLabel: {
+        color: '#64748b',
+        fontSize: 10,
+        fontWeight: 'bold',
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
+    },
+    filterValue: {
+        color: 'white',
+        fontSize: 14,
+        fontWeight: '600',
+        marginTop: 2,
+    },
+    changeFilterText: {
+        color: '#3b82f6',
+        fontSize: 12,
+        fontWeight: 'bold',
     },
 });

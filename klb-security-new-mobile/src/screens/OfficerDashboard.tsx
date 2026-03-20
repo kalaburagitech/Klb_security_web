@@ -164,6 +164,48 @@ export default function OfficerDashboard() {
                             </TouchableOpacity>
                         )}
                     </View>
+
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 16 }}>
+                        <View style={{ flex: 1 }}>
+                            {(selectedRegionId || selectedCity) ? (
+                                <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+                                    {selectedRegionId && (
+                                        <View style={styles.filterChip}>
+                                            <Text style={styles.filterChipText}>
+                                                {regions.find(r => r.regionId === selectedRegionId)?.regionName || 'Region'}
+                                            </Text>
+                                            <TouchableOpacity onPress={() => {
+                                                setSelectedRegionId(null);
+                                                setSelectedCity(null);
+                                                setLastSelection(null, null);
+                                            }}>
+                                                <X color="#3b82f6" size={14} />
+                                            </TouchableOpacity>
+                                        </View>
+                                    )}
+                                    {selectedCity && (
+                                        <View style={styles.filterChip}>
+                                            <Text style={styles.filterChipText}>{selectedCity}</Text>
+                                            <TouchableOpacity onPress={() => {
+                                                setSelectedCity(null);
+                                                setLastSelection(selectedRegionId, null);
+                                            }}>
+                                                <X color="#3b82f6" size={14} />
+                                            </TouchableOpacity>
+                                        </View>
+                                    )}
+                                </View>
+                            ) : (
+                                <Text style={{ color: '#64748b', fontSize: 13 }}>All Regions & Cities</Text>
+                            )}
+                        </View>
+                        <TouchableOpacity
+                            onPress={() => setShowRegionPicker(true)}
+                            style={[styles.regionFilterBtn, selectedRegionId ? styles.regionFilterActive : {}]}
+                        >
+                            <MapPin color={selectedRegionId ? "white" : "#3b82f6"} size={20} />
+                        </TouchableOpacity>
+                    </View>
                 </View>
 
                 {/* Quick Actions - Match SG Dashboard */}
@@ -343,43 +385,7 @@ export default function OfficerDashboard() {
                     <View style={styles.siteSelector}>
                         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
                             <Text style={styles.sectionTitle}>{isOfficer ? 'Monitor Organisation Sites' : 'Select Site to Monitor'}</Text>
-                            <TouchableOpacity
-                                onPress={() => setShowRegionPicker(true)}
-                                style={[styles.regionFilterBtn, selectedRegionId ? styles.regionFilterActive : {}]}
-                            >
-                                <MapPin color={selectedRegionId ? "white" : "#64748b"} size={20} />
-                            </TouchableOpacity>
                         </View>
-
-                        {(selectedRegionId || selectedCity) && (
-                            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
-                                {selectedRegionId && (
-                                    <View style={styles.filterChip}>
-                                        <Text style={styles.filterChipText}>
-                                            {regions.find(r => r.regionId === selectedRegionId)?.regionName}
-                                        </Text>
-                                        <TouchableOpacity onPress={() => {
-                                            setSelectedRegionId(null);
-                                            setSelectedCity(null);
-                                            setLastSelection(null, null);
-                                        }}>
-                                            <X color="#3b82f6" size={14} />
-                                        </TouchableOpacity>
-                                    </View>
-                                )}
-                                {selectedCity && (
-                                    <View style={styles.filterChip}>
-                                        <Text style={styles.filterChipText}>{selectedCity}</Text>
-                                        <TouchableOpacity onPress={() => {
-                                            setSelectedCity(null);
-                                            setLastSelection(selectedRegionId, null);
-                                        }}>
-                                            <X color="#3b82f6" size={14} />
-                                        </TouchableOpacity>
-                                    </View>
-                                )}
-                            </View>
-                        )}
 
                         <View style={styles.siteGrid}>
                             {sites?.filter(site => site.name.toLowerCase().includes(searchQuery.toLowerCase())).map(site => (
