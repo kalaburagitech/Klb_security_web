@@ -558,7 +558,6 @@ export default function SiteManagement() {
                                 </div>
                             ) : (() => {
                                 const filtered = users?.filter(u =>
-                                    u.role !== "NEW_USER" &&
                                     (u.name.toLowerCase().includes(assignSearchQuery.toLowerCase()) ||
                                         u.email?.toLowerCase().includes(assignSearchQuery.toLowerCase()) ||
                                         u.mobileNumber?.toLowerCase().includes(assignSearchQuery.toLowerCase()))
