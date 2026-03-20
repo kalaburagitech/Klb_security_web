@@ -225,7 +225,7 @@ export const listBySite = query({
             .collect();
 
         return users.filter(
-            (user) => !user.siteIds || user.siteIds.includes(args.siteId)
+            (user) => user.siteIds?.includes(args.siteId)
         );
     },
 });

@@ -1022,7 +1022,7 @@ export default function SiteManagement() {
 
 function SiteOfficersList({ siteId, onRemove }: { siteId: Id<"sites">, onRemove: (id: Id<"users">) => void }) {
     const rawOfficers = useQuery(api.users.listBySite, { siteId });
-    const officers = rawOfficers?.filter(u => u.siteIds?.includes(siteId));
+    const officers = rawOfficers;
 
     if (officers === undefined) return <div className="text-xs text-muted-foreground italic">Loading officers...</div>;
     if (officers.length === 0) return <div className="text-xs text-muted-foreground italic">No officers assigned to this site.</div>;
