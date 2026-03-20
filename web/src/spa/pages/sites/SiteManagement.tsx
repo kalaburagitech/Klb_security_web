@@ -482,7 +482,10 @@ export default function SiteManagement() {
                                                                 </button>
                                                             </div>
                                                             <div className="glass rounded-xl p-4 border-white/5 min-h-[60px]">
-                                                                <SiteOfficersList siteId={site._id} onRemove={async (officerId) => {
+                                                                <SiteOfficersList 
+                                                                    siteId={site._id} 
+                                                                    allUsers={users}
+                                                                    onRemove={async (officerId) => {
                                                                     const officer = users?.find(u => u._id === officerId);
                                                                     if (!officer) return;
                                                                     try {
@@ -557,20 +560,20 @@ export default function SiteManagement() {
                                 const filtered = users?.filter(u =>
                                     u.role !== "NEW_USER" &&
                                     (u.name.toLowerCase().includes(assignSearchQuery.toLowerCase()) ||
-                                     u.email?.toLowerCase().includes(assignSearchQuery.toLowerCase()) ||
-                                     u.mobileNumber?.toLowerCase().includes(assignSearchQuery.toLowerCase()))
+                                        u.email?.toLowerCase().includes(assignSearchQuery.toLowerCase()) ||
+                                        u.mobileNumber?.toLowerCase().includes(assignSearchQuery.toLowerCase()))
                                 ) || [];
 
                                 const sorted = [...filtered].sort((a, b) => {
                                     const query = assignSearchQuery.toLowerCase();
                                     if (!query) return a.name.localeCompare(b.name);
-                                    
+
                                     const aStarts = a.name.toLowerCase().startsWith(query);
                                     const bStarts = b.name.toLowerCase().startsWith(query);
-                                    
+
                                     if (aStarts && !bStarts) return -1;
                                     if (!aStarts && bStarts) return 1;
-                                    
+
                                     return a.name.localeCompare(b.name);
                                 });
 
@@ -612,8 +615,8 @@ export default function SiteManagement() {
                                                     }}
                                                     className={cn(
                                                         "w-full flex items-center gap-3 p-3 border rounded-xl transition-all group",
-                                                        isAssigned 
-                                                            ? "bg-emerald-500/5 border-emerald-500/20 cursor-default" 
+                                                        isAssigned
+                                                            ? "bg-emerald-500/5 border-emerald-500/20 cursor-default"
                                                             : "bg-white/5 border-white/10 hover:bg-white/10"
                                                     )}
                                                 >
@@ -648,7 +651,7 @@ export default function SiteManagement() {
                                             <div className="flex flex-col items-center justify-center py-12 text-center">
                                                 <Users className="w-12 h-12 text-white/5 mb-3" />
                                                 <div className="text-sm text-muted-foreground italic font-medium">No available users found matching your search</div>
-                                                <button 
+                                                <button
                                                     onClick={() => setAssignSearchQuery("")}
                                                     className="mt-4 text-xs text-primary hover:underline font-semibold"
                                                 >
@@ -736,7 +739,7 @@ export default function SiteManagement() {
                                                     <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Selected City</span>
                                                     <span className="text-sm text-primary font-medium">{newCity}</span>
                                                 </div>
-                                                <button 
+                                                <button
                                                     onClick={() => setShowNewCityList(true)}
                                                     className="px-3 py-1 bg-white/5 hover:bg-white/10 rounded-lg text-xs font-medium text-white transition-colors border border-white/10"
                                                 >
@@ -881,7 +884,7 @@ export default function SiteManagement() {
                                                     <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Selected City</span>
                                                     <span className="text-sm text-primary font-medium">{editingSite.city}</span>
                                                 </div>
-                                                <button 
+                                                <button
                                                     onClick={() => setShowEditCityList(true)}
                                                     className="px-3 py-1 bg-white/5 hover:bg-white/10 rounded-lg text-xs font-medium text-white transition-colors border border-white/10"
                                                 >
@@ -1020,17 +1023,22 @@ export default function SiteManagement() {
 }
 
 
-function SiteOfficersList({ siteId, allUsers, onRemove }: { 
-    siteId: Id<"sites">, 
+function SiteOfficersList({ siteId, allUsers, onRemove }: {
+    siteId: Id<"sites">,
     allUsers: any[] | undefined,
-    onRemove: (id: Id<"users">) => void 
+    onRemove: (id: Id<"users">) => void
 }) {
-    const officers = allUsers?.filter(u => 
-        (u.siteIds && u.siteIds.includes(siteId)) || 
+    // If allUsers is undefined (loading), show loader
+    if (allUsers === undefined) return <div className="text-xs text-muted-foreground italic flex items-center gap-2">
+        <Loader2 className="w-3 h-3 animate-spin" />
+        Loading info...
+    </div>;
+
+    const officers = allUsers?.filter(u =>
+        (u.siteIds && u.siteIds.includes(siteId)) ||
         u.siteId === siteId
     );
 
-    if (allUsers === undefined) return <div className="text-xs text-muted-foreground italic">Loading officers...</div>;
     if (!officers || officers.length === 0) return <div className="text-xs text-muted-foreground italic">No officers assigned to this site.</div>;
 
     return (
