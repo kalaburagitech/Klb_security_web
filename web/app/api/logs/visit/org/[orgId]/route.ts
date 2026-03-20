@@ -14,11 +14,12 @@ export async function GET(
     const regionId = searchParams.get("regionId");
     const city = searchParams.get("city");
 
-    const effectiveOrgId = orgId === 'all' ? undefined : orgId as Id<"organizations">;
+    const isValidId = (id: string | null) => id && id !== "undefined" && id !== "null";
+    const effectiveOrgId = (orgId === 'all' || !isValidId(orgId)) ? undefined : orgId as Id<"organizations">;
 
     const logs = await convex.query(api.logs.listVisitLogs, {
       organizationId: effectiveOrgId,
-      siteId: siteId ? siteId as Id<"sites"> : undefined,
+      siteId: isValidId(siteId) ? siteId as Id<"sites"> : undefined,
       regionId: regionId || undefined,
       city: city || undefined
     });

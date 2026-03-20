@@ -224,7 +224,7 @@ export const countVisitLogsByType = query({
             logs = logs.filter((log) => log.siteId === sId);
         } else if (args.regionId || args.city) {
             const sites = await (args.organizationId
-                ? ctx.db.query("sites").withIndex("by_org", (q) => q.eq("organizationId", args.organizationId))
+                ? ctx.db.query("sites").withIndex("by_org", (q) => q.eq("organizationId", args.organizationId as any))
                 : ctx.db.query("sites")
             ).collect();
             
@@ -472,12 +472,35 @@ export const listIssuesByOrg = query({
                     }
                 }
 
+                // Fetch attendance for the reporter on that day
+                let reporterAttendance = "N/A";
+                let userIdForAttendance = (patrolLog as any)?.userId;
+                if (!userIdForAttendance) {
+                     const visitLog = await ctx.db.get(issue.logId as Id<"visitLogs">);
+                     userIdForAttendance = visitLog?.userId;
+                }
+
+                if (userIdForAttendance) {
+                    const user = await ctx.db.get(userIdForAttendance) as any;
+                    if (user?.empId) {
+                        const dateStr = new Date(issue.timestamp).toISOString().split('T')[0];
+                        const attendance = await ctx.db
+                            .query("attendanceRecords")
+                            .withIndex("by_empId_date", (q) => q.eq("empId", user.empId).eq("date", dateStr))
+                            .first();
+                        if (attendance) {
+                            reporterAttendance = attendance.checkInTime ? "Clocked In" : "Absent";
+                        }
+                    }
+                }
+
                 return {
                     ...issue,
                     siteName: site?.name || "Unknown Site",
                     reporterName,
                     reporterRole,
                     locationContext,
+                    reporterAttendance,
                 };
             })
         );

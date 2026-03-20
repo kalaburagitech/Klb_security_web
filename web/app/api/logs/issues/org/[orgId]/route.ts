@@ -13,12 +13,13 @@ export async function GET(
     const regionId = searchParams.get("regionId");
     const city = searchParams.get("city");
 
-    const effectiveOrgId = orgId === 'all' ? undefined : orgId as any;
+    const isValidId = (id: string | null) => id && id !== "undefined" && id !== "null";
+    const effectiveOrgId = (orgId === 'all' || !isValidId(orgId)) ? undefined : orgId as any;
 
     try {
         const issues = await fetchQuery(api.logs.listIssuesByOrg, {
             organizationId: effectiveOrgId,
-            siteId: (siteId as any) || undefined,
+            siteId: isValidId(siteId) ? (siteId as any) : undefined,
             regionId: regionId || undefined,
             city: city || undefined,
         });

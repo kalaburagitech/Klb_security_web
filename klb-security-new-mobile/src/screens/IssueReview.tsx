@@ -143,11 +143,26 @@ export default function IssueReview() {
                             </View>
                         )}
 
+                        <View style={{ marginBottom: 16 }}>
+                             <Text style={{ color: '#64748b', fontSize: 12 }}>Reported by: <Text style={{ color: '#cbd5e1' }}>{issue.reporterName} ({issue.reporterRole})</Text></Text>
+                        </View>
+
                         <View style={styles.cardFooter}>
-                            <View style={styles.metaInfo}>
-                                <Clock size={14} color="#64748b" />
-                                <Text style={styles.metaText}>{new Date(issue.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
+                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                <View style={styles.metaInfo}>
+                                    <Clock size={14} color="#64748b" />
+                                    <Text style={styles.metaText}>{new Date(issue.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
+                                </View>
+                                {issue.reporterAttendance && (
+                                    <View style={[styles.metaInfo, { marginLeft: 12 }]}>
+                                        <View style={[styles.attendanceDot, { backgroundColor: issue.reporterAttendance === 'Clocked In' ? '#22c55e' : '#64748b' }]} />
+                                        <Text style={[styles.metaText, { color: issue.reporterAttendance === 'Clocked In' ? '#22c55e' : '#64748b' }]}>
+                                            {issue.reporterAttendance}
+                                        </Text>
+                                    </View>
+                                )}
                             </View>
+
                             {issue.status === 'open' && (
                                 <TouchableOpacity 
                                     style={styles.resolveBtn}
@@ -248,5 +263,10 @@ const styles = StyleSheet.create({
     issueImage: {
         width: '100%',
         height: '100%',
+    },
+    attendanceDot: {
+        width: 6,
+        height: 6,
+        borderRadius: 3,
     },
 });
