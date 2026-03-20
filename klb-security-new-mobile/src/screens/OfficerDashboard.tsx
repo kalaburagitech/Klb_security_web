@@ -45,14 +45,23 @@ export default function OfficerDashboard() {
     const [sites, setSites] = useState<any[]>([]);
     const [regions, setRegions] = useState<any[]>([]);
     const { lastRegionId, lastCity, setLastSelection } = usePatrolStore();
-    const [selectedRegionId, setSelectedRegionId] = useState<string | null>(lastRegionId || customUser?.regionId || null);
-    const [selectedCity, setSelectedCity] = useState<string | null>(lastCity || customUser?.city || null);
+    const [selectedRegionId, setSelectedRegionId] = useState<string | null>(isAdmin ? null : (lastRegionId || customUser?.regionId || null));
+    const [selectedCity, setSelectedCity] = useState<string | null>(isAdmin ? null : (lastCity || customUser?.city || null));
     const [showRegionPicker, setShowRegionPicker] = useState(false);
     const [showCityPicker, setShowCityPicker] = useState(false);
     const [patrolLogs, setPatrolLogs] = useState<any[]>([]);
     const [visitLogs, setVisitLogs] = useState<any[]>([]);
     const [attendanceLogs, setAttendanceLogs] = useState<any[]>([]);
     const [showVisitMenu, setShowVisitMenu] = useState(false);
+
+    // Role + auth are loaded async. If the user becomes admin (Owner/Manager/Officer) after initial render,
+    // reset filters so admins see ALL organization sites (no region/city filtering).
+    React.useEffect(() => {
+        if (isAdmin) {
+            setSelectedRegionId(null);
+            setSelectedCity(null);
+        }
+    }, [isAdmin]);
 
     React.useEffect(() => {
         regionService.getRegions()
@@ -64,7 +73,7 @@ export default function OfficerDashboard() {
         if (organizationId && userId) {
             // Backend handle: listSitesByUser now returns all sites for Admins/Officers
             const fetchMethod = isAdmin ?
-                siteService.getSitesByOrg(organizationId, selectedRegionId || undefined, selectedCity || undefined) :
+                siteService.getAllSites() :
                 siteService.getSitesByUser(userId as string, selectedRegionId || undefined, selectedCity || undefined);
 
             fetchMethod

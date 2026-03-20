@@ -15,6 +15,7 @@ import {
 import { useUser } from "@clerk/nextjs";
 import { useQuery } from "convex/react";
 import { api } from "../services/convex";
+import { NavLink, useLocation } from "react-router-dom";
 
 const navItems = [
     { name: "Dashboard", icon: LayoutDashboard, href: "/", permission: "analytics" },
@@ -36,6 +37,7 @@ interface SidebarProps {
 
 export function Sidebar({ isOpen, onClose }: SidebarProps) {
     const { user } = useUser();
+    const location = useLocation();
     const currentUser = useQuery(api.users.getByClerkId,
         user?.id ? { clerkId: user.id } : "skip"
     );
@@ -82,33 +84,35 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
 
                 <nav className="flex-1 px-4 py-4 space-y-1">
                     {filteredNavItems.map((item) => (
-                        <a
+                        <NavLink
                             key={item.name}
-                            href={item.href}
+                            to={item.href}
+                            onClick={onClose}
                             className={cn(
                                 "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all group",
-                                window.location.pathname === item.href
+                                location.pathname === item.href
                                     ? "bg-primary/20 text-primary border border-primary/20 shadow-[0_0_15px_rgba(37,99,235,0.2)]"
                                     : "text-muted-foreground hover:bg-white/5 hover:text-white"
                             )}
                         >
                             <item.icon className={cn(
                                 "w-4 h-4",
-                                window.location.pathname === item.href ? "text-primary" : "text-muted-foreground group-hover:text-white"
+                                location.pathname === item.href ? "text-primary" : "text-muted-foreground group-hover:text-white"
                             )} />
                             {item.name}
-                        </a>
+                        </NavLink>
                     ))}
                 </nav>
 
                 <div className="p-4 border-t border-white/5 mt-auto">
-                    <a
-                        href="/settings"
+                    <NavLink
+                        to="/settings"
+                        onClick={onClose}
                         className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-muted-foreground hover:bg-white/5 hover:text-white"
                     >
                         <Settings className="w-4 h-4" />
                         Settings
-                    </a>
+                    </NavLink>
                 </div>
             </aside>
         </>

@@ -1,18 +1,20 @@
 import axios from 'axios';
 import { Platform, Alert } from 'react-native';
 
-// Update this single URL to your production endpoint (e.g. Render) before building
+// Update this single URL to your production endpoint (e.g. Render) before building.
 // For local development, use your computer's local IP address.
-const IS_PRODUCTION = true; // Toggle this for production builds
-const PROD_URL = 'https://klb-security-web.vercel.app/api';
-const DEV_URL = 'http://192.168.0.108:3000/api';
+//
+// IMPORTANT: Do not hardcode production here. Expo dev should call the dev/local API.
+// `__DEV__` is provided by React Native tooling.
+const PROD_URL = 'http://192.168.0.110:3000/api';
+const DEV_URL = 'http://192.168.0.110:3000/api';
 
-export const API_URL = IS_PRODUCTION ? PROD_URL : DEV_URL;
+export const API_URL = __DEV__ ? DEV_URL : PROD_URL;
 
 // Face Recognition API URL
 export const FACE_RECOGNITION_API_URL = 'https://rawly-unmeditative-isaura.ngrok-free.dev/api';
 
-const api = axios.create({
+export const api = axios.create({
     baseURL: API_URL,
     headers: {
         'Content-Type': 'application/json',

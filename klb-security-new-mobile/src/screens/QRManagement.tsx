@@ -23,10 +23,31 @@ export default function QRManagement() {
     
     React.useEffect(() => {
         if (userId && organizationId) {
-            const fetchPromise = siteService.getSitesByUser(userId);
+            // Admins should be able to access all sites.
+            // Currently org-scoped endpoint returns only a subset, so use the all-sites endpoint for admins.
+            const fetchPromise = isAdmin
+                ? siteService.getAllSites()
+                : siteService.getSitesByUser(userId);
+
+            console.log('[QRTools] fetchSites start', {
+                role: customUser?.role,
+                isAdmin,
+                userId,
+                organizationId,
+                endpoint: isAdmin ? 'getAllSites' : 'getSitesByUser',
+            });
 
             fetchPromise
-                .then(res => setSites(res.data || []))
+                .then(res => {
+                    const data = res.data || [];
+                    console.log('[QRTools] fetchSites result', {
+                        count: Array.isArray(data) ? data.length : null,
+                        sample: Array.isArray(data)
+                            ? data.slice(0, 5).map((s: any) => ({ id: s._id, name: s.name }))
+                            : null,
+                    });
+                    setSites(data);
+                })
                 .catch(err => {
                     console.error("Error fetching sites:", err);
                     setSites([]);
@@ -139,7 +160,9 @@ export default function QRManagement() {
                         )}
                         ListEmptyComponent={
                             <View style={styles.emptyState}>
-                                <Text style={styles.emptyText}>No sites found matching "{searchQuery}"</Text>
+                                <Text style={styles.emptyText}>
+                                    No sites found matching &quot;{searchQuery}&quot;
+                                </Text>
                             </View>
                         }
                     />

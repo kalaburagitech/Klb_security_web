@@ -16,13 +16,14 @@ export default function SiteSelection() {
     const navigation = useNavigation<any>();
     const route = useRoute<any>();
     const { userId, organizationId, customUser } = useCustomAuth();
+    const isAdmin = isAdministrativeRole(customUser?.role);
     const [sites, setSites] = useState<any[]>([]);
     const [regions, setRegions] = useState<any[]>([]);
     const { lastRegionId, lastCity, setLastSelection } = usePatrolStore();
     
     // Fallback to user profile if store is empty
-    const initialRegion = lastRegionId || customUser?.regionId || null;
-    const initialCity = lastCity || customUser?.city || null;
+    const initialRegion = isAdmin ? null : (lastRegionId || customUser?.regionId || null);
+    const initialCity = isAdmin ? null : (lastCity || customUser?.city || null);
 
     const [selectedRegionId, setSelectedRegionId] = useState<string | null>(initialRegion);
     const [selectedCity, setSelectedCity] = useState<string | null>(initialCity);
@@ -31,8 +32,18 @@ export default function SiteSelection() {
     const { isVisit, visitType } = route.params || {};
 
     const [step, setStep] = useState<'region' | 'city' | 'site'>(
-        initialRegion ? (initialCity ? 'site' : 'city') : 'region'
+        isAdmin ? 'site' : (initialRegion ? (initialCity ? 'site' : 'city') : 'region')
     );
+
+    // Auth state loads async; if the role changes to admin after first render,
+    // reset region/city filters and jump directly to the site list.
+    React.useEffect(() => {
+        if (isAdmin) {
+            setSelectedRegionId(null);
+            setSelectedCity(null);
+            setStep('site');
+        }
+    }, [isAdmin]);
 
     React.useEffect(() => {
         const fetchRegions = async () => {
@@ -51,12 +62,29 @@ export default function SiteSelection() {
             const fetchSites = async () => {
                 try {
                     const isAdmin = isAdministrativeRole(customUser?.role);
-                    const fetchMethod = isAdmin && organizationId ? 
-                        siteService.getSitesByOrg(organizationId, selectedRegionId || undefined, selectedCity || undefined) :
+                    const fetchMethod = isAdmin ?
+                        siteService.getAllSites() :
                         siteService.getSitesByUser(userId, selectedRegionId || undefined, selectedCity || undefined);
 
                     const response = await fetchMethod;
-                    setSites(response.data);
+                    let data = response.data || [];
+
+                    // Admins fetch all sites and filter client-side by the selected region/city.
+                    if (isAdmin) {
+                        const regionNorm = selectedRegionId ? selectedRegionId.toLowerCase().trim() : null;
+                        const cityNorm = selectedCity ? selectedCity.toLowerCase().trim() : null;
+
+                        data = data.filter((site: any) => {
+                            const siteRegionNorm = site?.regionId ? String(site.regionId).toLowerCase().trim() : '';
+                            const siteCityNorm = site?.city ? String(site.city).toLowerCase().trim() : '';
+
+                            if (regionNorm && siteRegionNorm !== regionNorm) return false;
+                            if (cityNorm && siteCityNorm !== cityNorm) return false;
+                            return true;
+                        });
+                    }
+
+                    setSites(data);
                 } catch (error) {
                     console.error("Error fetching sites:", error);
                 }

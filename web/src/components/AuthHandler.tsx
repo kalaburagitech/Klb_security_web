@@ -3,7 +3,6 @@ import { useUser, useClerk } from "@clerk/nextjs";
 import { toast } from "sonner";
 import { useMutation, useAction } from "convex/react";
 import { api } from "../services/convex";
-import { Loader2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 export default function AuthHandler({ children }: { children: React.ReactNode }) {
@@ -78,14 +77,8 @@ export default function AuthHandler({ children }: { children: React.ReactNode })
         handleAuth();
     }, [isLoaded, user, isSynced, syncUser, logLogin, generateToken, session, navigate]);
 
-    if (!isLoaded || (user && !isSynced)) {
-        return (
-            <div className="h-screen w-screen flex flex-col items-center justify-center bg-black gap-4">
-                <Loader2 className="w-12 h-12 animate-spin text-primary" />
-                <p className="text-gray-400 font-medium tracking-tight">Securing Session...</p>
-            </div>
-        );
-    }
+    // Keep the app interactive while auth sync completes in background.
+    if (!isLoaded) return null;
 
     return <>{children}</>;
 }

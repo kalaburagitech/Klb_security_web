@@ -22,7 +22,9 @@ export default function HistoryScreen() {
     
     useEffect(() => {
         if (organizationId && userId) {
-            const fetchPromise = siteService.getSitesByUser(userId);
+            const fetchPromise = isAdmin
+                ? siteService.getAllSites()
+                : siteService.getSitesByUser(userId);
 
             fetchPromise
                 .then(res => setAllSites(res.data || []))
@@ -202,7 +204,7 @@ export default function HistoryScreen() {
                                     {item.comment ? (
                                         <View style={styles.expandedComment}>
                                             <Text style={styles.commentLabel}>Comment:</Text>
-                                            <Text style={styles.commentText}>"{item.comment}"</Text>
+                                            <Text style={styles.commentText}>&quot;{item.comment}&quot;</Text>
                                         </View>
                                     ) : null}
                                 </View>

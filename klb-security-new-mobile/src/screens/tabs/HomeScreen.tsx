@@ -19,26 +19,30 @@ const isSmallScreen = SCREEN_WIDTH < 375;
 export default function HomeScreen() {
     const insets = useSafeAreaInsets();
     const navigation = useNavigation<any>();
-    const { userId, customUser, logout } = useCustomAuth();
+    const { userId, customUser, logout, organizationId } = useCustomAuth();
     const [activeSession, setActiveSession] = useState<any>(null); // Still need to migrate getActiveSession
     const [sites, setSites] = useState<any[]>([]);
     const [elapsedMs, setElapsedMs] = useState(0);
     const [showVisitMenu, setShowVisitMenu] = useState(false);
     const sessionMinutes = 60;
+    const isAdmin = isAdministrativeRole(customUser?.role);
 
     React.useEffect(() => {
-        if (userId) {
-            const fetchSites = async () => {
-                try {
-                    const response = await siteService.getSitesByUser(userId);
-                    setSites(response.data || []);
-                } catch (error) {
-                    console.error("Error fetching sites:", error);
-                }
-            };
-            fetchSites();
-        }
-    }, [userId]);
+        if (!userId) return;
+
+        const fetchSites = async () => {
+            try {
+                const response = isAdmin
+                    ? await siteService.getAllSites()
+                    : await siteService.getSitesByUser(userId);
+                setSites(response.data || []);
+            } catch (error) {
+                console.error("Error fetching sites:", error);
+            }
+        };
+
+        fetchSites();
+    }, [userId, isAdmin, organizationId]);
     const endSession = async (options: any) => { console.log('Mocked end session', options); };
     const setSession = usePatrolStore((state) => state.setSession);
     const [refreshing, setRefreshing] = useState(false);
@@ -222,7 +226,7 @@ export default function HomeScreen() {
                     <View style={styles.statCard}>
                         <Clock color="#cbd5e1" size={20} />
                         <Text style={styles.statValue}>12h</Text>
-                        <Text style={styles.statLabel}>Today's Duty</Text>
+                        <Text style={styles.statLabel}>Today&apos;s Duty</Text>
                     </View>
                     <View style={styles.statCard}>
                         <CheckCircle color="#10b981" size={20} />
