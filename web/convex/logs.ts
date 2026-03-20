@@ -375,21 +375,31 @@ export const listAllIssues = query({
                 let reporterRole = "Staff";
                 let locationContext = "General Visit";
 
-                const patrolLog = await ctx.db.get(issue.logId as Id<"patrolLogs">);
-                if (patrolLog && (patrolLog as any).userId) {
-                    const user = (await ctx.db.get((patrolLog as any).userId)) as any;
-                    reporterName = user?.name || "Unknown";
-                    reporterRole = user?.role || "SG";
-                    const point = (patrolLog as any).patrolPointId ? (await ctx.db.get((patrolLog as any).patrolPointId)) as any : null;
-                    locationContext = point?.name || "Patrol Area";
+                // SAFE LOG LOOKUP: Try patrolLogs first, then visitLogs
+                let logData: any = null;
+                const pLog = await ctx.db
+                    .query("patrolLogs")
+                    .filter((q) => q.eq(q.field("_id"), issue.logId as any))
+                    .first();
+                
+                if (pLog) {
+                    logData = pLog;
+                    locationContext = (pLog.patrolPointId ? (await ctx.db.get(pLog.patrolPointId))?.name : null) || "Patrol Area";
                 } else {
-                    const visitLog = await ctx.db.get(issue.logId as Id<"visitLogs">);
-                    if (visitLog) {
-                        const user = (await ctx.db.get(visitLog.userId)) as any;
-                        reporterName = user?.name || "Unknown";
-                        reporterRole = user?.role || "Officer";
+                    const vLog = await ctx.db
+                        .query("visitLogs")
+                        .filter((q) => q.eq(q.field("_id"), issue.logId as any))
+                        .first();
+                    if (vLog) {
+                        logData = vLog;
                         locationContext = "Visit Scan";
                     }
+                }
+
+                if (logData) {
+                    const user = await ctx.db.get(logData.userId);
+                    reporterName = (user as any)?.name || "Unknown";
+                    reporterRole = (user as any)?.role || "SG";
                 }
 
                 return {
@@ -476,8 +486,8 @@ export const listIssuesByOrg = query({
 
                 if (logData) {
                     const user = await ctx.db.get(logData.userId);
-                    reporterName = user?.name || "Unknown";
-                    reporterRole = user?.role || "SG";
+                    reporterName = (user as any)?.name || "Unknown";
+                    reporterRole = (user as any)?.role || "SG";
                 }
 
                 // Fetch attendance for the reporter on that day
@@ -650,11 +660,11 @@ export const countPatrolLogsByOrg = query({
     handler: async (ctx, args) => {
         let logs;
         if (args.siteId) {
-            logs = await ctx.db
-                .query("patrolLogs")
-                .withIndex("by_org", (q) => q.eq("organizationId", args.organizationId as any))
-                .filter((q) => q.eq(q.field("siteId"), args.siteId))
-                .collect();
+            const query = ctx.db.query("patrolLogs");
+            logs = await (args.organizationId
+                ? query.withIndex("by_org", (q) => q.eq("organizationId", args.organizationId as any))
+                : query
+            ).filter((q) => q.eq(q.field("siteId"), args.siteId)).collect();
         } else if (args.regionId || args.city) {
             const sites = await (args.organizationId
                 ? ctx.db.query("sites").withIndex("by_org", (q) => q.eq("organizationId", args.organizationId as any))
@@ -699,11 +709,11 @@ export const countIssuesByOrg = query({
     handler: async (ctx, args) => {
         let issues;
         if (args.siteId) {
-            issues = await ctx.db
-                .query("issues")
-                .withIndex("by_org", (q) => q.eq("organizationId", args.organizationId as any))
-                .filter((q) => q.eq(q.field("siteId"), args.siteId))
-                .collect();
+            const query = ctx.db.query("issues");
+            issues = await (args.organizationId
+                ? query.withIndex("by_org", (q) => q.eq("organizationId", args.organizationId as any))
+                : query
+            ).filter((q) => q.eq(q.field("siteId"), args.siteId)).collect();
         } else if (args.regionId || args.city) {
             const sites = await (args.organizationId
                 ? ctx.db.query("sites").withIndex("by_org", (q) => q.eq("organizationId", args.organizationId as any))
@@ -746,25 +756,31 @@ export const countAllIssues = query({
 
 export const countByOrg = query({
     args: {
-        organizationId: v.id("organizations"),
+        organizationId: v.optional(v.id("organizations")),
         siteId: v.optional(v.id("sites")),
         regionId: v.optional(v.string()),
         city: v.optional(v.string()),
     },
 
     handler: async (ctx, args) => {
-        let logs = await ctx.db
-            .query("logs")
-            .withIndex("by_org", (q) => q.eq("organizationId", args.organizationId))
-            .collect();
+        let logs;
+        if (args.organizationId) {
+            logs = await ctx.db
+                .query("logs")
+                .withIndex("by_org", (q) => q.eq("organizationId", args.organizationId as any))
+                .collect();
+        } else {
+            logs = await ctx.db.query("logs").collect();
+        }
 
         if (args.siteId) {
             logs = logs.filter((log) => log.siteId === args.siteId);
         } else if (args.regionId || args.city) {
-            const sites = await ctx.db
-                .query("sites")
-                .withIndex("by_org", (q) => q.eq("organizationId", args.organizationId as any))
-                .collect();
+            const sitesQuery = ctx.db.query("sites");
+            const sites = await (args.organizationId
+                ? sitesQuery.withIndex("by_org", (q) => q.eq("organizationId", args.organizationId as any))
+                : sitesQuery
+            ).collect();
             
             const filteredSiteIds = new Set(
                 sites.filter(s => {
