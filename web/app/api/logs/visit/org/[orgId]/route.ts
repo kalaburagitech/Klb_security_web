@@ -23,7 +23,11 @@ export async function GET(
       regionId: regionId || undefined,
       city: city || undefined
     });
-    return NextResponse.json(logs);
+    return NextResponse.json(logs, { headers: {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    }});
   } catch (error) {
     console.error("[API] Logs Visit Org error:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

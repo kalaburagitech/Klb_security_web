@@ -28,13 +28,10 @@ const formatDisplayTime = (timestamp?: number) => {
 export default function AttendancePage() {
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedRegion, setSelectedRegion] = useState("");
   
   // Queries
-  const regions = useQuery(api.regions.list);
   const attendanceRecords = useQuery(api.attendance.list, { 
     date: date,
-    region: selectedRegion || undefined
   });
 
   const filteredRecords = (attendanceRecords as any[])?.filter(r => 
@@ -106,16 +103,6 @@ export default function AttendancePage() {
               />
             </div>
             
-            <select
-              className="px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-white min-w-[150px]"
-              value={selectedRegion}
-              onChange={(e) => setSelectedRegion(e.target.value)}
-            >
-              <option value="" className="bg-[#1a1c20]">All Regions</option>
-              {regions?.map((r: any) => (
-                <option key={r.regionId} value={r.regionId} className="bg-[#1a1c20]">{r.regionName}</option>
-              ))}
-            </select>
             
             <button className="p-2 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-all text-muted-foreground">
               <Download className="w-5 h-5" />
@@ -129,7 +116,6 @@ export default function AttendancePage() {
             <thead>
               <tr className="bg-white/5 border-b border-white/10">
                 <th className="px-6 py-4 text-xs font-bold text-muted-foreground uppercase tracking-wider">Employee</th>
-                <th className="px-6 py-4 text-xs font-bold text-muted-foreground uppercase tracking-wider">Region</th>
                 <th className="px-6 py-4 text-xs font-bold text-muted-foreground uppercase tracking-wider">Check In</th>
                 <th className="px-6 py-4 text-xs font-bold text-muted-foreground uppercase tracking-wider">Check Out</th>
                 <th className="px-6 py-4 text-xs font-bold text-muted-foreground uppercase tracking-wider">Status</th>
@@ -149,9 +135,6 @@ export default function AttendancePage() {
                         <p className="text-xs text-muted-foreground">ID: {record.empId}</p>
                       </div>
                     </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className="text-sm text-muted-foreground">{record.region}</span>
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-2 text-sm text-white">

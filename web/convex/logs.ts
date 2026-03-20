@@ -203,7 +203,7 @@ export const createVisitLog = mutation({
 
 export const countVisitLogsByType = query({
     args: {
-        organizationId: v.id("organizations"),
+        organizationId: v.optional(v.id("organizations")),
         siteId: v.optional(v.id("sites")),
         regionId: v.optional(v.string()),
         city: v.optional(v.string()),
@@ -453,32 +453,36 @@ export const listIssuesByOrg = query({
                 let reporterRole = "Staff";
                 let locationContext = "General Visit";
 
-                // Find the log to get the user
-                const patrolLog = await ctx.db.get(issue.logId as Id<"patrolLogs">);
-                if (patrolLog && (patrolLog as any).userId) {
-                    const user = (await ctx.db.get((patrolLog as any).userId)) as any;
-                    reporterName = user?.name || "Unknown";
-                    reporterRole = user?.role || "SG";
-
-                    const point = (patrolLog as any).patrolPointId ? (await ctx.db.get((patrolLog as any).patrolPointId)) as any : null;
-                    locationContext = point?.name || "Patrol Area";
+                // SAFE LOG LOOKUP: Try patrolLogs first, then visitLogs
+                let logData: any = null;
+                const pLog = await ctx.db
+                    .query("patrolLogs")
+                    .filter((q) => q.eq(q.field("_id"), issue.logId as any))
+                    .first();
+                
+                if (pLog) {
+                    logData = pLog;
+                    locationContext = (pLog.patrolPointId ? (await ctx.db.get(pLog.patrolPointId))?.name : null) || "Patrol Area";
                 } else {
-                    const visitLog = await ctx.db.get(issue.logId as Id<"visitLogs">);
-                    if (visitLog) {
-                        const user = (await ctx.db.get(visitLog.userId)) as any;
-                        reporterName = user?.name || "Unknown";
-                        reporterRole = user?.role || "Officer";
+                    const vLog = await ctx.db
+                        .query("visitLogs")
+                        .filter((q) => q.eq(q.field("_id"), issue.logId as any))
+                        .first();
+                    if (vLog) {
+                        logData = vLog;
                         locationContext = "Visit Scan";
                     }
                 }
 
+                if (logData) {
+                    const user = await ctx.db.get(logData.userId);
+                    reporterName = user?.name || "Unknown";
+                    reporterRole = user?.role || "SG";
+                }
+
                 // Fetch attendance for the reporter on that day
                 let reporterAttendance = "N/A";
-                let userIdForAttendance = (patrolLog as any)?.userId;
-                if (!userIdForAttendance) {
-                     const visitLog = await ctx.db.get(issue.logId as Id<"visitLogs">);
-                     userIdForAttendance = visitLog?.userId;
-                }
+                const userIdForAttendance = logData?.userId;
 
                 if (userIdForAttendance) {
                     const user = await ctx.db.get(userIdForAttendance) as any;
@@ -489,7 +493,7 @@ export const listIssuesByOrg = query({
                             .withIndex("by_empId_date", (q) => q.eq("empId", user.empId).eq("date", dateStr))
                             .first();
                         if (attendance) {
-                            reporterAttendance = attendance.checkInTime ? "Clocked In" : "Absent";
+                            reporterAttendance = attendance.status === "present" ? "Clocked In" : "Absent";
                         }
                     }
                 }

@@ -22,22 +22,12 @@ export default function AttendanceHistoryScreen() {
     const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
     const [searchQuery, setSearchQuery] = useState('');
     const [isCalendarVisible, setIsCalendarVisible] = useState(false);
-    const [regions, setRegions] = useState<any[]>([]);
-    const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
     const [selectedCity, setSelectedCity] = useState<string | null>(null);
-    const [showRegionPicker, setShowRegionPicker] = useState(false);
 
     useEffect(() => {
         fetchAttendanceRecords();
-    }, [organizationId, selectedDate, isAdmin, selectedRegion]);
+    }, [organizationId, selectedDate, isAdmin]);
 
-    useEffect(() => {
-        if (isAdmin) {
-            regionService.getRegions()
-                .then(res => setRegions(res.data || []))
-                .catch(err => console.error("Error fetching regions:", err));
-        }
-    }, [isAdmin]);
 
     const fetchAttendanceRecords = async () => {
         try {
@@ -45,7 +35,6 @@ export default function AttendanceHistoryScreen() {
             const filters: any = {
                 organizationId: isAdmin ? undefined : organizationId,
                 date: selectedDate,
-                region: selectedRegion || undefined,
             };
             
             const response = await attendanceService.list(filters);
@@ -90,7 +79,6 @@ export default function AttendanceHistoryScreen() {
         return (
             (record.name && record.name.toLowerCase().includes(query)) ||
             (record.empId && record.empId.toLowerCase().includes(query)) ||
-            (record.region && record.region.toLowerCase().includes(query)) ||
             (record.city && record.city.toLowerCase().includes(query)) ||
             (record.siteName && record.siteName.toLowerCase().includes(query)) ||
             (record.empCode && record.empCode.toLowerCase().includes(query))
@@ -124,12 +112,6 @@ export default function AttendanceHistoryScreen() {
                 <View style={{ flexDirection: 'row', gap: 12 }}>
                     <TouchableOpacity 
                         style={styles.filterBtn}
-                        onPress={() => setShowRegionPicker(!showRegionPicker)}
-                    >
-                        <MapPin color={selectedRegion ? "#2563eb" : "#64748b"} size={20} />
-                    </TouchableOpacity>
-                    <TouchableOpacity 
-                        style={styles.filterBtn}
                         onPress={() => setIsCalendarVisible(true)}
                     >
                         <Calendar color="#2563eb" size={20} />
@@ -137,31 +119,6 @@ export default function AttendanceHistoryScreen() {
                 </View>
             </View>
 
-            {showRegionPicker && isAdmin && (
-                <View style={styles.regionPickerContainer}>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dateScroll}>
-                        <TouchableOpacity
-                            style={[styles.dateChip, !selectedRegion && styles.activeDateChip]}
-                            onPress={() => setSelectedRegion(null)}
-                        >
-                            <Text style={[styles.dateChipText, !selectedRegion && styles.activeDateChipText]}>
-                                All Regions
-                            </Text>
-                        </TouchableOpacity>
-                        {regions.map((reg) => (
-                            <TouchableOpacity
-                                key={reg._id}
-                                style={[styles.dateChip, selectedRegion === reg.regionId && styles.activeDateChip]}
-                                onPress={() => setSelectedRegion(reg.regionId)}
-                            >
-                                <Text style={[styles.dateChipText, selectedRegion === reg.regionId && styles.activeDateChipText]}>
-                                    {reg.regionName}
-                                </Text>
-                            </TouchableOpacity>
-                        ))}
-                    </ScrollView>
-                </View>
-            )}
 
             {/* Premium Calendar Modal */}
             <Modal
@@ -221,7 +178,7 @@ export default function AttendanceHistoryScreen() {
                     <Search color="#64748b" size={16} />
                     <TextInput
                         style={styles.searchInput}
-                        placeholder="Search name, ID, site or region..."
+                        placeholder="Search name, ID or site..."
                         placeholderTextColor="#475569"
                         value={searchQuery}
                         onChangeText={setSearchQuery}
@@ -305,9 +262,8 @@ export default function AttendanceHistoryScreen() {
                                     <View style={styles.regionRow}>
                                         <MapPin color="#3b82f6" size={12} />
                                         <Text style={styles.regionName}>
-                                            {item.siteName ? `${item.siteName} • ` : ''}
-                                            {item.city ? `${item.city}, ` : ''}
-                                            {item.region}
+                                            {item.siteName ? `${item.siteName}` : ''}
+                                            {item.city ? ` • ${item.city}` : ''}
                                         </Text>
                                     </View>
                                 </View>
