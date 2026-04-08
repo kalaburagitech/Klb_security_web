@@ -18,6 +18,10 @@ export async function POST(req: NextRequest) {
   console.log("[API] POST /api/users - Request received");
   try {
     const body = await req.json();
+    if (body.role != null && (!Array.isArray(body.roles) || body.roles.length === 0)) {
+      body.roles = [body.role];
+    }
+    delete body.role;
     const userId = await convex.mutation(api.users.create, body);
     console.log(`[API] POST /api/users - Success: User ${userId} created`);
     return NextResponse.json({ userId });

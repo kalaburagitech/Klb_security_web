@@ -1,72 +1,55 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, Alert, FlatList } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ArrowLeft, Settings, Plus, Trash2, QrCode, Building2, MapPin, ChevronRight, Search, X } from 'lucide-react-native';
+import { ArrowLeft, Plus, QrCode, Building2, MapPin, ChevronRight, Search, X } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
-// import { useQuery, useMutation } from 'convex/react';
-// import { api } from '../services/convex';
 import { siteService, pointService } from '../services/api';
 import { useCustomAuth } from '../context/AuthContext';
 import { isAdministrativeRole } from '../utils/roleUtils';
 import * as Location from 'expo-location';
 
-export default function QRManagement() {
+/** QR codes and patrol points per site (patrol field tools). Opened from Patrol hub. */
+export default function PatrolQRScreen() {
     const navigation = useNavigation<any>();
     const { userId, customUser, organizationId } = useCustomAuth();
-    const isAdmin = isAdministrativeRole(customUser?.role);
+    const isAdmin = isAdministrativeRole(customUser);
     const [selectedSiteId, setSelectedSiteId] = useState<any>(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [isUpdatingSite, setIsUpdatingSite] = useState(false);
 
     const [sites, setSites] = useState<any[]>([]);
     const [points, setPoints] = useState<any[]>([]);
-    
+
     React.useEffect(() => {
         if (userId && organizationId) {
-            // Admins should be able to access all sites.
-            // Currently org-scoped endpoint returns only a subset, so use the all-sites endpoint for admins.
-            const fetchPromise = isAdmin
-                ? siteService.getAllSites()
-                : siteService.getSitesByUser(userId);
-
-            console.log('[QRTools] fetchSites start', {
-                role: customUser?.role,
-                isAdmin,
-                userId,
-                organizationId,
-                endpoint: isAdmin ? 'getAllSites' : 'getSitesByUser',
-            });
+            const fetchPromise = isAdmin ? siteService.getAllSites() : siteService.getSitesByUser(userId);
 
             fetchPromise
-                .then(res => {
-                    const data = res.data || [];
-                    console.log('[QRTools] fetchSites result', {
-                        count: Array.isArray(data) ? data.length : null,
-                        sample: Array.isArray(data)
-                            ? data.slice(0, 5).map((s: any) => ({ id: s._id, name: s.name }))
-                            : null,
-                    });
-                    setSites(data);
+                .then((res) => {
+                    setSites(res.data || []);
                 })
-                .catch(err => {
-                    console.error("Error fetching sites:", err);
+                .catch((err) => {
+                    console.error('Error fetching sites:', err);
                     setSites([]);
                 });
         }
     }, [userId, organizationId, isAdmin]);
-    
+
     React.useEffect(() => {
         if (selectedSiteId) {
-            pointService.getPointsBySite(selectedSiteId)
-                .then(res => setPoints(res.data))
-                .catch(err => console.error("Error fetching points:", err));
+            pointService
+                .getPointsBySite(selectedSiteId)
+                .then((res) => setPoints(res.data))
+                .catch((err) => console.error('Error fetching points:', err));
         } else {
             setPoints([]);
         }
     }, [selectedSiteId]);
 
-    const updateSiteLoc = async (data: any) => { console.log("Mocked updateSiteLoc"); };
-    const filteredSites = sites?.filter(s =>
+    const updateSiteLoc = async (_data: any) => {
+        console.log('Mocked updateSiteLoc');
+    };
+    const filteredSites = sites?.filter((s) =>
         s.name.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
@@ -75,37 +58,33 @@ export default function QRManagement() {
         try {
             const { status } = await Location.requestForegroundPermissionsAsync();
             if (status !== 'granted') {
-                Alert.alert("Permission Error", "Location permission is required.");
+                Alert.alert('Permission Error', 'Location permission is required.');
                 setIsUpdatingSite(false);
                 return;
             }
 
             const location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
-            
-            Alert.alert(
-                "Update Site Location",
-                "Set this site's center coordinates to your current position?",
-                [
-                    { text: "Cancel", style: "cancel" },
-                    { 
-                        text: "Update", 
-                        onPress: async () => {
-                            try {
-                                await updateSiteLoc({
-                                    id: siteId as any,
-                                    latitude: location.coords.latitude,
-                                    longitude: location.coords.longitude
-                                });
-                                Alert.alert("Success", "Site location updated!");
-                            } catch (e) {
-                                Alert.alert("Error", "Failed to update location.");
-                            }
+
+            Alert.alert('Update Site Location', "Set this site's center coordinates to your current position?", [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Update',
+                    onPress: async () => {
+                        try {
+                            await updateSiteLoc({
+                                id: siteId as any,
+                                latitude: location.coords.latitude,
+                                longitude: location.coords.longitude,
+                            });
+                            Alert.alert('Success', 'Site location updated!');
+                        } catch (e) {
+                            Alert.alert('Error', 'Failed to update location.');
                         }
-                    }
-                ]
-            );
+                    },
+                },
+            ]);
         } catch (error) {
-            Alert.alert("Error", "Could not detect location.");
+            Alert.alert('Error', 'Could not detect location.');
         } finally {
             setIsUpdatingSite(false);
         }
@@ -117,7 +96,10 @@ export default function QRManagement() {
                 <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
                     <ArrowLeft color="white" size={24} />
                 </TouchableOpacity>
-                <Text style={styles.title}>QR Tools</Text>
+                <View style={{ flex: 1 }}>
+                    <Text style={styles.title}>QR & patrol points</Text>
+                    <Text style={styles.subtitle}>Patrol</Text>
+                </View>
             </View>
 
             {!selectedSiteId ? (
@@ -144,10 +126,7 @@ export default function QRManagement() {
                         keyExtractor={(item) => item._id}
                         contentContainerStyle={styles.siteList}
                         renderItem={({ item: site }) => (
-                            <TouchableOpacity
-                                style={styles.siteCard}
-                                onPress={() => setSelectedSiteId(site._id)}
-                            >
+                            <TouchableOpacity style={styles.siteCard} onPress={() => setSelectedSiteId(site._id)}>
                                 <View style={styles.siteInfo}>
                                     <Building2 color="#3b82f6" size={24} />
                                     <View>
@@ -170,25 +149,22 @@ export default function QRManagement() {
             ) : (
                 <View style={styles.mainContent}>
                     <View style={styles.siteHeaderWrapper}>
-                        <TouchableOpacity
-                            style={styles.siteHeader}
-                            onPress={() => setSelectedSiteId(null)}
-                        >
+                        <TouchableOpacity style={styles.siteHeader} onPress={() => setSelectedSiteId(null)}>
                             <Building2 color="#3b82f6" size={20} />
                             <Text style={styles.selectedSiteName}>
-                                {sites?.find(s => s._id === selectedSiteId)?.name}
+                                {sites?.find((s) => s._id === selectedSiteId)?.name}
                             </Text>
                             <Text style={styles.changeText}>Change Site</Text>
                         </TouchableOpacity>
 
-                        <TouchableOpacity 
-                            style={styles.siteLocationBtn} 
+                        <TouchableOpacity
+                            style={styles.siteLocationBtn}
                             onPress={() => handleUpdateSiteLocation(selectedSiteId)}
                             disabled={isUpdatingSite}
                         >
-                            <MapPin color={isUpdatingSite ? "#64748b" : "#3b82f6"} size={16} />
+                            <MapPin color={isUpdatingSite ? '#64748b' : '#3b82f6'} size={16} />
                             <Text style={styles.siteLocationText}>
-                                {isUpdatingSite ? "Checking..." : "Update Site GPS"}
+                                {isUpdatingSite ? 'Checking...' : 'Update Site GPS'}
                             </Text>
                         </TouchableOpacity>
                     </View>
@@ -197,7 +173,12 @@ export default function QRManagement() {
                         <Text style={styles.sectionTitle}>Patrol Points</Text>
                         <TouchableOpacity
                             style={styles.addBtn}
-                            onPress={() => navigation.navigate('QRScanner', { mode: 'setup', siteId: selectedSiteId })}
+                            onPress={() => {
+                                const site = sites?.find((s) => s._id === selectedSiteId);
+                                if (site) {
+                                    navigation.navigate('PatrolAddPointName', { site });
+                                }
+                            }}
                         >
                             <Plus color="white" size={20} />
                             <Text style={styles.addBtnText}>New Point</Text>
@@ -206,15 +187,17 @@ export default function QRManagement() {
 
                     <ScrollView contentContainerStyle={styles.pointsList}>
                         {points?.map((point) => (
-                            <TouchableOpacity 
-                                key={point._id} 
+                            <TouchableOpacity
+                                key={point._id}
                                 style={styles.pointCard}
-                                onPress={() => navigation.navigate('QRScanner', { 
-                                    mode: 'setup', 
-                                    siteId: selectedSiteId,
-                                    pointId: point._id,
-                                    pointName: point.name
-                                })}
+                                onPress={() =>
+                                    navigation.navigate('QRScanner', {
+                                        mode: 'setup',
+                                        siteId: selectedSiteId,
+                                        pointId: point._id,
+                                        pointName: point.name,
+                                    })
+                                }
                             >
                                 <View style={styles.pointInfo}>
                                     <View style={styles.qrIconBox}>
@@ -223,7 +206,7 @@ export default function QRManagement() {
                                     <View style={styles.pointDetails}>
                                         <Text style={styles.pointLabel}>{point.name}</Text>
                                         <Text style={styles.pointCode}>
-                                            {point.qrCode ? `QR: ${point.qrCode}` : "Not Configured"}
+                                            {point.qrCode ? `QR: ${point.qrCode}` : 'Not Configured'}
                                         </Text>
                                     </View>
                                 </View>
@@ -245,8 +228,16 @@ export default function QRManagement() {
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#020617' },
     header: { flexDirection: 'row', alignItems: 'center', padding: 24, gap: 16 },
-    backBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#0f172a', justifyContent: 'center', alignItems: 'center' },
-    title: { fontSize: 24, fontWeight: 'bold', color: 'white' },
+    backBtn: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: '#0f172a',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    title: { fontSize: 20, fontWeight: 'bold', color: 'white' },
+    subtitle: { fontSize: 12, color: '#64748b', marginTop: 2, fontWeight: '600' },
     mainContent: { flex: 1, paddingHorizontal: 24 },
     searchBar: {
         flexDirection: 'row',
@@ -261,7 +252,14 @@ const styles = StyleSheet.create({
         borderColor: 'rgba(255, 255, 255, 0.05)',
     },
     searchInput: { flex: 1, color: 'white', fontSize: 16 },
-    sectionTitle: { fontSize: 14, fontWeight: 'bold', color: '#64748b', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 16 },
+    sectionTitle: {
+        fontSize: 14,
+        fontWeight: 'bold',
+        color: '#64748b',
+        textTransform: 'uppercase',
+        letterSpacing: 1,
+        marginBottom: 16,
+    },
     siteList: { gap: 12 },
     siteCard: {
         flexDirection: 'row',
@@ -331,11 +329,17 @@ const styles = StyleSheet.create({
         borderColor: 'rgba(255, 255, 255, 0.05)',
     },
     pointInfo: { flexDirection: 'row', alignItems: 'center', gap: 16, flex: 1 },
-    qrIconBox: { width: 48, height: 48, borderRadius: 12, backgroundColor: 'rgba(59, 130, 246, 0.1)', justifyContent: 'center', alignItems: 'center' },
+    qrIconBox: {
+        width: 48,
+        height: 48,
+        borderRadius: 12,
+        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
     pointDetails: { flex: 1 },
     pointLabel: { color: 'white', fontSize: 16, fontWeight: 'bold' },
     pointCode: { color: '#64748b', fontSize: 12, marginTop: 2 },
-    deleteBtn: { padding: 8 },
     emptyState: { alignItems: 'center', marginTop: 40 },
     emptyText: { color: '#475569', fontSize: 14, textAlign: 'center' },
 });

@@ -1,5 +1,8 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import {
+  normalizePermissionsForRoles,
+} from "./userAccess";
 
 /* ------------------------------------------------ */
 /* GET USER BY CLERK ID */
@@ -16,6 +19,51 @@ export const getByClerkId = query({
             .first();
 
         return user ?? null;
+    },
+});
+
+export const updateSelfProfile = mutation({
+    args: {
+        clerkId: v.string(),
+        name: v.string(),
+        mobileNumber: v.optional(v.string()),
+    },
+    handler: async (ctx, args) => {
+        const user = await ctx.db
+            .query("users")
+            .withIndex("by_clerkId", (q) => q.eq("clerkId", args.clerkId))
+            .first();
+
+        if (!user) {
+            throw new Error("Account not found. Please sign in again.");
+        }
+
+        const trimmedName = args.name.trim();
+        if (trimmedName.length < 2) {
+            throw new Error("Name must be at least 2 characters.");
+        }
+        if (trimmedName.length > 120) {
+            throw new Error("Name is too long.");
+        }
+
+        const rawMobile = (args.mobileNumber ?? "").trim();
+        let mobile: string | undefined;
+        if (rawMobile.length === 0) {
+            mobile = undefined;
+        } else if (rawMobile.length < 8 || rawMobile.length > 20) {
+            throw new Error("Enter a valid phone number (8–20 digits or characters).");
+        } else if (!/^[\d\s+().-]+$/.test(rawMobile)) {
+            throw new Error("Phone number contains invalid characters.");
+        } else {
+            mobile = rawMobile;
+        }
+
+        await ctx.db.patch(user._id, {
+            name: trimmedName,
+            mobileNumber: mobile,
+        });
+
+        return user._id;
     },
 });
 
@@ -47,6 +95,43 @@ export const getByMobileNumber = query({
     },
 });
 
+/** Normalize stored or input mobile to 10-digit Indian local part (6–9 leading). */
+function normalizeIndianMobileTo10(input: string): string | null {
+    const digits = input.replace(/\D/g, "");
+    let n = digits;
+    if (n.length === 12 && n.startsWith("91")) {
+        n = n.slice(2);
+    }
+    if (n.length === 11 && n.startsWith("0")) {
+        n = n.slice(1);
+    }
+    if (n.length !== 10 || !/^[6-9]\d{9}$/.test(n)) {
+        return null;
+    }
+    return n;
+}
+
+/** Match user by Indian mobile regardless of how `mobileNumber` was stored (+91…, spaces, etc.). */
+export const getByIndianMobile10 = query({
+    args: { tenDigits: v.string() },
+    handler: async (ctx, args) => {
+        if (!/^[6-9]\d{9}$/.test(args.tenDigits)) {
+            return null;
+        }
+        const users = await ctx.db.query("users").collect();
+        for (const u of users) {
+            if (!u.mobileNumber) {
+                continue;
+            }
+            const candidate = normalizeIndianMobileTo10(u.mobileNumber);
+            if (candidate === args.tenDigits) {
+                return u;
+            }
+        }
+        return null;
+    },
+});
+
 /* ------------------------------------------------ */
 /* CREATE USER */
 /* ------------------------------------------------ */
@@ -55,23 +140,37 @@ export const create = mutation({
     args: {
         clerkId: v.optional(v.string()),
         name: v.string(),
-        role: v.union(
-            v.literal("Owner"),
-            v.literal("Deployment Manager"),
-            v.literal("Manager"),
-            v.literal("Officer"),
-            v.literal("Security Officer"),
-            v.literal("SG"),
-            v.literal("SO"),
-            v.literal("Higher Officer"),
-            v.literal("NEW_USER")
+        role: v.optional(
+            v.union(
+                v.literal("Owner"),
+                v.literal("Deployment Manager"),
+                v.literal("Manager"),
+                v.literal("Visiting Officer"),
+                v.literal("SO"),
+                v.literal("Client"),
+                v.literal("NEW_USER")
+            )
         ),
+        roles: v.optional(
+            v.array(
+                v.union(
+                    v.literal("Owner"),
+                    v.literal("Deployment Manager"),
+                    v.literal("Manager"),
+                    v.literal("Visiting Officer"),
+                    v.literal("SO"),
+                    v.literal("Client"),
+                    v.literal("NEW_USER")
+                )
+            )
+        ),
+        status: v.optional(v.union(v.literal("active"), v.literal("inactive"))),
         organizationId: v.id("organizations"),
         siteIds: v.optional(v.array(v.id("sites"))),
         email: v.optional(v.string()),
         mobileNumber: v.optional(v.string()),
         regionId: v.optional(v.string()),
-        city: v.optional(v.string()),
+        cities: v.optional(v.array(v.string())), // CHANGED: cities array
         permissions: v.optional(
             v.object({
                 users: v.boolean(),
@@ -81,13 +180,13 @@ export const create = mutation({
                 visitLogs: v.boolean(),
                 issues: v.boolean(),
                 analytics: v.boolean(),
+                attendance: v.optional(v.boolean()),
             })
         ),
     },
 
     handler: async (ctx, args) => {
         /* Prevent duplicate Clerk users */
-
         const clerkIdArg = args.clerkId;
         if (clerkIdArg) {
             const existing = await ctx.db
@@ -104,18 +203,30 @@ export const create = mutation({
             args.clerkId ??
             `pending_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
 
+        const rolesList =
+            args.roles && args.roles.length > 0
+                ? [...new Set(args.roles)]
+                : args.role
+                  ? [args.role]
+                  : [];
+        if (rolesList.length === 0) {
+            throw new Error("At least one role is required");
+        }
+
         return await ctx.db.insert("users", {
             clerkId,
             name: args.name,
-            role: args.role,
+            roles: rolesList,
+            status: args.status ?? "active",
             organizationId: args.organizationId,
             siteId: (args.siteIds && args.siteIds.length > 0) ? args.siteIds[0] : undefined,
             siteIds: args.siteIds,
             email: args.email,
             mobileNumber: args.mobileNumber,
             regionId: args.regionId,
-            city: args.city,
-            permissions: args.permissions,
+            cities: args.cities, // CHANGED: cities array
+            permissions: normalizePermissionsForRoles(rolesList, args.permissions),
+            creationTime: Date.now(),
         });
     },
 });
@@ -128,23 +239,37 @@ export const update = mutation({
     args: {
         id: v.id("users"),
         name: v.string(),
-        role: v.union(
-            v.literal("Owner"),
-            v.literal("Deployment Manager"),
-            v.literal("Manager"),
-            v.literal("Officer"),
-            v.literal("Security Officer"),
-            v.literal("SG"),
-            v.literal("SO"),
-            v.literal("Higher Officer"),
-            v.literal("NEW_USER")
+        role: v.optional(
+            v.union(
+                v.literal("Owner"),
+                v.literal("Deployment Manager"),
+                v.literal("Manager"),
+                v.literal("Visiting Officer"),
+                v.literal("SO"),
+                v.literal("Client"),
+                v.literal("NEW_USER")
+            )
         ),
+        roles: v.optional(
+            v.array(
+                v.union(
+                    v.literal("Owner"),
+                    v.literal("Deployment Manager"),
+                    v.literal("Manager"),
+                    v.literal("Visiting Officer"),
+                    v.literal("SO"),
+                    v.literal("Client"),
+                    v.literal("NEW_USER")
+                )
+            )
+        ),
+        status: v.optional(v.union(v.literal("active"), v.literal("inactive"))),
         organizationId: v.optional(v.id("organizations")),
         siteIds: v.optional(v.array(v.id("sites"))),
         email: v.optional(v.string()),
         mobileNumber: v.optional(v.string()),
         regionId: v.optional(v.string()),
-        city: v.optional(v.string()),
+        cities: v.optional(v.array(v.string())), // CHANGED: cities array
         permissions: v.optional(
             v.object({
                 users: v.boolean(),
@@ -154,15 +279,36 @@ export const update = mutation({
                 visitLogs: v.boolean(),
                 issues: v.boolean(),
                 analytics: v.boolean(),
+                attendance: v.optional(v.boolean()),
             })
         ),
     },
 
     handler: async (ctx, args) => {
         const { id, ...data } = args;
+        const existing = await ctx.db.get(id);
+        if (!existing) {
+            throw new Error("User not found");
+        }
         if (data.siteIds) {
             (data as any).siteId = (data.siteIds.length > 0) ? data.siteIds[0] : undefined;
         }
+
+        const rolesList =
+            data.roles && data.roles.length > 0
+                ? [...new Set(data.roles)]
+                : data.role
+                  ? [data.role]
+                  : existing.roles && existing.roles.length > 0
+                    ? existing.roles
+                    : [];
+        if (rolesList.length === 0) {
+            throw new Error("At least one role is required");
+        }
+        delete (data as { role?: unknown }).role;
+        (data as { roles: typeof rolesList }).roles = rolesList;
+        data.permissions = normalizePermissionsForRoles(rolesList, data.permissions);
+
         await ctx.db.patch(id, data);
         return id;
     },
@@ -176,6 +322,17 @@ export const remove = mutation({
     args: { id: v.id("users") },
     handler: async (ctx, args) => {
         await ctx.db.delete(args.id);
+    },
+});
+
+export const setStatus = mutation({
+    args: {
+        id: v.id("users"),
+        status: v.union(v.literal("active"), v.literal("inactive")),
+    },
+    handler: async (ctx, args) => {
+        await ctx.db.patch(args.id, { status: args.status });
+        return args.id;
     },
 });
 
@@ -229,13 +386,12 @@ export const listBySite = query({
             .collect();
 
         return users.filter(
-            (user) => 
-                (user.siteIds && user.siteIds.includes(args.siteId)) || 
+            (user) =>
+                (user.siteIds && user.siteIds.includes(args.siteId)) ||
                 user.siteId === args.siteId
         );
     },
 });
-
 
 export const countByOrg = query({
     args: {

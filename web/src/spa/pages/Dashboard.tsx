@@ -18,7 +18,7 @@ import { api } from "../../services/convex";
 import { useUser } from "@clerk/nextjs";
 import { useState } from "react";
 import type { Id } from "../../../convex/_generated/dataModel";
-import { SearchableSitePicker } from "../../components/SearchableSitePicker";
+import { userHasRole } from "../../lib/userRoles";
 
 export default function Dashboard() {
   const { user } = useUser();
@@ -31,11 +31,22 @@ export default function Dashboard() {
   const currentUser = useQuery(api.users.getByClerkId, user?.id ? { clerkId: user.id } : "skip");
   const regions = useQuery(api.regions.list);
   const organizationId = currentUser?.organizationId;
-  const isOwner = currentUser?.role === "Owner";
-  const orgs = useQuery(api.organizations.list);
+  const isOwner = userHasRole(currentUser, "Owner");
+  const orgs = useQuery(
+    api.organizations.list,
+    currentUser?.organizationId ? { currentOrganizationId: currentUser.organizationId } : {}
+  );
 
   const orgIdToUse = (organizationId || selectedOrgId) as Id<"organizations">;
   const siteIdToUse = selectedSiteId === "all" ? undefined : (selectedSiteId as Id<"sites">);
+  const orgScopedQueryArgs = orgIdToUse
+    ? {
+        organizationId: orgIdToUse,
+        siteId: siteIdToUse,
+        regionId: selectedRegionId || undefined,
+        city: selectedCity || undefined,
+      }
+    : "skip";
 
   const usersCount = useQuery(
     isOwner ? api.users.countAll : api.users.countByOrg,
@@ -56,30 +67,15 @@ export default function Dashboard() {
   );
   const patrolLogsCount = useQuery(
     api.logs.countPatrolLogsByOrg,
-    { 
-      organizationId: orgIdToUse, 
-      siteId: siteIdToUse,
-      regionId: selectedRegionId || undefined,
-      city: selectedCity || undefined
-    }
+    orgScopedQueryArgs as any
   );
   const openIssuesCount = useQuery(
     api.logs.countIssuesByOrg,
-    { 
-      organizationId: orgIdToUse, 
-      siteId: siteIdToUse,
-      regionId: selectedRegionId || undefined,
-      city: selectedCity || undefined
-    }
+    orgScopedQueryArgs as any
   );
   const issuesList = useQuery(
     api.logs.listIssuesByOrg,
-    { 
-      organizationId: orgIdToUse, 
-      siteId: siteIdToUse,
-      regionId: selectedRegionId || undefined,
-      city: selectedCity || undefined
-    }
+    orgScopedQueryArgs as any
   );
   const visitStats = useQuery(
     api.logs.countVisitLogsByType,

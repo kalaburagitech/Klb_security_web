@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 // import { useMutation } from 'convex/react';
 // import { api } from '../services/convex';
@@ -7,6 +7,7 @@ import { usePatrolStore } from '../store/usePatrolStore';
 import { Play, ArrowLeft, Shield, MapPin, Clock } from 'lucide-react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { useCustomAuth } from '../context/AuthContext';
+import { patrolSessionService } from '../services/api';
 
 export default function PatrolStart() {
     const navigation = useNavigation<any>();
@@ -14,11 +15,9 @@ export default function PatrolStart() {
     const storeSite = usePatrolStore((state) => state.currentSite);
     const { isVisit, selectedSite } = route.params || {};
     
-    // Use site from params if available (from VisitingReport), otherwise from store
+    // Site from route params (e.g. deep link) or patrol store
     const currentSite = selectedSite || storeSite;
-    const { userId } = useCustomAuth();
-    // const startSession = useMutation(api.patrolSessions.startSession);
-    const startSession = async (data: any) => { console.log('Mocked startSession', data); };
+    const { userId, organizationId: authOrgId, customUser } = useCustomAuth();
     const [loading, setLoading] = useState(false);
 
     if (!currentSite) return null;
@@ -26,19 +25,43 @@ export default function PatrolStart() {
     const handleStart = async () => {
         setLoading(true);
         try {
-            // If it's a visit, we don't necessarily need a whole session object on backend if it's handled differently,
-            // but for consistency with existing scanner logic, we navigate to QRScanner.
+            usePatrolStore.getState().setCurrentSite(currentSite);
             if (isVisit) {
-                 navigation.navigate('QRScanner', { 
-                     isVisit: true, 
-                     siteId: currentSite._id, 
-                     siteName: currentSite.name 
-                 });
-            } else {
-                await startSession({
+                navigation.navigate('QRScanner', {
+                    isVisit: true,
                     siteId: currentSite._id,
-                    organizationId: currentSite.organizationId,
-                    userId: userId as any,
+                    siteName: currentSite.name,
+                });
+            } else {
+                const guardConvexId = String(customUser?._id || userId || '').trim();
+                const siteId = String(currentSite._id || '').trim();
+                const orgId = String(currentSite.organizationId || authOrgId || '').trim();
+                if (!guardConvexId) {
+                    Alert.alert(
+                        'Sign-in required',
+                        'Your account has no user ID. Sign out and sign in again with OTP so patrol can start.'
+                    );
+                    setLoading(false);
+                    return;
+                }
+                if (!orgId) {
+                    Alert.alert(
+                        'Missing organization',
+                        'This site has no organization on record. Ask an admin to fix the site, or pick another site.'
+                    );
+                    setLoading(false);
+                    return;
+                }
+                const { data } = await patrolSessionService.start(guardConvexId, siteId, orgId);
+                const sid = data?.sessionId;
+                if (!sid) throw new Error('No session id returned');
+                usePatrolStore.getState().clearLastScannedPoints();
+                usePatrolStore.getState().setSession({
+                    id: sid,
+                    siteId: currentSite._id,
+                    siteName: currentSite.name,
+                    startTime: Date.now(),
+                    scannedPointIds: [],
                 });
                 navigation.navigate('QRScanner');
             }

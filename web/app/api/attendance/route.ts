@@ -9,12 +9,27 @@ export async function GET(req: NextRequest) {
     const region = searchParams.get("region");
     const date = searchParams.get("date");
     const empId = searchParams.get("empId");
+    const siteId = searchParams.get("siteId");
+    const shiftName = searchParams.get("shiftName");
+    const startDate = searchParams.get("startDate");
+    const endDate = searchParams.get("endDate");
+
+    if (organizationId && startDate && endDate) {
+      const records = await convex.query(api.attendance.listForOrgDateRange, {
+        organizationId: organizationId as any,
+        startDate,
+        endDate,
+      });
+      return NextResponse.json(records);
+    }
 
     const filters: any = {};
     if (organizationId) filters.organizationId = organizationId as any;
     if (region) filters.region = region;
     if (date) filters.date = date;
     if (empId) filters.empId = empId;
+    if (siteId) filters.siteId = siteId as any;
+    if (shiftName) filters.shiftName = shiftName;
 
     const records = await convex.query(api.attendance.list, filters);
     return NextResponse.json(records);

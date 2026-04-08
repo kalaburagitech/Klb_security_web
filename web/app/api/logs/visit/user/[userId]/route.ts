@@ -9,8 +9,15 @@ export async function GET(
 ) {
   try {
     const { userId } = await params;
-    console.log(`[API] GET /api/logs/visit/user/${userId} - Request received`);
-    const logs = await convex.query(api.logs.listVisitLogsByUser, { userId: userId as Id<"users"> });
+    const sinceRaw = req.nextUrl.searchParams.get("since");
+    const since = sinceRaw ? parseInt(sinceRaw, 10) : undefined;
+    const limitRaw = req.nextUrl.searchParams.get("limit");
+    const limit = limitRaw ? parseInt(limitRaw, 10) : undefined;
+    const logs = await convex.query(api.logs.listVisitLogsByUser, {
+      userId: userId as Id<"users">,
+      since: typeof since === "number" && Number.isFinite(since) ? since : undefined,
+      limit: typeof limit === "number" && Number.isFinite(limit) ? limit : undefined,
+    });
     console.log(`[API] GET /api/logs/visit/user/${userId} - Success: ${logs?.length || 0} logs found`);
     return NextResponse.json(logs);
   } catch (error) {

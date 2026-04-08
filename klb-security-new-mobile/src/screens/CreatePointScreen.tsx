@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, TextInput, ScrollView, Alert, ActivityIndicator, Image, StyleSheet } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import { View, Text, TouchableOpacity, TextInput, ScrollView, Alert, ActivityIndicator, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ChevronLeft, MapPin, QrCode, CheckCircle, Loader2, Camera, Check, RefreshCw, Building2 } from 'lucide-react-native';
+import { useFocusEffect } from '@react-navigation/native';
+import { ChevronLeft, MapPin, QrCode, CheckCircle, RefreshCw, Building2 } from 'lucide-react-native';
 import * as Location from 'expo-location';
 import { useCustomAuth } from '../context/AuthContext';
 import { pointService } from '../services/api';
@@ -46,33 +47,82 @@ export default function CreatePointScreen({ navigation, route }: any) {
             return;
         }
 
+        const latN = currentLat.trim() ? parseFloat(String(currentLat)) : NaN;
+        const lngN = currentLng.trim() ? parseFloat(String(currentLng)) : NaN;
+
         setLoading(true);
         try {
             if (pointId) {
-                // Updating existing point
+                if (!Number.isFinite(latN) || !Number.isFinite(lngN)) {
+                    Alert.alert(
+                        'Location required',
+                        'Use “Detect Current Location” or enter valid latitude and longitude to update this point.'
+                    );
+                    setLoading(false);
+                    return;
+                }
                 await pointService.updatePoint({
                     id: pointId,
                     name,
                     qrCode,
-                    latitude: parseFloat(currentLat),
-                    longitude: parseFloat(currentLng)
+                    latitude: latN,
+                    longitude: lngN,
                 });
-                Alert.alert("Success", "Point updated successfully!");
+                Alert.alert('Success', 'Point updated successfully.', [
+                    {
+                        text: 'OK',
+                        onPress: () =>
+                            navigation.navigate('PatrolSiteDetail', {
+                                site: { _id: siteId, name: siteName || 'Site' },
+                            }),
+                    },
+                ]);
             } else {
-                // Creating new point
-                await pointService.createPoint({
+                if (!organizationId) {
+                    Alert.alert('Error', 'Organization is missing. Sign in again or contact support.');
+                    setLoading(false);
+                    return;
+                }
+                if (!Number.isFinite(latN) || !Number.isFinite(lngN)) {
+                    Alert.alert(
+                        'GPS required',
+                        'Patrol checkpoints need latitude and longitude. Use “Detect Current Location” or enter both values.'
+                    );
+                    setLoading(false);
+                    return;
+                }
+                const payload: Record<string, unknown> = {
                     siteId: siteId,
                     name,
                     qrCode,
-                    latitude: parseFloat(currentLat),
-                    longitude: parseFloat(currentLng),
-                    organizationId: organizationId
-                });
-                Alert.alert("Success", "New point created successfully!");
+                    organizationId: organizationId,
+                    latitude: latN,
+                    longitude: lngN,
+                };
+                await pointService.createPoint(payload);
+                const r = 200;
+                Alert.alert(
+                    'Point added',
+                    `"${name.trim()}" is linked to ${siteName || 'this site'} with your phone’s GPS at this spot (not the site centre). Patrol scans must be within about ${Math.round(r)}m of here.`,
+                    [
+                        {
+                            text: 'OK',
+                            onPress: () =>
+                                navigation.navigate('PatrolSiteDetail', {
+                                    site: { _id: siteId, name: siteName || 'Site' },
+                                }),
+                        },
+                    ]
+                );
             }
-            navigation.navigate('QRManagement');
         } catch (error: any) {
-            Alert.alert("Error", error.message || "Failed to save point.");
+            const msg = error?.response?.data?.detail || error?.response?.data?.error || error.message;
+            Alert.alert(
+                'Could not save point',
+                typeof msg === 'string'
+                    ? msg
+                    : 'Check your connection and that this QR is not already used. Try again.'
+            );
         } finally {
             setLoading(false);
         }
@@ -144,7 +194,11 @@ export default function CreatePointScreen({ navigation, route }: any) {
                                 <Text style={styles.locValue}>Lng: {currentLng ? parseFloat(currentLng).toFixed(6) : '---'}</Text>
                             </View>
                         </View>
-                        <Text style={styles.locHint}>Geo-fencing verified. Point within 100m of site center.</Text>
+                        <Text style={styles.locHint}>
+                            Your phone’s GPS at this checkpoint (refreshed when you open this screen). Not the site
+                            centre. New points always get a 200m radius in the database; change it later under Patrol
+                            Points on the web if needed. Patrol scans use that point radius only.
+                        </Text>
                     </View>
                 </View>
 

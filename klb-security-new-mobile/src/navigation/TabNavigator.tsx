@@ -1,28 +1,30 @@
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import HomeScreen from '../screens/tabs/HomeScreen';
-import HistoryScreen from '../screens/tabs/HistoryScreen';
 import AttendanceHistoryScreen from '../screens/tabs/AttendanceHistoryScreen';
 import OfficerDashboard from '../screens/OfficerDashboard';
-import QRManagement from '../screens/QRManagement';
+import PatrolHubScreen from '../screens/PatrolHubScreen';
 import IssueReview from '../screens/IssueReview';
-import VisitingReport from '../screens/VisitingReport';
-import { Home, Scan, History, ShieldAlert, Settings, ClipboardList, Calendar } from 'lucide-react-native';
-import { View, TouchableOpacity, Text } from 'react-native';
+import VisitingTeamScreen from '../screens/VisitingTeamScreen';
+import { Home, Scan, ShieldAlert, ClipboardList, Calendar } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCustomAuth } from '../context/AuthContext';
-import { isAdministrativeRole, canAccessMonitoringDashboard } from '../utils/roleUtils';
+import { canAccessMonitoringDashboard, hasVisitingOfficerRole } from '../utils/roleUtils';
 
 const Tab = createBottomTabNavigator();
 
-export default function TabNavigator({ navigation }: any) {
-    const { customUser } = useCustomAuth();
-    const role = (customUser?.role || '');
-    const isMonitoring = canAccessMonitoringDashboard(role);
-    const isAdmin = isAdministrativeRole(role);
+function shouldShowVisitingTab(user: { roles?: string[] } | null): boolean {
+    if (!canAccessMonitoringDashboard(user)) {
+        return true;
+    }
+    return hasVisitingOfficerRole(user);
+}
 
+export default function TabNavigator() {
+    const { customUser } = useCustomAuth();
+    const showVisiting = shouldShowVisitingTab(customUser);
     const insets = useSafeAreaInsets();
-    
+
     return (
         <Tab.Navigator
             screenOptions={{
@@ -30,9 +32,9 @@ export default function TabNavigator({ navigation }: any) {
                 tabBarStyle: {
                     backgroundColor: '#0f172a',
                     borderTopColor: 'rgba(255,255,255,0.05)',
-                    height: 60 + insets.bottom,
-                    paddingBottom: insets.bottom > 0 ? insets.bottom : 10,
-                    paddingTop: 10,
+                    height: 58 + insets.bottom,
+                    paddingBottom: insets.bottom > 0 ? insets.bottom : 8,
+                    paddingTop: 8,
                 },
                 tabBarActiveTintColor: '#2563eb',
                 tabBarInactiveTintColor: '#64748b',
@@ -44,59 +46,46 @@ export default function TabNavigator({ navigation }: any) {
         >
             <Tab.Screen
                 name="Home"
-                component={isMonitoring ? OfficerDashboard : HomeScreen}
+                component={canAccessMonitoringDashboard(customUser) ? OfficerDashboard : HomeScreen}
                 options={{
-                    tabBarIcon: ({ color }) => <Home color={color} size={24} />,
-                    tabBarLabel: isMonitoring ? "Dashboard" : "Home"
-                }}
-            />
-
-            {isMonitoring ? (
-                <>
-                    <Tab.Screen
-                        name="QRTools"
-                        component={QRManagement}
-                        options={{
-                            tabBarIcon: ({ color }) => <Settings color={color} size={24} />,
-                            tabBarLabel: "QR Tools",
-                        }}
-                    />
-                    <Tab.Screen
-                        name="Issues"
-                        component={IssueReview}
-                        options={{
-                            tabBarIcon: ({ color }) => <ShieldAlert color={color} size={24} />,
-                            tabBarLabel: "Issues",
-                        }}
-                    />
-                </>
-            ) : (
-                <Tab.Screen
-                    name="Visiting"
-                    component={VisitingReport}
-                    options={{
-                        tabBarIcon: ({ color }) => <ClipboardList color={color} size={24} />,
-                        tabBarLabel: "Visiting",
-                    }}
-                />
-            )}
-
-            <Tab.Screen
-                name="History"
-                component={HistoryScreen}
-                options={{
-                    tabBarIcon: ({ color }) => <History color={color} size={24} />,
-                    tabBarLabel: "History"
+                    tabBarIcon: ({ color }) => <Home color={color} size={22} />,
+                    tabBarLabel: 'Home',
                 }}
             />
             <Tab.Screen
                 name="Attendance"
                 component={AttendanceHistoryScreen}
                 options={{
-                    tabBarIcon: ({ color }) => <Calendar color={color} size={24} />,
-                    tabBarLabel: "Attendance"
+                    tabBarIcon: ({ color }) => <Calendar color={color} size={22} />,
+                    tabBarLabel: 'Attendance',
                 }}
             />
+            <Tab.Screen
+                name="Patrol"
+                component={PatrolHubScreen}
+                options={{
+                    tabBarIcon: ({ color }) => <Scan color={color} size={22} />,
+                    tabBarLabel: 'Patrol',
+                }}
+            />
+            <Tab.Screen
+                name="Issues"
+                component={IssueReview}
+                options={{
+                    tabBarIcon: ({ color }) => <ShieldAlert color={color} size={22} />,
+                    tabBarLabel: 'Issues',
+                }}
+            />
+            {showVisiting ? (
+                <Tab.Screen
+                    name="Visiting"
+                    component={VisitingTeamScreen}
+                    options={{
+                        tabBarIcon: ({ color }) => <ClipboardList color={color} size={22} />,
+                        tabBarLabel: 'Visiting',
+                    }}
+                />
+            ) : null}
         </Tab.Navigator>
     );
 }

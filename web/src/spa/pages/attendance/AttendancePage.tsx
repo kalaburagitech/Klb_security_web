@@ -1,181 +1,805 @@
 import { Layout } from "../../../components/Layout";
-import { 
-  Users, 
-  Search, 
-  Calendar, 
-  Filter, 
-  Download, 
-  CheckCircle, 
-  XCircle, 
-  Clock,
-  MapPin,
-  ChevronRight
-} from "lucide-react";
-import { useState } from "react";
+import { Calendar, Download, FileSpreadsheet, MapPin, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "convex/react";
+import { useUser } from "@clerk/nextjs";
 import { api } from "../../../services/convex";
 import { cn } from "../../../lib/utils";
 
-const formatDateStr = (date: Date) => {
-  return date.toISOString().split('T')[0];
-};
+function pad2(n: number) {
+  return String(n).padStart(2, "0");
+}
 
-const formatDisplayTime = (timestamp?: number) => {
-  if (!timestamp) return "--:--";
-  return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
-};
+function toYMD(d: Date): string {
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
+function monthDateRange(year: number, monthIndex: number): { start: string; end: string; days: string[] } {
+  const lastDay = new Date(year, monthIndex + 1, 0).getDate();
+  const days: string[] = [];
+  for (let d = 1; d <= lastDay; d++) {
+    days.push(toYMD(new Date(year, monthIndex, d)));
+  }
+  return {
+    start: toYMD(new Date(year, monthIndex, 1)),
+    end: toYMD(new Date(year, monthIndex, lastDay)),
+    days,
+  };
+}
+
+function siteShiftStrengthSum(site: any): number {
+  const sh = site?.shifts;
+  if (!Array.isArray(sh)) return 0;
+  return sh.reduce((acc: number, s: any) => acc + (typeof s.strength === "number" ? s.strength : 0), 0);
+}
+
+function presentUniqueForSiteDay(records: any[], siteId: string, day: string): number {
+  const set = new Set<string>();
+  for (const r of records) {
+    if (r.date !== day) continue;
+    if (String(r.siteId) !== String(siteId)) continue;
+    if (r.checkInTime != null) set.add(String(r.empId));
+  }
+  return set.size;
+}
+
+function normShiftLabel(s: string | undefined): string {
+  const t = (s ?? "").trim().toLowerCase();
+  return t.length ? t : "default";
+}
+
+/** Human-readable report block: per configured shift — name, time range, marked people. */
+function buildShiftsAttendanceBlock(site: any, dayRecords: any[]): string {
+  const checkIns = (dayRecords || []).filter((r) => r.checkInTime != null);
+  const lines: string[] = [];
+  const shifts = Array.isArray(site?.shifts) ? site.shifts : [];
+  const usedNorm = new Set<string>();
+
+  for (const sh of shifts) {
+    const kn = normShiftLabel(sh.name);
+    usedNorm.add(kn);
+    const people = checkIns.filter((r) => normShiftLabel(r.shiftName) === kn);
+    const labels = [
+      ...new Map(people.map((r) => [String(r.empId), `${r.name} (${r.empId})`])).values(),
+    ];
+    lines.push(`${sh.name} (${sh.start}–${sh.end}): ${labels.length ? labels.join(", ") : "—"}`);
+  }
+
+  const extraNorms = new Set(checkIns.map((r) => normShiftLabel(r.shiftName)));
+  for (const ek of extraNorms) {
+    if (usedNorm.has(ek)) continue;
+    const people = checkIns.filter((r) => normShiftLabel(r.shiftName) === ek);
+    const title = people[0]?.shiftName || ek;
+    const labels = [
+      ...new Map(people.map((r) => [String(r.empId), `${r.name} (${r.empId})`])).values(),
+    ];
+    lines.push(`${title}: ${labels.join(", ")}`);
+  }
+
+  return lines.length ? lines.join("\n") : "—";
+}
+
+/** Full = check-in + check-out; half = check-in only (open shift). */
+function shiftCompletionClass(r: { checkInTime?: number | null; checkOutTime?: number | null }): "full" | "half" | "none" {
+  if (r.checkInTime == null) return "none";
+  if (r.checkOutTime != null) return "full";
+  return "half";
+}
+
+const DETAILS_SITES_PAGE = 20;
+const REPORT_TABLE_PAGE = 50;
+
+function DetailsSiteSkeletonRow() {
+  return (
+    <div
+      className="animate-pulse rounded-lg border border-white/10 bg-white/[0.03] p-2"
+      aria-hidden
+    >
+      <div className="mb-2 h-3 w-1/3 max-w-[180px] rounded bg-white/10" />
+      <div className="flex gap-1 overflow-hidden">
+        {Array.from({ length: 31 }).map((_, i) => (
+          <div key={i} className="h-8 w-10 shrink-0 rounded-md bg-white/5" />
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export default function AttendancePage() {
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-  const [searchQuery, setSearchQuery] = useState("");
-  
-  // Queries
-  const attendanceRecords = useQuery(api.attendance.list, { 
-    date: date,
+  const { user } = useUser();
+  const [activeTab, setActiveTab] = useState<"details" | "report">("details");
+  const [selectedRegionId, setSelectedRegionId] = useState("");
+  const [selectedCity, setSelectedCity] = useState("");
+  const [detailMonth, setDetailMonth] = useState(() => {
+    const t = new Date();
+    return { y: t.getFullYear(), m: t.getMonth() };
   });
+  const [dayDetail, setDayDetail] = useState<{
+    siteName: string;
+    date: string;
+    shiftCount: number;
+    strength: number;
+    present: number;
+    pct: number;
+    extraPct: number;
+  } | null>(null);
 
-  const filteredRecords = (attendanceRecords as any[])?.filter(r => 
-    r.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    r.empId.toLowerCase().includes(searchQuery.toLowerCase())
+  const today = new Date();
+  /** Report always covers one full calendar month (columns = every day in that month). */
+  const [reportMonth, setReportMonth] = useState(() => ({
+    y: today.getFullYear(),
+    m: today.getMonth(),
+  }));
+  const [reportRegion, setReportRegion] = useState("");
+  const [reportCity, setReportCity] = useState("");
+  const [reportSiteId, setReportSiteId] = useState("");
+  const [reportSearch, setReportSearch] = useState("");
+  const [detailsSitesPage, setDetailsSitesPage] = useState(0);
+  const [reportTablePage, setReportTablePage] = useState(0);
+
+  const currentUser = useQuery(api.users.getByClerkId, user?.id ? { clerkId: user.id } : "skip");
+  const organizationId = currentUser?.organizationId;
+
+  const regions = useQuery(api.regions.list, {});
+
+  useEffect(() => {
+    if (currentUser?.regionId && !selectedRegionId) {
+      setSelectedRegionId(currentUser.regionId);
+    }
+  }, [currentUser?.regionId, selectedRegionId]);
+
+  useEffect(() => {
+    if (currentUser?.regionId && !reportRegion) {
+      setReportRegion(currentUser.regionId);
+    }
+  }, [currentUser?.regionId, reportRegion]);
+
+  useEffect(() => {
+    setDetailsSitesPage(0);
+  }, [selectedRegionId, selectedCity, detailMonth.y, detailMonth.m, organizationId]);
+
+  const selectedRegionDoc = useMemo(
+    () => (regions as any[])?.find((r) => r.regionId === selectedRegionId),
+    [regions, selectedRegionId]
   );
 
-  const stats = {
-    present: filteredRecords?.filter((r: any) => r.status === "present").length || 0,
-    absent: filteredRecords?.filter((r: any) => r.status === "absent").length || 0,
-    total: filteredRecords?.length || 0
+  const detailSites = useQuery(
+    api.sites.listSitesByOrg,
+    organizationId
+      ? {
+          organizationId,
+          regionId: selectedRegionId || undefined,
+          city: selectedCity || undefined,
+        }
+      : "skip"
+  );
+
+  const reportSites = useQuery(
+    api.sites.listSitesByOrg,
+    organizationId
+      ? {
+          organizationId,
+          regionId: reportRegion || undefined,
+          city: reportCity || undefined,
+        }
+      : "skip"
+  );
+
+  const { start: monthStart, end: monthEnd, days: monthDays } = monthDateRange(detailMonth.y, detailMonth.m);
+
+  const monthRecords = useQuery(
+    api.attendance.listForOrgDateRange,
+    organizationId ? { organizationId, startDate: monthStart, endDate: monthEnd } : "skip"
+  );
+
+  const { start: reportStart, end: reportEnd, days: reportDays } = monthDateRange(reportMonth.y, reportMonth.m);
+
+  const reportRecords = useQuery(
+    api.attendance.listForOrgDateRange,
+    organizationId ? { organizationId, startDate: reportStart, endDate: reportEnd } : "skip"
+  );
+  const enrolledPersons = useQuery(
+    api.enrollment.list,
+    organizationId ? { organizationId } : "skip"
+  );
+
+  const dayStats = useMemo(() => {
+    const recs = (monthRecords as any[]) || [];
+    const sites = (detailSites as any[]) || [];
+    const map = new Map<string, { strength: number; present: number; pct: number; extraPct: number }>();
+    for (const site of sites) {
+      const sid = String(site._id);
+      const strength = siteShiftStrengthSum(site) || 0;
+      for (const day of monthDays) {
+        const present = presentUniqueForSiteDay(recs, sid, day);
+        const denom = strength > 0 ? strength : present > 0 ? present : 1;
+        const pct = Math.min(100, Math.round((present / denom) * 100));
+        const extraPct =
+          strength > 0 && present > strength
+            ? Math.min(100, Math.round(((present - strength) / strength) * 100))
+            : 0;
+        map.set(`${sid}|${day}`, { strength, present, pct, extraPct });
+      }
+    }
+    return map;
+  }, [monthRecords, detailSites, monthDays]);
+
+  /** Attendance-sheet style rows: one row per employee, date columns show shift(s). */
+  const reportSheetRows = useMemo(() => {
+    const recs = (reportRecords as any[]) || [];
+    let sites = (reportSites as any[]) || [];
+    if (reportSiteId) sites = sites.filter((s) => String(s._id) === reportSiteId);
+    const siteMap = new Map(sites.map((s) => [String(s._id), s]));
+    const rankMap = new Map<string, string>();
+    for (const p of (enrolledPersons as any[]) || []) {
+      rankMap.set(String(p.empId), String(p.empRank || "—"));
+    }
+    const groups = new Map<
+      string,
+      {
+        name: string;
+        empId: string;
+        rank: string;
+        dayShifts: Map<string, Set<string>>;
+        fullShift: number;
+        halfShift: number;
+      }
+    >();
+    for (const r of recs) {
+      if (!r?.siteId || !r?.date) continue;
+      if (r.date < reportStart || r.date > reportEnd) continue;
+      const sid = String(r.siteId);
+      if (!siteMap.has(sid)) continue;
+      const empId = String(r.empId || "");
+      if (!empId) continue;
+      const key = `${empId}|${String(r.name || "")}`;
+      if (!groups.has(key)) {
+        groups.set(key, {
+          name: String(r.name || "—"),
+          empId,
+          rank: rankMap.get(empId) || "—",
+          dayShifts: new Map(),
+          fullShift: 0,
+          halfShift: 0,
+        });
+      }
+      const g = groups.get(key)!;
+      const cls = shiftCompletionClass(r);
+      if (cls === "full") g.fullShift += 1;
+      else if (cls === "half") g.halfShift += 1;
+
+      if (r.checkInTime != null) {
+        if (!g.dayShifts.has(r.date)) g.dayShifts.set(r.date, new Set());
+        const label = String(r.shiftName || "P").trim() || "P";
+        g.dayShifts.get(r.date)!.add(label);
+      }
+    }
+    const rows: {
+      name: string;
+      empId: string;
+      rank: string;
+      byDate: Record<string, string>;
+      fullShift: number;
+      halfShift: number;
+      totalShift: number;
+    }[] = [];
+    const sorted = [...groups.values()].sort((a, b) => a.name.localeCompare(b.name));
+    for (const g of sorted) {
+      const byDate: Record<string, string> = {};
+      for (const d of reportDays) {
+        const set = g.dayShifts.get(d);
+        byDate[d] = set && set.size ? [...set].join(", ") : "—";
+      }
+      rows.push({
+        name: g.name,
+        empId: g.empId,
+        rank: g.rank,
+        byDate,
+        fullShift: g.fullShift,
+        halfShift: g.halfShift,
+        totalShift: g.fullShift + g.halfShift,
+      });
+    }
+    return rows;
+  }, [reportRecords, reportSites, enrolledPersons, reportStart, reportEnd, reportSiteId, reportDays]);
+
+  useEffect(() => {
+    setReportTablePage(0);
+  }, [reportMonth.y, reportMonth.m, reportRegion, reportCity, reportSiteId, reportSearch]);
+
+  const sortedDetailSites = useMemo(() => {
+    const s = ((detailSites as any[]) || []).slice();
+    s.sort((a, b) =>
+      String(a.name || a.locationName || "").localeCompare(String(b.name || b.locationName || ""))
+    );
+    return s;
+  }, [detailSites]);
+
+  const detailsPageCount = Math.max(1, Math.ceil(sortedDetailSites.length / DETAILS_SITES_PAGE));
+  const pagedDetailSites = useMemo(() => {
+    const start = detailsSitesPage * DETAILS_SITES_PAGE;
+    return sortedDetailSites.slice(start, start + DETAILS_SITES_PAGE);
+  }, [sortedDetailSites, detailsSitesPage]);
+
+  const filteredReportSheetRows = useMemo(() => {
+    const q = reportSearch.trim().toLowerCase();
+    if (!q) return reportSheetRows;
+    return reportSheetRows.filter(
+      (r) =>
+        String(r.name || "").toLowerCase().includes(q) ||
+        String(r.empId || "").toLowerCase().includes(q) ||
+        String(r.rank || "").toLowerCase().includes(q)
+    );
+  }, [reportSheetRows, reportSearch]);
+
+  const reportPageCount = Math.max(1, Math.ceil(filteredReportSheetRows.length / REPORT_TABLE_PAGE));
+  const reportPageRows = useMemo(() => {
+    const start = reportTablePage * REPORT_TABLE_PAGE;
+    return filteredReportSheetRows.slice(start, start + REPORT_TABLE_PAGE);
+  }, [filteredReportSheetRows, reportTablePage]);
+
+  const downloadCsv = () => {
+    const header = [
+      "s_no",
+      "name",
+      "emp_id",
+      "rank",
+      ...reportDays,
+      "full_shift",
+      "half_shift",
+      "total_shift",
+    ];
+    const lines = [header.join(",")];
+    filteredReportSheetRows.forEach((r, i) => {
+      lines.push(
+        [
+          String(i + 1),
+          `"${String(r.name).replace(/"/g, '""')}"`,
+          `"${String(r.empId).replace(/"/g, '""')}"`,
+          `"${String(r.rank).replace(/"/g, '""')}"`,
+          ...reportDays.map((d) => `"${String(r.byDate[d] || "—").replace(/"/g, '""')}"`),
+          String(r.fullShift),
+          String(r.halfShift),
+          String(r.totalShift),
+        ].join(",")
+      );
+    });
+    const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `attendance-sheet-${reportStart}-${reportEnd}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
+
+  const loading =
+    currentUser === undefined ||
+    regions === undefined ||
+    (organizationId && detailSites === undefined) ||
+    (organizationId && monthRecords === undefined);
 
   return (
     <Layout title="Attendance Management">
       <div className="space-y-6">
-        {/* Header Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="glass p-6 rounded-2xl border border-white/10 flex items-center justify-between">
-            <div>
-              <p className="text-sm text-muted-foreground font-medium">Total Staff</p>
-              <h3 className="text-2xl font-bold text-white mt-1">{stats.total}</h3>
-            </div>
-            <div className="p-3 bg-blue-500/10 rounded-xl text-blue-400">
-              <Users className="w-6 h-6" />
-            </div>
-          </div>
-          <div className="glass p-6 rounded-2xl border border-white/10 flex items-center justify-between">
-            <div>
-              <p className="text-sm text-muted-foreground font-medium">Present Today</p>
-              <h3 className="text-2xl font-bold text-emerald-400 mt-1">{stats.present}</h3>
-            </div>
-            <div className="p-3 bg-emerald-500/10 rounded-xl text-emerald-400">
-              <CheckCircle className="w-6 h-6" />
-            </div>
-          </div>
-          <div className="glass p-6 rounded-2xl border border-white/10 flex items-center justify-between">
-            <div>
-              <p className="text-sm text-muted-foreground font-medium">Absent/On Leave</p>
-              <h3 className="text-2xl font-bold text-rose-500 mt-1">{stats.absent}</h3>
-            </div>
-            <div className="p-3 bg-rose-500/10 rounded-xl text-rose-500">
-              <XCircle className="w-6 h-6" />
-            </div>
-          </div>
+        <div className="flex flex-wrap gap-2 border-b border-white/10 pb-3">
+          <button
+            type="button"
+            onClick={() => setActiveTab("details")}
+            className={cn(
+              "rounded-xl px-4 py-2 text-sm font-bold transition-colors",
+              activeTab === "details" ? "bg-primary text-white" : "text-muted-foreground hover:bg-white/5"
+            )}
+          >
+            Details
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("report")}
+            className={cn(
+              "rounded-xl px-4 py-2 text-sm font-bold transition-colors",
+              activeTab === "report" ? "bg-primary text-white" : "text-muted-foreground hover:bg-white/5"
+            )}
+          >
+            Report
+          </button>
         </div>
 
-        {/* Filters */}
-        <div className="glass p-4 rounded-2xl border border-white/10 flex flex-col md:flex-row gap-4 items-center">
-          <div className="relative flex-1 w-full md:w-auto">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <input
-              type="text"
-              placeholder="Search by name or Employee ID..."
-              className="w-full pl-10 pr-4 py-2 bg-white/5 border border-white/10 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-          </div>
-          
-          <div className="flex items-center gap-3 w-full md:w-auto">
-            <div className="relative">
-              <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <input
-                type="date"
-                className="pl-10 pr-4 py-2 bg-white/5 border border-white/10 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-white"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-              />
+        {activeTab === "details" && (
+          <div className="space-y-6">
+            <div className="glass flex flex-col gap-4 rounded-2xl border border-white/10 p-4 md:flex-row md:flex-wrap md:items-end">
+              <div className="min-w-[200px] flex-1">
+                <label className="mb-1 block text-xs font-bold uppercase tracking-wider text-muted-foreground">Region</label>
+                <select
+                  className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary/40"
+                  value={selectedRegionId}
+                  onChange={(e) => {
+                    setSelectedRegionId(e.target.value);
+                    setSelectedCity("");
+                  }}
+                >
+                  <option value="">All regions</option>
+                  {(regions as any[])?.map((r) => (
+                    <option key={r._id} value={r.regionId}>
+                      {r.regionName} ({r.regionId})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="min-w-[200px] flex-1">
+                <label className="mb-1 block text-xs font-bold uppercase tracking-wider text-muted-foreground">City</label>
+                <select
+                  className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary/40"
+                  value={selectedCity}
+                  onChange={(e) => setSelectedCity(e.target.value)}
+                >
+                  <option value="">All cities</option>
+                  {(selectedRegionDoc?.cities as string[] | undefined)?.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="min-w-[200px]">
+                <label className="mb-1 block text-xs font-bold uppercase tracking-wider text-muted-foreground">Month</label>
+                <div className="flex items-center gap-2">
+                  <Calendar className="h-4 w-4 text-muted-foreground" />
+                  <input
+                    type="month"
+                    className="flex-1 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary/40"
+                    value={`${detailMonth.y}-${pad2(detailMonth.m + 1)}`}
+                    onChange={(e) => {
+                      const [y, m] = e.target.value.split("-").map(Number);
+                      if (y && m) setDetailMonth({ y, m: m - 1 });
+                    }}
+                  />
+                </div>
+              </div>
             </div>
-            
-            
-            <button className="p-2 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-all text-muted-foreground">
-              <Download className="w-5 h-5" />
-            </button>
-          </div>
-        </div>
 
-        {/* Table */}
-        <div className="glass rounded-2xl border border-white/10 overflow-hidden">
-          <table className="w-full text-left">
-            <thead>
-              <tr className="bg-white/5 border-b border-white/10">
-                <th className="px-6 py-4 text-xs font-bold text-muted-foreground uppercase tracking-wider">Employee</th>
-                <th className="px-6 py-4 text-xs font-bold text-muted-foreground uppercase tracking-wider">Check In</th>
-                <th className="px-6 py-4 text-xs font-bold text-muted-foreground uppercase tracking-wider">Check Out</th>
-                <th className="px-6 py-4 text-xs font-bold text-muted-foreground uppercase tracking-wider">Status</th>
-                <th className="px-6 py-4 text-xs font-bold text-muted-foreground uppercase tracking-wider">Location</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-white/5">
-              {filteredRecords?.map((record: any) => (
-                <tr key={record._id} className="hover:bg-white/[0.02] transition-colors group">
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold">
-                        {record.name[0]}
+            {loading ? (
+              <div className="space-y-3">
+                {Array.from({ length: 8 }).map((_, i) => (
+                  <DetailsSiteSkeletonRow key={i} />
+                ))}
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {sortedDetailSites.length === 0 ? (
+                  <p className="text-center text-muted-foreground">No sites for this filter.</p>
+                ) : (
+                  <>
+                    {pagedDetailSites.map((site) => {
+                      const sid = String(site._id);
+                      const shiftCount = Array.isArray(site.shifts) ? site.shifts.length : 0;
+                      const strength = siteShiftStrengthSum(site);
+                      return (
+                        <div key={sid} className="glass rounded-lg border border-white/10 p-2">
+                          <div className="mb-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                            <MapPin className="h-3.5 w-3.5 shrink-0 text-sky-400" />
+                            <h3 className="text-sm font-bold text-white">
+                              {site.name || site.locationName}
+                            </h3>
+                            <span className="text-[11px] text-muted-foreground">
+                              {shiftCount} sh · str {strength || "—"}
+                            </span>
+                          </div>
+                          <div className="-mx-0.5 overflow-x-auto pb-1">
+                            <div className="inline-flex min-w-0 gap-1 px-0.5">
+                              {monthDays.map((day) => {
+                                const k = `${sid}|${day}`;
+                                const st = dayStats.get(k);
+                                const pct = st?.pct ?? 0;
+                                const extra = st?.extraPct ?? 0;
+                                const d = day.slice(8);
+                                return (
+                                  <button
+                                    key={day}
+                                    type="button"
+                                    onClick={() =>
+                                      setDayDetail({
+                                        siteName: site.name || site.locationName || "Site",
+                                        date: day,
+                                        shiftCount,
+                                        strength: st?.strength ?? strength,
+                                        present: st?.present ?? 0,
+                                        pct,
+                                        extraPct: extra,
+                                      })
+                                    }
+                                    className={cn(
+                                      "inline-flex min-h-[2.25rem] min-w-[2.75rem] shrink-0 flex-col items-center justify-center rounded-lg border px-1.5 py-1 font-mono text-xs font-bold leading-tight transition-colors",
+                                      pct >= 80
+                                        ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
+                                        : pct >= 40
+                                          ? "border-amber-500/35 bg-amber-500/10 text-amber-200"
+                                          : "border-white/10 bg-white/[0.03] text-slate-300"
+                                    )}
+                                    title={day}
+                                  >
+                                    <span className="text-[11px] text-muted-foreground">{d}</span>
+                                    <span className="text-sm">{pct}%</span>
+                                    {extra > 0 ? (
+                                      <span className="text-[10px] font-semibold text-orange-300">+{extra}</span>
+                                    ) : null}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-4">
+                      <p className="text-xs text-muted-foreground">
+                        Sites{" "}
+                        <span className="font-mono text-white/80">
+                          {detailsSitesPage * DETAILS_SITES_PAGE + 1}–
+                          {Math.min(
+                            (detailsSitesPage + 1) * DETAILS_SITES_PAGE,
+                            sortedDetailSites.length
+                          )}
+                        </span>{" "}
+                        of <span className="font-mono text-white/80">{sortedDetailSites.length}</span>
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          disabled={detailsSitesPage <= 0}
+                          onClick={() => setDetailsSitesPage((p) => Math.max(0, p - 1))}
+                          className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-30"
+                        >
+                          Prev
+                        </button>
+                        <span className="text-xs text-muted-foreground">
+                          {detailsSitesPage + 1} / {detailsPageCount}
+                        </span>
+                        <button
+                          type="button"
+                          disabled={detailsSitesPage >= detailsPageCount - 1}
+                          onClick={() =>
+                            setDetailsSitesPage((p) => Math.min(detailsPageCount - 1, p + 1))
+                          }
+                          className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-30"
+                        >
+                          Next
+                        </button>
                       </div>
-                      <div>
-                        <p className="text-sm font-bold text-white">{record.name}</p>
-                        <p className="text-xs text-muted-foreground">ID: {record.empId}</p>
-                      </div>
                     </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-2 text-sm text-white">
-                      <Clock className="w-3.5 h-3.5 text-primary/60" />
-                      {record.checkInTime ? formatDisplayTime(record.checkInTime) : "--:--"}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-2 text-sm text-white">
-                      <Clock className="w-3.5 h-3.5 text-muted-foreground" />
-                      {record.checkOutTime ? formatDisplayTime(record.checkOutTime) : "--:--"}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className={cn(
-                      "px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border",
-                      record.status === "present" 
-                        ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" 
-                        : "bg-rose-500/10 text-rose-500 border-rose-500/20"
-                    )}>
-                      {record.status}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-1.5 text-sm text-blue-400 font-medium">
-                      <MapPin className="w-3.5 h-3.5" />
-                      <span className="truncate max-w-[150px]">View Map</span>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {filteredRecords?.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="px-6 py-12 text-center text-muted-foreground">
-                    No attendance records found for this selection.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === "report" && (
+          <div className="space-y-4">
+            <div className="glass flex flex-col flex-wrap gap-4 rounded-2xl border border-white/10 p-4 md:flex-row md:items-end">
+              <div className="min-w-[200px]">
+                <label className="mb-1 block text-xs font-bold text-muted-foreground">Month</label>
+                <div className="flex items-center gap-2">
+                  <Calendar className="h-4 w-4 text-muted-foreground" />
+                  <input
+                    type="month"
+                    className="flex-1 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary/40"
+                    value={`${reportMonth.y}-${pad2(reportMonth.m + 1)}`}
+                    onChange={(e) => {
+                      const [y, m] = e.target.value.split("-").map(Number);
+                      if (y && m) setReportMonth({ y, m: m - 1 });
+                    }}
+                  />
+                </div>
+                <p className="mt-1 text-[10px] text-muted-foreground">
+                  Columns: {reportStart} → {reportEnd}
+                </p>
+              </div>
+              <div className="min-w-[180px] flex-1">
+                <label className="mb-1 block text-xs font-bold text-muted-foreground">Region</label>
+                <select
+                  className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white"
+                  value={reportRegion}
+                  onChange={(e) => {
+                    setReportRegion(e.target.value);
+                    setReportCity("");
+                    setReportSiteId("");
+                  }}
+                >
+                  <option value="">All</option>
+                  {(regions as any[])?.map((r) => (
+                    <option key={r._id} value={r.regionId}>
+                      {r.regionName}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="min-w-[160px] flex-1">
+                <label className="mb-1 block text-xs font-bold text-muted-foreground">City</label>
+                <select
+                  className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white"
+                  value={reportCity}
+                  onChange={(e) => {
+                    setReportCity(e.target.value);
+                    setReportSiteId("");
+                  }}
+                >
+                  <option value="">All</option>
+                  {(
+                    (regions as any[])?.find((r) => r.regionId === reportRegion)?.cities as string[] | undefined
+                  )?.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="min-w-[200px] flex-[2]">
+                <label className="mb-1 block text-xs font-bold text-muted-foreground">Site</label>
+                <select
+                  className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white"
+                  value={reportSiteId}
+                  onChange={(e) => setReportSiteId(e.target.value)}
+                >
+                  <option value="">All sites</option>
+                  {(reportSites as any[])?.map((s) => (
+                    <option key={s._id} value={String(s._id)}>
+                      {s.name || s.locationName}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="min-w-[220px] flex-[2]">
+                <label className="mb-1 block text-xs font-bold text-muted-foreground">Search</label>
+                <input
+                  type="text"
+                  value={reportSearch}
+                  onChange={(e) => setReportSearch(e.target.value)}
+                  placeholder="Name / Emp ID / Rank"
+                  className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-muted-foreground"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={downloadCsv}
+                className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-emerald-500/15 px-4 py-2 text-sm font-bold text-emerald-300 hover:bg-emerald-500/25"
+              >
+                <Download className="h-4 w-4" />
+                CSV
+              </button>
+            </div>
+
+            <div className="glass overflow-hidden rounded-2xl border border-white/10">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 px-4 py-3 text-muted-foreground">
+                <div className="flex items-center gap-2">
+                  <FileSpreadsheet className="h-4 w-4" />
+                  <span className="text-xs font-bold uppercase tracking-wider">Attendance Sheet</span>
+                </div>
+                <span className="text-[10px] text-muted-foreground">
+                  {filteredReportSheetRows.length} rows · page {reportTablePage + 1}/{reportPageCount}
+                </span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-white/10 bg-white/[0.03] text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                      <th className="w-[4rem] px-3 py-2">S.No</th>
+                      <th className="min-w-[10rem] px-3 py-2">Name</th>
+                      <th className="min-w-[8rem] px-3 py-2">Emp ID</th>
+                      <th className="min-w-[8rem] px-3 py-2">Rank</th>
+                      {reportDays.map((d) => (
+                        <th key={d} className="min-w-[7rem] px-3 py-2 text-center">
+                          {d.slice(8, 10)}/{d.slice(5, 7)}/{d.slice(0, 4)}
+                        </th>
+                      ))}
+                      <th className="min-w-[6rem] px-3 py-2 text-center">Full shift</th>
+                      <th className="min-w-[6rem] px-3 py-2 text-center">Half shift</th>
+                      <th className="min-w-[6rem] px-3 py-2 text-center">Total shift</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5">
+                    {reportPageRows.map((r, i) => (
+                      <tr key={`${r.empId}-${i}`} className="align-top hover:bg-white/[0.02]">
+                        <td className="px-3 py-2 font-mono text-xs text-white">
+                          {reportTablePage * REPORT_TABLE_PAGE + i + 1}
+                        </td>
+                        <td className="px-3 py-2 text-sm font-semibold text-white/90">{r.name}</td>
+                        <td className="px-3 py-2 font-mono text-xs text-white/90">{r.empId}</td>
+                        <td className="px-3 py-2 text-xs text-slate-200">{r.rank}</td>
+                        {reportDays.map((d) => (
+                          <td key={`${r.empId}-${d}`} className="px-3 py-2 text-center text-xs text-white/85">
+                            {r.byDate[d] || "—"}
+                          </td>
+                        ))}
+                        <td className="px-3 py-2 text-center font-mono text-xs text-emerald-200">{r.fullShift}</td>
+                        <td className="px-3 py-2 text-center font-mono text-xs text-amber-200">{r.halfShift}</td>
+                        <td className="px-3 py-2 text-center font-mono text-xs text-white">{r.totalShift}</td>
+                      </tr>
+                    ))}
+                    {filteredReportSheetRows.length === 0 && (
+                      <tr>
+                        <td
+                          colSpan={7 + reportDays.length}
+                          className="px-4 py-10 text-center text-muted-foreground"
+                        >
+                          No attendance rows for this month and filters.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              {filteredReportSheetRows.length > REPORT_TABLE_PAGE ? (
+                <div className="flex items-center justify-end gap-2 border-t border-white/10 px-4 py-3">
+                  <button
+                    type="button"
+                    disabled={reportTablePage <= 0}
+                    onClick={() => setReportTablePage((p) => Math.max(0, p - 1))}
+                    className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-30"
+                  >
+                    Prev
+                  </button>
+                  <button
+                    type="button"
+                    disabled={reportTablePage >= reportPageCount - 1}
+                    onClick={() =>
+                      setReportTablePage((p) => Math.min(reportPageCount - 1, p + 1))
+                    }
+                    className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-30"
+                  >
+                    Next
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        )}
+
+        {dayDetail && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" role="dialog">
+            <div className="glass max-w-md rounded-2xl border border-white/10 p-6 shadow-xl">
+              <div className="mb-4 flex items-start justify-between gap-4">
+                <div>
+                  <h4 className="text-lg font-bold text-white">{dayDetail.siteName}</h4>
+                  <p className="text-sm text-muted-foreground">{dayDetail.date}</p>
+                </div>
+                <button
+                  type="button"
+                  aria-label="Close"
+                  className="rounded-lg p-2 hover:bg-white/10"
+                  onClick={() => setDayDetail(null)}
+                >
+                  <X className="h-5 w-5 text-muted-foreground" />
+                </button>
+              </div>
+              <ul className="space-y-2 text-sm text-white/90">
+                <li className="flex justify-between border-b border-white/5 py-2">
+                  <span className="text-muted-foreground">Shifts (configured)</span>
+                  <span className="font-bold">{dayDetail.shiftCount}</span>
+                </li>
+                <li className="flex justify-between border-b border-white/5 py-2">
+                  <span className="text-muted-foreground">Total strength</span>
+                  <span className="font-bold">{dayDetail.strength || "—"}</span>
+                </li>
+                <li className="flex justify-between border-b border-white/5 py-2">
+                  <span className="text-muted-foreground">Present (unique)</span>
+                  <span className="font-bold text-emerald-300">{dayDetail.present}</span>
+                </li>
+                <li className="flex justify-between border-b border-white/5 py-2">
+                  <span className="text-muted-foreground">Attendance %</span>
+                  <span className="font-bold text-sky-300">{dayDetail.pct}%</span>
+                </li>
+                {dayDetail.extraPct > 0 ? (
+                  <li className="flex justify-between py-2">
+                    <span className="text-muted-foreground">Over baseline (extra)</span>
+                    <span className="font-bold text-orange-300">+{dayDetail.extraPct}%</span>
+                  </li>
+                ) : null}
+              </ul>
+              <p className="mt-4 text-xs text-muted-foreground">No individual names are shown here.</p>
+            </div>
+          </div>
+        )}
       </div>
     </Layout>
   );

@@ -6,13 +6,28 @@ import { Id } from "@/convex/_generated/dataModel";
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { pointId, latitude, longitude, qrCode } = body;
+    const siteId = body.siteId as Id<"sites"> | undefined;
+    const qrCode = (body.qrCode ?? body.qrCodeId) as string | undefined;
+    const latitude =
+      typeof body.latitude === "number" ? body.latitude : body.userLat;
+    const longitude =
+      typeof body.longitude === "number" ? body.longitude : body.userLon;
+
+    if (!siteId || !qrCode || typeof latitude !== "number" || typeof longitude !== "number") {
+      return NextResponse.json(
+        {
+          error: "Bad request",
+          detail: "Required: siteId, qrCode (or qrCodeId), latitude & longitude (or userLat, userLon).",
+        },
+        { status: 400 }
+      );
+    }
 
     const validation = await convex.mutation(api.logs.validatePatrolPoint, {
-      pointId: pointId as Id<"patrolPoints">,
+      siteId,
+      qrCode,
       latitude,
       longitude,
-      qrCode
     });
 
     return NextResponse.json(validation);

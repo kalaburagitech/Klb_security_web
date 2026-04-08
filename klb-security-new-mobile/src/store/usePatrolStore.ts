@@ -9,16 +9,27 @@ interface PatrolSession {
     scannedPointIds?: string[];
 }
 
+interface PatrolActingSubject {
+    empId: string;
+    name: string;
+}
+
 interface PatrolState {
     activeSession: PatrolSession | null;
     currentSite: any | null;
+    /** Guard/officer selected before starting a patrol (enrollment emp id + display name). */
+    patrolSubject: PatrolActingSubject | null;
+    /** Last successfully logged checkpoint name in the active session (scanner HUD). */
+    lastScannedPointName: string | null;
     offlineQueue: any[];
     lastRegionId: string | null;
     lastCity: string | null;
     lastScannedPoints: Record<string, number>; // qrCode -> timestamp (ms)
 
     setSession: (session: PatrolSession | null) => void;
+    recordPatrolScan: (pointId: string, pointName: string) => void;
     setCurrentSite: (site: any) => void;
+    setPatrolSubject: (subject: PatrolActingSubject | null) => void;
     setLastSelection: (regionId: string | null, city: string | null) => void;
     addScannedPoint: (qrCode: string) => void;
     isPointRecentlyScanned: (qrCode: string, windowMs?: number) => boolean;
@@ -33,17 +44,47 @@ export const usePatrolStore = create<PatrolState>()(
     (set, get) => ({
         activeSession: null,
         currentSite: null,
+        patrolSubject: null,
+        lastScannedPointName: null,
         offlineQueue: [],
         lastRegionId: null,
         lastCity: null,
         lastScannedPoints: {},
 
         setSession: (activeSession) => {
-            set({ activeSession });
+            set((state) => {
+                const prevId = state.activeSession?.id;
+                const nextId = activeSession?.id;
+                const sessionChanged = prevId !== nextId;
+                return {
+                    activeSession,
+                    lastScannedPointName:
+                        !activeSession || sessionChanged ? null : state.lastScannedPointName,
+                };
+            });
             saveToStorage(get());
+        },
+        recordPatrolScan: (pointId, pointName) => {
+            set((state) => {
+                const s = state.activeSession;
+                if (!s) return state;
+                const ids = [...(s.scannedPointIds || [])];
+                if (!ids.includes(pointId)) ids.push(pointId);
+                const newState = {
+                    ...state,
+                    activeSession: { ...s, scannedPointIds: ids },
+                    lastScannedPointName: pointName,
+                };
+                saveToStorage(newState);
+                return newState;
+            });
         },
         setCurrentSite: (currentSite) => {
             set({ currentSite });
+            saveToStorage(get());
+        },
+        setPatrolSubject: (patrolSubject) => {
+            set({ patrolSubject });
             saveToStorage(get());
         },
         setLastSelection: (lastRegionId, lastCity) => {
@@ -93,6 +134,8 @@ const saveToStorage = async (state: PatrolState) => {
             lastScannedPoints: state.lastScannedPoints,
             activeSession: state.activeSession,
             currentSite: state.currentSite,
+            patrolSubject: state.patrolSubject,
+            lastScannedPointName: state.lastScannedPointName,
         });
         await AsyncStorage.setItem(STORAGE_KEY, data);
     } catch (e) {

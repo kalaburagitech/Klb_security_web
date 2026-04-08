@@ -7,6 +7,7 @@ import { api } from "../../../services/convex";
 import { useUser } from "@clerk/nextjs";
 import type { Id } from "../../../../convex/_generated/dataModel";
 import { toast } from "sonner";
+import { getUserRoles } from "../../../lib/userRoles";
 
 export default function RegionManagement() {
     const { user } = useUser();
@@ -15,7 +16,6 @@ export default function RegionManagement() {
         id: Id<"regions">; 
         regionId: string; 
         regionName: string;
-        country: string;
         cities: string[];
         isActive: boolean;
     } | null>(null);
@@ -25,7 +25,6 @@ export default function RegionManagement() {
     const [newRegion, setNewRegion] = useState({
         regionId: "",
         regionName: "",
-        country: "India",
         cities: [] as string[],
         isActive: true
     });
@@ -35,22 +34,35 @@ export default function RegionManagement() {
     const regions = useQuery(api.regions.list);
     const createRegion = useMutation(api.regions.create);
     const updateRegion = useMutation(api.regions.update);
+    const setRegionStatus = useMutation(api.regions.setStatus);
     const removeRegion = useMutation(api.regions.remove);
 
     const currentUser = useQuery(api.users.getByClerkId,
         user?.id ? { clerkId: user.id } : "skip"
     );
 
-    const isSuperAdmin = currentUser?.role === "Owner" || currentUser?.role === "Deployment Manager";
+    const isSuperAdmin =
+        getUserRoles(currentUser).includes("Owner") ||
+        getUserRoles(currentUser).includes("Deployment Manager");
 
     const filteredRegions = regions?.filter(r =>
         r.regionName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        r.regionId.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        r.country.toLowerCase().includes(searchQuery.toLowerCase())
+        r.regionId.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
+    const getRegionErrorMessage = (error: any) => {
+        const message = error?.message || "";
+        if (message.includes("Region ID already exists")) {
+            return "This Region ID is already taken. Please use a different Region ID.";
+        }
+        if (message.includes("Region name already exists")) {
+            return "This Region Name is already taken. Please use a different Region Name.";
+        }
+        return message || "Failed to save region";
+    };
+
     const handleAddRegion = async () => {
-        if (!newRegion.regionId || !newRegion.regionName || !newRegion.country) {
+        if (!newRegion.regionId.trim() || !newRegion.regionName.trim()) {
             toast.error("Please fill in required fields");
             return;
         }
@@ -62,7 +74,6 @@ export default function RegionManagement() {
             setNewRegion({
                 regionId: "",
                 regionName: "",
-                country: "India",
                 cities: [],
                 isActive: true
             });
@@ -70,7 +81,7 @@ export default function RegionManagement() {
             toast.success("Region created successfully");
         } catch (error: any) {
             console.error("Failed to create region:", error);
-            toast.error(error.message || "Failed to create region");
+            toast.error(getRegionErrorMessage(error));
         }
     };
 
@@ -81,7 +92,6 @@ export default function RegionManagement() {
                 id: editingRegion.id,
                 regionId: editingRegion.regionId,
                 regionName: editingRegion.regionName,
-                country: editingRegion.country,
                 cities: editingRegion.cities,
                 isActive: editingRegion.isActive,
             });
@@ -89,7 +99,7 @@ export default function RegionManagement() {
             toast.success("Region updated successfully");
         } catch (error: any) {
             console.error("Failed to update region:", error);
-            toast.error(error.message || "Failed to update region");
+            toast.error(getRegionErrorMessage(error));
         }
     };
 
@@ -101,6 +111,19 @@ export default function RegionManagement() {
         } catch (error) {
             console.error("Failed to delete region:", error);
             toast.error("Failed to delete region");
+        }
+    };
+
+    const handleToggleRegionStatus = async (region: any) => {
+        try {
+            await setRegionStatus({
+                id: region._id,
+                isActive: !region.isActive,
+            });
+            toast.success(`Region ${region.isActive ? "deactivated" : "activated"} successfully`);
+        } catch (error: any) {
+            console.error("Failed to update region status:", error);
+            toast.error(error.message || "Failed to update region status");
         }
     };
 
@@ -166,7 +189,7 @@ export default function RegionManagement() {
                                 type="text"
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
-                                placeholder="Search regions, country..."
+                                placeholder="Search regions..."
                                 className="pl-10 pr-4 py-2 bg-white/5 border border-white/10 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-primary/50 w-full sm:w-64 text-white"
                             />
                         </div>
@@ -186,7 +209,6 @@ export default function RegionManagement() {
                             <thead>
                                 <tr className="border-b border-white/5 bg-white/[0.02]">
                                     <th className="px-6 py-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Region Info</th>
-                                    <th className="px-6 py-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Country</th>
                                     <th className="px-6 py-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Cities</th>
                                     <th className="px-6 py-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider text-center">Status</th>
                                     <th className="px-6 py-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider text-right">Actions</th>
@@ -207,9 +229,6 @@ export default function RegionManagement() {
                                             </div>
                                         </td>
                                         <td className="px-6 py-4">
-                                            <span className="text-sm text-white/70">{region.country}</span>
-                                        </td>
-                                        <td className="px-6 py-4">
                                             <div className="flex flex-wrap gap-1 max-w-xs">
                                                 {(region.cities || []).slice(0, 3).map((city: string) => (
                                                     <span key={city} className="px-2 py-0.5 bg-white/5 border border-white/10 rounded text-[10px] text-muted-foreground">
@@ -225,14 +244,31 @@ export default function RegionManagement() {
                                             </div>
                                         </td>
                                         <td className="px-6 py-4 text-center">
-                                            <span className={cn(
-                                                "px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider",
-                                                region.isActive 
-                                                    ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20" 
-                                                    : "bg-red-500/10 text-red-500 border border-red-500/20"
-                                            )}>
-                                                {region.isActive ? "Active" : "Inactive"}
-                                            </span>
+                                            <div className="flex items-center justify-center gap-3">
+                                                <span className={cn(
+                                                    "px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider",
+                                                    region.isActive 
+                                                        ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20" 
+                                                        : "bg-red-500/10 text-red-500 border border-red-500/20"
+                                                )}>
+                                                    {region.isActive ? "Active" : "Inactive"}
+                                                </span>
+                                                <button
+                                                    onClick={() => handleToggleRegionStatus(region)}
+                                                    className={cn(
+                                                        "relative inline-flex h-6 w-11 items-center rounded-full transition-colors",
+                                                        region.isActive ? "bg-emerald-500/80" : "bg-white/10"
+                                                    )}
+                                                    title={region.isActive ? "Deactivate region" : "Activate region"}
+                                                >
+                                                    <span
+                                                        className={cn(
+                                                            "inline-block h-5 w-5 transform rounded-full bg-white transition-transform",
+                                                            region.isActive ? "translate-x-5" : "translate-x-1"
+                                                        )}
+                                                    />
+                                                </button>
+                                            </div>
                                         </td>
                                         <td className="px-6 py-4 text-right">
                                             <div className="flex items-center justify-end gap-2">
@@ -241,7 +277,6 @@ export default function RegionManagement() {
                                                         id: region._id,
                                                         regionId: region.regionId,
                                                         regionName: region.regionName,
-                                                        country: region.country || "India",
                                                         cities: region.cities || [],
                                                         isActive: region.isActive ?? true,
                                                     })}
@@ -261,7 +296,7 @@ export default function RegionManagement() {
                                 ))}
                                 {filteredRegions?.length === 0 && (
                                     <tr>
-                                        <td colSpan={5} className="px-6 py-12 text-center text-muted-foreground text-sm">
+                                        <td colSpan={4} className="px-6 py-12 text-center text-muted-foreground text-sm">
                                             No regions found.
                                         </td>
                                     </tr>
@@ -319,17 +354,6 @@ export default function RegionManagement() {
                                     type="text"
                                     className="w-full mt-1.5 px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:ring-1 focus:ring-primary/50 text-white text-sm"
                                     placeholder="e.g. Karnataka"
-                                />
-                            </div>
-
-                            <div>
-                                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest pl-1">Country</label>
-                                <input
-                                    value={newRegion.country}
-                                    onChange={e => setNewRegion({ ...newRegion, country: e.target.value })}
-                                    type="text"
-                                    className="w-full mt-1.5 px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:ring-1 focus:ring-primary/50 text-white text-sm"
-                                    placeholder="Enter country"
                                 />
                             </div>
 
@@ -424,16 +448,6 @@ export default function RegionManagement() {
                                 <input
                                     value={editingRegion.regionName}
                                     onChange={e => setEditingRegion({ ...editingRegion, regionName: e.target.value })}
-                                    type="text"
-                                    className="w-full mt-1.5 px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:ring-1 focus:ring-primary/50 text-white text-sm"
-                                />
-                            </div>
-
-                            <div>
-                                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest pl-1">Country</label>
-                                <input
-                                    value={editingRegion.country}
-                                    onChange={e => setEditingRegion({ ...editingRegion, country: e.target.value })}
                                     type="text"
                                     className="w-full mt-1.5 px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:ring-1 focus:ring-primary/50 text-white text-sm"
                                 />

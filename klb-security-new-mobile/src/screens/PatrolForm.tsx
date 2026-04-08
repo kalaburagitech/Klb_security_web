@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Image, ActivityIndicator, Alert } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 // import { useQuery, useMutation } from 'convex/react';
 import { usePatrolStore } from '../store/usePatrolStore';
 import * as Location from 'expo-location';
-import { Shield, Camera, MapPin, MessageSquare, CheckCircle2, Trash2, AlertTriangle, Check } from 'lucide-react-native';
+import { Shield, Camera, MapPin, MessageSquare, CheckCircle2, Trash2, AlertTriangle, Check, Images } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 // import { api } from '../services/convex';
 import { logService } from '../services/api';
@@ -20,31 +20,65 @@ export default function PatrolForm() {
     const { qrCode } = route.params || {};
     const { userId, organizationId } = useCustomAuth();
     const activeSession = usePatrolStore((state) => state.activeSession);
+    const patrolSubject = usePatrolStore((state) => state.patrolSubject);
     const [location, setLocation] = useState<any>(null);
     const [validation, setValidation] = useState<any>(undefined);
     const [locationError, setLocationError] = useState<string | null>(null);
+    const validateSeqRef = useRef(0);
+    const locationRef = useRef<any>(null);
+    locationRef.current = location;
 
+    /** Validate on a timer using latest GPS from ref — not on every location event (saves slow networks). */
     useEffect(() => {
-        if (activeSession?.siteId && qrCode && location) {
-            logService.validatePatrolPoint(
-                activeSession.siteId as string,
-                qrCode,
-                location.coords.latitude,
-                location.coords.longitude,
-                userId as string
-            ).then(res => setValidation(res.data))
-             .catch(err => {
-                 console.error("Validation error:", err);
-                 // Mock a failed validation
-                 setValidation({ valid: false, distance: 0 });
-             });
-        } else if (!location) {
-             // Still waiting for location
-        } else {
-             // Missing other info 
-             setValidation({ valid: false, distance: 0 });
+        if (!activeSession?.siteId || !qrCode || !userId) {
+            setValidation(undefined);
+            return;
         }
-    }, [activeSession, qrCode, location, userId]);
+        const mySeq = ++validateSeqRef.current;
+        let cancelled = false;
+        const run = () => {
+            if (cancelled || mySeq !== validateSeqRef.current) return;
+            const loc = locationRef.current;
+            if (!loc) return;
+            logService
+                .validatePatrolPoint(
+                    activeSession.siteId as string,
+                    qrCode,
+                    loc.coords.latitude,
+                    loc.coords.longitude,
+                    userId as string
+                )
+                .then((res) => {
+                    if (!cancelled && mySeq === validateSeqRef.current) setValidation(res.data);
+                })
+                .catch((err) => {
+                    console.error('Validation error:', err);
+                    if (cancelled || mySeq !== validateSeqRef.current) return;
+                    const detail =
+                        err?.response?.data?.detail ||
+                        err?.response?.data?.error ||
+                        err?.message ||
+                        'Could not verify this QR.';
+                    setValidation({
+                        valid: false,
+                        distance: 0,
+                        allowedRadius: 100,
+                        isWithinRange: false,
+                        error: typeof detail === 'string' ? detail : 'Verification failed',
+                    });
+                });
+        };
+
+        const t0 = setTimeout(run, 200);
+        const t1 = setTimeout(run, 2000);
+        const id = setInterval(run, 12000);
+        return () => {
+            cancelled = true;
+            clearTimeout(t0);
+            clearTimeout(t1);
+            clearInterval(id);
+        };
+    }, [activeSession?.siteId, qrCode, userId]);
 
     const [comment, setComment] = useState('');
     const [image, setImage] = useState<string | null>(null);
@@ -70,13 +104,15 @@ export default function PatrolForm() {
                 return;
             }
             try {
-                const currentLoc = await Location.getCurrentPositionAsync({});
+                const currentLoc = await Location.getCurrentPositionAsync({
+                    accuracy: Location.Accuracy.Balanced,
+                });
                 setLocation(currentLoc);
                 subscription = await Location.watchPositionAsync(
                     {
-                        accuracy: Location.Accuracy.High,
-                        timeInterval: 3000,
-                        distanceInterval: 3,
+                        accuracy: Location.Accuracy.Balanced,
+                        timeInterval: 8000,
+                        distanceInterval: 12,
                     },
                     (loc) => setLocation(loc)
                 );
@@ -144,11 +180,43 @@ export default function PatrolForm() {
         }
     };
 
-    const canSubmit = validation?.isWithinRange && !loading;
+    const pickFromGallery = async () => {
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== "granted") {
+            showError("Photos", "Photo library permission is required.");
+            return;
+        }
+        try {
+            const result = await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: ["images"],
+                allowsEditing: false,
+                quality: 0.35,
+            });
+            if (!result.canceled && result.assets?.[0]?.uri) {
+                const uri = result.assets[0].uri;
+                setImage(uri);
+                processImageUpload(uri);
+            }
+        } catch (err) {
+            console.error("Gallery error:", err);
+            showError("Gallery", "Could not open photo library.");
+        }
+    };
+
+    const canSubmit =
+        validation?.isWithinRange &&
+        !loading &&
+        validation?.errorCode !== 'wrong_site' &&
+        validation?.errorCode !== 'no_coordinates';
+
+    const allowedM = validation?.allowedRadius ?? 100;
 
     const handleSubmit = async () => {
         if (!canSubmit) {
-            showError("Permission Denied", "You must be within 100m of the point to submit.");
+            showError(
+                'Too far from checkpoint',
+                `Move within ${Math.round(allowedM)}m of this QR patrol point to log the scan.`
+            );
             return;
         }
         if (!comment && !image) {
@@ -181,13 +249,15 @@ export default function PatrolForm() {
                 distance: validation?.distance || 0,
                 organizationId: organizationId as any,
                 imageId: storageId,
+                sessionId: activeSession?.id,
+                patrolSubjectEmpId: patrolSubject?.empId,
+                patrolSubjectName: patrolSubject?.name,
                 issueDetails: hasIssue ? {
                     title: "Manual Issue Report",
                     priority: issuePriority
                 } : undefined
             });
 
-            // Update session points to mark this point as scanned
             if (activeSession?.id && validation?.pointId) {
                 await updateSessionPoints({
                     sessionId: activeSession.id as any,
@@ -195,13 +265,29 @@ export default function PatrolForm() {
                 });
             }
 
-            showSuccess("Success", "Patrol point logged successfully!");
-            navigation.navigate('MainTabs');
+            if (validation?.pointId) {
+                usePatrolStore.getState().recordPatrolScan(
+                    String(validation.pointId),
+                    String(validation.pointName || 'Checkpoint')
+                );
+            }
+
+            showSuccess('Saved', validation?.pointName || 'Checkpoint logged');
+            if (activeSession?.siteId) {
+                navigation.navigate("QRScanner");
+            } else {
+                navigation.navigate("MainTabs");
+            }
         } catch (error: any) {
             const status = error?.response?.status;
             const data = error?.response?.data;
             console.error("Create log error:", status, data || error);
-            Alert.alert("Error", error?.response?.data?.error || error.message || "Failed to log patrol point.");
+            const msg =
+                error?.response?.data?.error ||
+                error?.response?.data?.detail ||
+                error.message ||
+                'Failed to log patrol point.';
+            Alert.alert('Error', typeof msg === 'string' ? msg : 'Failed to log patrol point.');
         } finally {
             setLoading(false);
         }
@@ -223,36 +309,149 @@ export default function PatrolForm() {
                     <View>
                         <Text style={styles.headerTitle}>Log Patrol Point</Text>
                         <Text style={styles.progressSubtitle}>
+                            {patrolSubject
+                                ? `${patrolSubject.name} (${patrolSubject.empId}) · `
+                                : ""}
                             Scanned {activeSession?.scannedPointIds?.length || 0} points
                         </Text>
                     </View>
                 </View>
-                <TouchableOpacity onPress={() => navigation.goBack()} style={styles.closeBtn}>
-                    <Text style={styles.closeBtnText}>Cancel</Text>
-                </TouchableOpacity>
+                <View style={styles.headerActions}>
+                    <TouchableOpacity
+                        onPress={() => {
+                            const loc = locationRef.current;
+                            if (!loc || !activeSession?.siteId || !qrCode || !userId) return;
+                            logService
+                                .validatePatrolPoint(
+                                    activeSession.siteId as string,
+                                    qrCode,
+                                    loc.coords.latitude,
+                                    loc.coords.longitude,
+                                    userId as string
+                                )
+                                .then((res) => setValidation(res.data))
+                                .catch(() => {});
+                        }}
+                        style={styles.recheckBtn}
+                    >
+                        <Text style={styles.recheckBtnText}>Recheck</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => navigation.goBack()} style={styles.closeBtn}>
+                        <Text style={styles.closeBtnText}>Cancel</Text>
+                    </TouchableOpacity>
+                </View>
             </View>
 
             <ScrollView contentContainerStyle={styles.scrollContent}>
-                <View style={styles.statusCard}>
-                    <View style={[styles.statusIndicator, validation?.valid ? styles.statusValid : styles.statusInvalid]} />
-                    <View style={styles.statusInfo}>
-                        <CheckCircle2 color={validation?.valid ? "#22c55e" : "#64748b"} size={20} />
-                        <View>
-                            <Text style={styles.statusLabel}>Scanner Status</Text>
-                            <Text style={styles.statusValue}>{validation?.valid ? 'Valid Point Detected' : 'Unauthorized QR Code'}</Text>
+                {validation?.errorCode === 'wrong_site' ? (
+                    <View style={styles.wrongSiteBox}>
+                        <AlertTriangle color="#fb923c" size={22} />
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                            <Text style={styles.wrongSiteTitle}>Wrong site</Text>
+                            <Text style={styles.wrongSiteBody}>
+                                This QR belongs to another site. Use a label from{' '}
+                                <Text style={styles.wrongSiteEm}>{activeSession?.siteName || 'this site'}</Text>.
+                            </Text>
                         </View>
                     </View>
-                    <View style={styles.distanceBadge}>
-                        <Text style={[styles.distanceText, (validation?.distance || 0) > 100 && styles.distanceTextWarning]}>
-                            {validation?.distance?.toFixed(1) || 0}m away
-                        </Text>
+                ) : null}
+
+                {validation?.errorCode === 'no_coordinates' ? (
+                    <View style={styles.wrongSiteBox}>
+                        <AlertTriangle color="#f87171" size={22} />
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                            <Text style={styles.wrongSiteTitle}>No GPS on checkpoint</Text>
+                            <Text style={styles.wrongSiteBody}>
+                                Ask an admin to set coordinates on this patrol point (web → Patrol Points).
+                            </Text>
+                        </View>
                     </View>
+                ) : null}
+
+                <View style={styles.statusCard}>
+                    <View
+                        style={[
+                            styles.statusIndicator,
+                            validation?.errorCode === 'wrong_site'
+                                ? styles.statusInvalid
+                                : validation?.valid
+                                  ? validation?.isWithinRange
+                                      ? styles.statusValid
+                                      : styles.statusInvalid
+                                  : styles.statusInvalid,
+                        ]}
+                    />
+                    <View style={styles.statusInfo}>
+                        <CheckCircle2
+                            color={
+                                validation?.errorCode === 'wrong_site'
+                                    ? '#fb923c'
+                                    : validation?.errorCode === 'no_coordinates'
+                                      ? '#f87171'
+                                      : validation?.valid
+                                        ? '#22c55e'
+                                        : '#64748b'
+                            }
+                            size={20}
+                        />
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                            <Text style={styles.statusLabel}>Scanner status</Text>
+                            <Text style={styles.statusValue}>
+                                {validation?.errorCode === 'wrong_site'
+                                    ? 'Wrong site'
+                                    : validation?.errorCode === 'no_coordinates'
+                                      ? 'No GPS'
+                                      : validation?.valid
+                                        ? validation.pointName || 'Patrol point'
+                                        : 'Not a checkpoint for this site'}
+                            </Text>
+                        </View>
+                    </View>
+                    {validation?.errorCode === 'wrong_site' || validation?.errorCode === 'no_coordinates' ? null : (
+                        <View
+                            style={[
+                                styles.rangeChip,
+                                validation?.isWithinRange ? styles.rangeChipOk : styles.rangeChipBad,
+                            ]}
+                        >
+                            <Text
+                                style={[
+                                    styles.rangeChipText,
+                                    validation?.isWithinRange ? styles.rangeChipTextOk : styles.rangeChipTextBad,
+                                ]}
+                            >
+                                {validation?.isWithinRange ? 'Within range' : 'Outside range'}
+                            </Text>
+                        </View>
+                    )}
                 </View>
 
-                {(validation?.distance || 0) > 100 && (
-                    <View style={styles.warningBox}>
-                        <AlertTriangle color="#f59e0b" size={20} />
-                        <Text style={styles.warningText}>Outside 100m range! This will be flagged.</Text>
+                {validation?.valid &&
+                validation?.errorCode !== 'wrong_site' &&
+                validation?.errorCode !== 'no_coordinates' ? (
+                    <View style={styles.distanceCard}>
+                        <MapPin color="#94a3b8" size={18} />
+                        <View style={{ flex: 1 }}>
+                            <Text style={styles.distanceCardTitle}>Distance</Text>
+                            <Text style={styles.distanceCardValue}>
+                                ~{validation.distance?.toFixed(0) ?? '—'} m · limit {Math.round(allowedM)} m
+                            </Text>
+                            <Text style={styles.distanceCardSub}>
+                                {validation.isWithinRange ? 'In range — add note/photo and submit.' : 'Move closer, then Recheck.'}
+                            </Text>
+                        </View>
+                    </View>
+                ) : null}
+
+                {validation?.valid &&
+                validation?.errorCode !== 'wrong_site' &&
+                validation?.errorCode !== 'no_coordinates' &&
+                !validation?.isWithinRange && (
+                    <View style={styles.dangerBox}>
+                        <AlertTriangle color="#f87171" size={20} />
+                        <Text style={styles.dangerText}>
+                            Move within {Math.round(allowedM)} m, tap Recheck, then submit.
+                        </Text>
                     </View>
                 )}
 
@@ -280,10 +479,16 @@ export default function PatrolForm() {
                             )}
                         </TouchableOpacity>
                     ) : (
-                        <TouchableOpacity style={styles.captureBtn} onPress={pickImage}>
-                            <Camera color="#3b82f6" size={40} />
-                            <Text style={styles.captureBtnText}>Capture Evidence Photo</Text>
-                        </TouchableOpacity>
+                        <View style={styles.captureRow}>
+                            <TouchableOpacity style={[styles.captureBtn, styles.captureBtnHalf]} onPress={pickImage}>
+                                <Camera color="#3b82f6" size={32} />
+                                <Text style={styles.captureBtnText}>Camera</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity style={[styles.captureBtn, styles.captureBtnHalf]} onPress={pickFromGallery}>
+                                <Images color="#3b82f6" size={32} />
+                                <Text style={styles.captureBtnText}>Gallery</Text>
+                            </TouchableOpacity>
+                        </View>
                     )}
                 </View>
 
@@ -339,9 +544,23 @@ export default function PatrolForm() {
                 </View>
 
                 <TouchableOpacity
-                    style={[styles.submitBtn, (loading || (!comment && !image) || !validation?.isWithinRange) && styles.submitBtnDisabled]}
+                    style={[
+                        styles.submitBtn,
+                        (loading ||
+                            (!comment && !image) ||
+                            !validation?.isWithinRange ||
+                            validation?.errorCode === 'wrong_site' ||
+                            validation?.errorCode === 'no_coordinates') &&
+                            styles.submitBtnDisabled,
+                    ]}
                     onPress={handleSubmit}
-                    disabled={loading || (!comment && !image) || !validation?.isWithinRange}
+                    disabled={
+                        loading ||
+                        (!comment && !image) ||
+                        !validation?.isWithinRange ||
+                        validation?.errorCode === 'wrong_site' ||
+                        validation?.errorCode === 'no_coordinates'
+                    }
                 >
                     {loading ? (
                         <ActivityIndicator color="white" />
@@ -392,6 +611,20 @@ const styles = StyleSheet.create({
         fontSize: 14,
         fontWeight: '600',
     },
+    headerActions: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+    },
+    recheckBtn: {
+        paddingVertical: 8,
+        paddingHorizontal: 10,
+    },
+    recheckBtnText: {
+        color: '#60a5fa',
+        fontSize: 14,
+        fontWeight: '700',
+    },
     scrollContent: {
         padding: 24,
         paddingTop: 0,
@@ -438,16 +671,102 @@ const styles = StyleSheet.create({
         fontWeight: '600',
         marginTop: 2,
     },
-    distanceBadge: {
-        backgroundColor: 'rgba(59, 130, 246, 0.1)',
-        paddingHorizontal: 12,
+    rangeChip: {
+        paddingHorizontal: 10,
         paddingVertical: 6,
-        borderRadius: 12,
+        borderRadius: 10,
+        borderWidth: 1,
+        alignSelf: 'flex-start',
     },
-    distanceText: {
-        color: '#3b82f6',
-        fontSize: 12,
-        fontWeight: 'bold',
+    rangeChipOk: {
+        backgroundColor: 'rgba(34, 197, 94, 0.14)',
+        borderColor: 'rgba(34, 197, 94, 0.35)',
+    },
+    rangeChipBad: {
+        backgroundColor: 'rgba(239, 68, 68, 0.12)',
+        borderColor: 'rgba(239, 68, 68, 0.35)',
+    },
+    rangeChipText: {
+        fontSize: 10,
+        fontWeight: '800',
+        letterSpacing: 0.6,
+    },
+    rangeChipTextOk: { color: '#86efac' },
+    rangeChipTextBad: { color: '#fca5a5' },
+    distanceCard: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        gap: 12,
+        backgroundColor: '#0f172a',
+        borderRadius: 16,
+        padding: 16,
+        marginBottom: 16,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.06)',
+    },
+    distanceCardTitle: {
+        fontSize: 11,
+        fontWeight: '800',
+        color: '#64748b',
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
+    },
+    distanceCardValue: {
+        fontSize: 16,
+        fontWeight: '800',
+        color: '#e2e8f0',
+        marginTop: 4,
+    },
+    distanceCardSub: {
+        fontSize: 13,
+        color: '#94a3b8',
+        marginTop: 6,
+        lineHeight: 20,
+    },
+    dangerBox: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        gap: 10,
+        backgroundColor: 'rgba(239, 68, 68, 0.1)',
+        padding: 14,
+        borderRadius: 14,
+        marginBottom: 24,
+        borderWidth: 1,
+        borderColor: 'rgba(239, 68, 68, 0.25)',
+    },
+    dangerText: {
+        color: '#fecaca',
+        fontSize: 14,
+        fontWeight: '600',
+        flex: 1,
+        lineHeight: 20,
+    },
+    wrongSiteBox: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        gap: 12,
+        backgroundColor: 'rgba(251, 146, 60, 0.12)',
+        padding: 16,
+        borderRadius: 16,
+        marginBottom: 16,
+        borderWidth: 1,
+        borderColor: 'rgba(251, 146, 60, 0.35)',
+    },
+    wrongSiteTitle: {
+        color: '#fdba74',
+        fontSize: 15,
+        fontWeight: '800',
+        marginBottom: 8,
+    },
+    wrongSiteBody: {
+        color: '#fed7aa',
+        fontSize: 14,
+        lineHeight: 22,
+        fontWeight: '500',
+    },
+    wrongSiteEm: {
+        fontWeight: '800',
+        color: '#fff',
     },
     sectionLabel: {
         fontSize: 14,
@@ -460,8 +779,12 @@ const styles = StyleSheet.create({
     imageSection: {
         marginBottom: 32,
     },
+    captureRow: {
+        flexDirection: 'row',
+        gap: 12,
+    },
     captureBtn: {
-        height: 180,
+        minHeight: 160,
         backgroundColor: '#0f172a',
         borderRadius: 24,
         borderStyle: 'dashed',
@@ -469,7 +792,11 @@ const styles = StyleSheet.create({
         borderColor: '#1e293b',
         justifyContent: 'center',
         alignItems: 'center',
-        gap: 16,
+        gap: 12,
+        paddingVertical: 20,
+    },
+    captureBtnHalf: {
+        flex: 1,
     },
     captureBtnText: {
         color: '#64748b',
@@ -591,25 +918,6 @@ const styles = StyleSheet.create({
     progressSubtitle: {
         color: '#64748b',
         fontSize: 12,
-        fontWeight: '600',
-    },
-    distanceTextWarning: {
-        color: '#f59e0b',
-    },
-    warningBox: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 8,
-        backgroundColor: 'rgba(245, 158, 11, 0.1)',
-        padding: 12,
-        borderRadius: 12,
-        marginBottom: 24,
-        borderWidth: 1,
-        borderColor: 'rgba(245, 158, 11, 0.2)',
-    },
-    warningText: {
-        color: '#f59e0b',
-        fontSize: 14,
         fontWeight: '600',
     },
     issueSection: {

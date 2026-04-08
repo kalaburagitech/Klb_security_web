@@ -1,16 +1,100 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Image, ActivityIndicator, Alert, Modal } from 'react-native';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Image, ActivityIndicator, Alert, Modal, Platform } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { ChevronLeft, Camera, CheckCircle, ChevronDown, RefreshCw } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
-import { faceRecognitionService, regionService, enrollmentService } from '../services/api';
+import { API_URL, faceRecognitionService, regionService, enrollmentService } from '../services/api';
+import { klbApiError, klbApiLog, klbFormatNetworkError } from '../utils/apiDebug';
 import { useCustomAuth } from '../context/AuthContext';
+
+type RegionRow = { regionId: string; regionName: string; cities?: string[] };
+
+function extractFaceEncodingIds(data: any): number[] {
+    if (!data || typeof data !== 'object') return [];
+    const ids: number[] = [];
+    const pushId = (raw: unknown) => {
+        if (raw == null || raw === '') return;
+        const n = typeof raw === 'number' ? raw : parseInt(String(raw), 10);
+        if (!Number.isNaN(n)) ids.push(n);
+    };
+    if (Array.isArray(data.results)) {
+        for (const r of data.results) {
+            pushId(r?.face_encoding_id ?? r?.faceEncodingId ?? r?.encoding_id ?? r?.person_id);
+        }
+    }
+    if (Array.isArray(data.face_encoding_ids)) {
+        for (const x of data.face_encoding_ids) pushId(x);
+    }
+    return ids;
+}
+
+function faceServiceExplicitFailure(data: any): boolean {
+    return data?.success === false || data?.success === 'false' || data?.ok === false;
+}
+
+function faceBatchEnrollSucceeded(data: any, encodingIds: number[]): boolean {
+    if (faceServiceExplicitFailure(data)) return false;
+    return encodingIds.length >= 3;
+}
+
+/**
+ * Face API often returns HTTP 200 with `success: false` and a long English/Chinese message.
+ * Map to short titles + actionable copy for Alert.alert.
+ */
+function humanizeEnrollmentError(raw: string | undefined | null): { title: string; message: string } {
+    const s = (raw || '').trim();
+    if (!s) {
+        return { title: 'Enrollment failed', message: 'Something went wrong. Please try again.' };
+    }
+    const lower = s.toLowerCase();
+
+    // Duplicate / similarity rejection (face already in vendor gallery for this or another identity).
+    if (
+        lower.includes('similar faces already exist') ||
+        lower.includes('similar face') ||
+        (lower.includes('already exist') && lower.includes('person')) ||
+        lower.includes('duplicate face')
+    ) {
+        const match = s.match(/matching degree:\s*([\d.]+%?)/i);
+        const deg = match ? match[1].replace(/％/g, '%') : null;
+        return {
+            title: 'Face already registered',
+            message:
+                'The face system says this face closely matches someone already enrolled (similarity check).' +
+                (deg ? ` Reported match: ${deg}.` : '') +
+                '\n\nIf this employee was enrolled before, do not enroll again—ask an admin to update their profile.' +
+                '\nIf they are new, confirm Employee ID is correct, or retake photos with different lighting/angle so it does not match another person.',
+        };
+    }
+
+    if (
+        /fail\s*\d+\s*frame|processed\s*0\s*frame|0\s*frame/i.test(s) ||
+        /successfully processed 0/i.test(s)
+    ) {
+        return {
+            title: 'Photos not accepted',
+            message:
+                'The face server could not use your frames (blur, lighting, or no clear face). Retake in a bright room, face the camera, hold still about 2 seconds per shot, arm’s length, no mask.',
+        };
+    }
+
+    if (lower.includes('network') || lower.includes('failed to fetch')) {
+        return {
+            title: 'Connection problem',
+            message: 'Could not reach the server. Check internet and try again.',
+        };
+    }
+
+    // Shorten very long vendor strings for the alert body (keep first ~280 chars).
+    const body = s.length > 280 ? `${s.slice(0, 277)}…` : s;
+    return { title: 'Enrollment failed', message: body };
+}
 
 export default function EnrollmentScreen() {
     const insets = useSafeAreaInsets();
     const navigation = useNavigation<any>();
-    const { organizationId } = useCustomAuth();
+    const { organizationId, customUser } = useCustomAuth();
     const [permission, requestPermission] = useCameraPermissions();
     const cameraRef = useRef<any>(null);
 
@@ -18,10 +102,8 @@ export default function EnrollmentScreen() {
     const [region, setRegion] = useState('');
     const [city, setCity] = useState('');
     const [empId, setEmpId] = useState('');
-    const [empCode, setEmpCode] = useState('');
     const [empRank, setEmpRank] = useState('');
-    const [description, setDescription] = useState('');
-    const [regions, setRegions] = useState<Array<{ regionId: string; regionName: string; cities?: string[] }>>([]);
+    const [regions, setRegions] = useState<RegionRow[]>([]);
     const [showRegionPicker, setShowRegionPicker] = useState(false);
     const [showCityPicker, setShowCityPicker] = useState(false);
     
@@ -32,22 +114,73 @@ export default function EnrollmentScreen() {
     const [loading, setLoading] = useState(false);
     const [facing, setFacing] = useState<'front' | 'back'>('front');
 
+    const userRegionId = customUser?.regionId ? String(customUser.regionId).trim() : '';
+
     useEffect(() => {
         fetchRegions();
-    }, []);
+    }, [userRegionId, customUser?.city, customUser?.cities]);
 
     const fetchRegions = async () => {
         try {
             const response = await regionService.getRegions();
-            setRegions(response.data || []);
-            if (response.data && response.data.length > 0) {
-                setRegion(response.data[0].regionId);
+            const all: RegionRow[] = response.data || [];
+            let scoped: RegionRow[] = all;
+            if (userRegionId) {
+                scoped = all.filter(
+                    (r) => String(r.regionId || '').toLowerCase() === userRegionId.toLowerCase()
+                );
+                if (scoped.length === 0) {
+                    const userCities: string[] = [];
+                    if (Array.isArray(customUser?.cities) && customUser!.cities!.length > 0) {
+                        userCities.push(...customUser!.cities!.map((c) => String(c)));
+                    } else if (customUser?.city) {
+                        userCities.push(String(customUser.city));
+                    }
+                    scoped = [
+                        {
+                            regionId: userRegionId,
+                            regionName: 'Your region',
+                            cities: userCities.length > 0 ? userCities : undefined,
+                        },
+                    ];
+                }
+            }
+            setRegions(scoped);
+            if (scoped.length === 1) {
+                setRegion(scoped[0].regionId);
+            } else if (scoped.length === 0) {
+                setRegion('');
             }
         } catch (error) {
             console.error('Error fetching regions:', error);
             Alert.alert('Error', 'Failed to load regions');
         }
     };
+
+    const selectedRegionRow = regions.find((r) => r.regionId === region);
+
+    const cityOptions = useMemo(() => {
+        const fromRegion = Array.isArray(selectedRegionRow?.cities) ? selectedRegionRow!.cities! : [];
+        const userList: string[] = [];
+        if (Array.isArray(customUser?.cities) && customUser!.cities!.length > 0) {
+            userList.push(...customUser!.cities!.map((c) => String(c).trim()).filter(Boolean));
+        } else if (customUser?.city) {
+            userList.push(String(customUser.city).trim());
+        }
+        if (userList.length === 0) return fromRegion;
+        const norm = (s: string) => s.toLowerCase().trim();
+        const matched = fromRegion.filter((c) => userList.some((u) => norm(u) === norm(String(c))));
+        return matched.length > 0 ? matched : userList;
+    }, [selectedRegionRow, customUser?.cities, customUser?.city]);
+
+    useEffect(() => {
+        if (cityOptions.length === 1 && !city) {
+            setCity(cityOptions[0]);
+        }
+        if (city && cityOptions.length > 0 && !cityOptions.some((c) => String(c) === String(city))) {
+            setCity('');
+        }
+    }, [cityOptions, city]);
 
     const captureFrames = async () => {
         if (!cameraRef.current) return;
@@ -72,23 +205,24 @@ export default function EnrollmentScreen() {
                 clearInterval(countdownInterval);
                 setCountdown(null);
                 
-                // Capture 3 frames at intervals
+                // Capture 3 frames — extra delay reduces motion blur (face server often rejects soft frames).
                 const captured: string[] = [];
-                const captureFrames = async () => {
+                const runCaptures = async () => {
                     for (let i = 0; i < 3; i++) {
                         try {
                             if (cameraRef.current) {
+                                await new Promise((r) => setTimeout(r, 400));
                                 const photo = await cameraRef.current.takePictureAsync({
-                                    quality: 0.8,
+                                    quality: 0.92,
                                     base64: false,
                                 });
-                                if (photo && photo.uri) {
+                                if (photo?.uri) {
                                     captured.push(photo.uri);
                                     setCapturedImages([...captured]);
                                 }
                             }
                             if (i < 2) {
-                                await new Promise(resolve => setTimeout(resolve, 1000));
+                                await new Promise((resolve) => setTimeout(resolve, 1600));
                             }
                         } catch (error) {
                             console.error(`Error capturing frame ${i + 1}:`, error);
@@ -97,7 +231,7 @@ export default function EnrollmentScreen() {
                     setIsCapturing(false);
                     setShowCamera(false);
                 };
-                captureFrames();
+                runCaptures();
             }
         }, 1000);
     };
@@ -115,65 +249,125 @@ export default function EnrollmentScreen() {
 
         setLoading(true);
         try {
+            klbApiLog('Enrollment', 'submit start', {
+                API_URL,
+                batchPath: '/face/batch-enroll',
+                platform: Platform.OS,
+                imageCount: capturedImages.length,
+                imageUriPrefixes: capturedImages.map((u) => (u.length > 48 ? `${u.slice(0, 48)}…` : u)),
+            });
+
             // Create FormData for batch_enroll API
             const formData = new FormData();
             
-            // Add images
+            // Unique names per part so sort_by_filename matches three distinct frames (Expo often reuses basename).
             for (let i = 0; i < capturedImages.length; i++) {
                 const imageUri = capturedImages[i];
-                const filename = imageUri.split('/').pop() || `image_${i}.jpg`;
-                const fileType = 'image/jpeg';
-                
+                const filename = `enroll_frame_${i + 1}.jpg`;
+                const uri =
+                    Platform.OS === 'android' && !imageUri.startsWith('file://') && !imageUri.startsWith('content://')
+                        ? `file://${imageUri}`
+                        : imageUri;
+
                 formData.append('files', {
-                    uri: imageUri,
+                    uri,
                     name: filename,
-                    type: fileType,
+                    type: 'image/jpeg',
                 } as any);
             }
 
-            // Add other fields
-            formData.append('name', name);
+            formData.append('name', name.trim());
             formData.append('region', region);
             formData.append('city', city);
-            formData.append('emp_id', empId);
-            if (empCode) formData.append('emp_code', empCode);
-            formData.append('emp_rank', empRank);
-            if (description) formData.append('description', description);
+            formData.append('emp_id', empId.trim());
+            formData.append('emp_code', empId.trim());
+            formData.append('emp_rank', empRank.trim());
+            formData.append('description', '');
             formData.append('sort_by_filename', 'true');
 
-            // Call batch_enroll API
+            klbApiLog('Enrollment', 'calling faceRecognitionService.batchEnroll …');
             const response = await faceRecognitionService.batchEnroll(formData);
-            
-            if (response.data.success) {
-                // Save to web API
-                try {
-                    const selectedRegion = regions.find(r => r.regionId === region);
-                    await enrollmentService.create({
-                        name,
-                        empId,
-                        empCode: empCode || null,
-                        empRank,
-                        region: regions.find(r => r.regionId === region)?.regionName || region,
-                        city: city,
-                        description: description || null,
-                        faceEncodingIds: response.data.results?.map((r: any) => r.face_encoding_id) || [],
-                        enrolledAt: Date.now(),
-                        organizationId,
-                    });
-                } catch (error) {
-                    console.error('Error saving to web API:', error);
-                    // Don't fail the whole process if web API fails
-                }
+            klbApiLog('Enrollment', 'batch_enroll HTTP OK', { status: response.status });
 
-                Alert.alert('Success', 'Person enrolled successfully!', [
-                    { text: 'OK', onPress: () => navigation.goBack() }
-                ]);
-            } else {
-                throw new Error('Enrollment failed');
+            const data = response.data;
+            const encodingIds = extractFaceEncodingIds(data);
+            klbApiLog('Enrollment', 'parsed face response', {
+                success: data?.success,
+                success_count: data?.success_count,
+                encodingIdsCount: encodingIds.length,
+            });
+
+            const upstreamText =
+                (typeof data?.message === 'string' && data.message) ||
+                (typeof data?.detail === 'string' && data.detail) ||
+                (typeof data === 'string' ? data : '');
+
+            if (
+                upstreamText &&
+                (/fail\s*\d+\s*frame|processed\s*0\s*frame|0\s*frame/i.test(upstreamText) ||
+                    /successfully processed 0/i.test(upstreamText))
+            ) {
+                const { message } = humanizeEnrollmentError(upstreamText);
+                throw new Error(message);
             }
+
+            if (!faceBatchEnrollSucceeded(data, encodingIds)) {
+                const msg =
+                    data?.error ||
+                    data?.detail ||
+                    data?.message ||
+                    (typeof data === 'string' ? data : null) ||
+                    (encodingIds.length < 3
+                        ? `Got ${encodingIds.length} of 3 face encodings. Use stronger light, hold still, and fill the frame.`
+                        : 'Face service rejected enrollment.');
+                throw new Error(msg);
+            }
+
+            const selectedRegion = regions.find((r) => r.regionId === region);
+            const regionLabel = selectedRegion?.regionName || region;
+
+            klbApiLog('Enrollment', 'calling enrollmentService.create (Convex)', {
+                organizationId: organizationId || null,
+                regionLabel,
+                faceEncodingIds: encodingIds,
+            });
+            await enrollmentService.create({
+                name,
+                empId,
+                empRank,
+                region: regionLabel,
+                faceEncodingIds: encodingIds,
+                enrolledAt: Date.now(),
+                organizationId: organizationId || undefined,
+            });
+
+            Alert.alert('Enrollment successful', 'Person enrolled successfully. Face recognition is ready for attendance.', [
+                { text: 'OK', onPress: () => navigation.goBack() },
+            ]);
         } catch (error: any) {
+            klbApiError('Enrollment', 'caught error', {
+                message: error?.message,
+                axiosSummary: klbFormatNetworkError(error),
+                stepHint:
+                    error?.message === 'Network Error'
+                        ? 'Failed before HTTP response — check API_URL reachable from phone, cleartext HTTP (Android), and iOS App Transport Security.'
+                        : error?.response
+                          ? 'Server returned an error response (see responseStatus/responseData).'
+                          : 'Non-axios or unknown error.',
+            });
             console.error('Enrollment error:', error);
-            Alert.alert('Error', error.response?.data?.detail || error.message || 'Failed to enroll person');
+            const serverMsg =
+                error?.response?.data?.error ||
+                error?.response?.data?.detail ||
+                error?.response?.data?.message;
+            const raw =
+                typeof serverMsg === 'string'
+                    ? serverMsg
+                    : typeof error?.message === 'string'
+                      ? error.message
+                      : '';
+            const { title, message } = humanizeEnrollmentError(raw);
+            Alert.alert(title, message);
         } finally {
             setLoading(false);
         }
@@ -287,17 +481,25 @@ export default function EnrollmentScreen() {
 
                 <View style={styles.inputGroup}>
                     <Text style={styles.label}>Region *</Text>
-                    <TouchableOpacity
-                        style={styles.input}
-                        onPress={() => setShowRegionPicker(true)}
-                    >
-                        <View style={styles.regionSelector}>
+                    {regions.length <= 1 ? (
+                        <View style={[styles.input, styles.lockedField]}>
                             <Text style={[styles.regionText, !region && styles.regionPlaceholder]}>
-                                {region ? regions.find(r => r.regionId === region)?.regionName || 'Select region' : 'Select region'}
+                                {selectedRegionRow?.regionName ||
+                                    (userRegionId ? 'Your region' : 'No region on your profile — contact admin')}
                             </Text>
-                            <ChevronDown color="#64748b" size={20} />
                         </View>
-                    </TouchableOpacity>
+                    ) : (
+                        <TouchableOpacity style={styles.input} onPress={() => setShowRegionPicker(true)}>
+                            <View style={styles.regionSelector}>
+                                <Text style={[styles.regionText, !region && styles.regionPlaceholder]}>
+                                    {region
+                                        ? selectedRegionRow?.regionName || 'Select region'
+                                        : 'Select region'}
+                                </Text>
+                                <ChevronDown color="#64748b" size={20} />
+                            </View>
+                        </TouchableOpacity>
+                    )}
                 </View>
 
                 <View style={styles.inputGroup}>
@@ -372,21 +574,33 @@ export default function EnrollmentScreen() {
                                 </TouchableOpacity>
                             </View>
                             <ScrollView>
-                                {regions.find(r => r.regionId === region)?.cities?.map((c) => (
-                                    <TouchableOpacity
-                                        key={c}
-                                        style={[styles.regionOption, city === c && styles.regionOptionSelected]}
-                                        onPress={() => {
-                                            setCity(c);
-                                            setShowCityPicker(false);
-                                        }}
-                                    >
-                                        <Text style={[styles.regionOptionText, city === c && styles.regionOptionTextSelected]}>
-                                            {c}
-                                        </Text>
-                                        {city === c && <CheckCircle color="#2563eb" size={20} />}
-                                    </TouchableOpacity>
-                                ))}
+                                {cityOptions.length === 0 ? (
+                                    <Text style={styles.emptyCities}>
+                                        No cities available for your profile. Ask an admin to assign cities to your
+                                        account or to this region.
+                                    </Text>
+                                ) : (
+                                    cityOptions.map((c) => (
+                                        <TouchableOpacity
+                                            key={c}
+                                            style={[styles.regionOption, city === c && styles.regionOptionSelected]}
+                                            onPress={() => {
+                                                setCity(c);
+                                                setShowCityPicker(false);
+                                            }}
+                                        >
+                                            <Text
+                                                style={[
+                                                    styles.regionOptionText,
+                                                    city === c && styles.regionOptionTextSelected,
+                                                ]}
+                                            >
+                                                {c}
+                                            </Text>
+                                            {city === c && <CheckCircle color="#2563eb" size={20} />}
+                                        </TouchableOpacity>
+                                    ))
+                                )}
                             </ScrollView>
                         </View>
                     </View>
@@ -403,16 +617,7 @@ export default function EnrollmentScreen() {
                     />
                 </View>
 
-                <View style={styles.inputGroup}>
-                    <Text style={styles.label}>Employee Code</Text>
-                    <TextInput
-                        style={styles.input}
-                        placeholder="Enter employee code (optional)"
-                        placeholderTextColor="#64748b"
-                        value={empCode}
-                        onChangeText={setEmpCode}
-                    />
-                </View>
+
 
                 <View style={styles.inputGroup}>
                     <Text style={styles.label}>Employee Rank *</Text>
@@ -425,18 +630,7 @@ export default function EnrollmentScreen() {
                     />
                 </View>
 
-                <View style={styles.inputGroup}>
-                    <Text style={styles.label}>Description</Text>
-                    <TextInput
-                        style={[styles.input, styles.textArea]}
-                        placeholder="Enter description (optional)"
-                        placeholderTextColor="#64748b"
-                        multiline
-                        numberOfLines={4}
-                        value={description}
-                        onChangeText={setDescription}
-                    />
-                </View>
+
 
                 <Text style={styles.sectionTitle}>Face Images</Text>
                 <Text style={styles.sectionSubtitle}>Capture 3 frames for face recognition</Text>
@@ -558,6 +752,9 @@ const styles = StyleSheet.create({
         color: 'white',
         fontSize: 16,
     },
+    lockedField: {
+        opacity: 0.95,
+    },
     textArea: {
         height: 100,
         textAlignVertical: 'top',
@@ -621,6 +818,12 @@ const styles = StyleSheet.create({
     regionOptionTextSelected: {
         color: '#2563eb',
         fontWeight: '600',
+    },
+    emptyCities: {
+        color: '#94a3b8',
+        fontSize: 14,
+        padding: 16,
+        lineHeight: 20,
     },
     imagePreviewContainer: {
         flexDirection: 'row',

@@ -3,7 +3,9 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Dashboard from "./pages/Dashboard";
 import UserManagement from "./pages/users/UserManagement";
 import SiteManagement from "./pages/sites/SiteManagement";
-import PatrolLogs from "./pages/logs/PatrolLogs";
+// import PatrolLogs from "./pages/logs/PatrolLogs";
+import Patrol from "./pages/points";
+import PatrolLogs from "./pages/points/PatrolLogs";
 import VisitLogs from "./pages/logs/VisitLogs";
 import IssueTracker from "./pages/issues/IssueTracker";
 import PatrolPoints from "./pages/points/PatrolPoints";
@@ -18,6 +20,7 @@ import { useUser, SignedIn, SignedOut } from "@clerk/nextjs";
 import { useQuery } from "convex/react";
 import { api } from "../services/convex";
 import { Toaster } from "sonner";
+import { shouldRestrictToPendingUser, userHasRole } from "../lib/userRoles";
 
 const Analytics = () => <Dashboard />;
 
@@ -33,6 +36,10 @@ function ProtectedRoute({
     api.users.getByClerkId,
     user?.id ? { clerkId: user.id } : "skip"
   );
+  const organization = useQuery(
+    api.organizations.get,
+    currentUser?.organizationId ? { id: currentUser.organizationId, currentOrganizationId: currentUser.organizationId } : "skip"
+  );
 
   if (!isLoaded)
     return (
@@ -43,12 +50,25 @@ function ProtectedRoute({
   if (!user) return <Navigate to="/login" replace />;
 
   if (currentUser) {
-    if (currentUser.role === "NEW_USER" && window.location.pathname !== "/restricted") {
+    if ((shouldRestrictToPendingUser(currentUser) || currentUser.status === "inactive" || organization?.status === "inactive") && window.location.pathname !== "/restricted") {
       return <Navigate to="/restricted" replace />;
     }
 
+    if (!shouldRestrictToPendingUser(currentUser) && currentUser.status !== "inactive" && organization?.status !== "inactive" && window.location.pathname === "/restricted") {
+      return <Navigate to="/" replace />;
+    }
+
     if (permission) {
-      if (currentUser.role === "Owner") return <>{children}</>;
+      if (userHasRole(currentUser, "Owner")) return <>{children}</>;
+      if (permission === "patrolLogs" && organization?.access && !organization.access.patrolling) {
+        return <Navigate to="/" replace />;
+      }
+      if (permission === "visitLogs" && organization?.access && !organization.access.visits) {
+        return <Navigate to="/" replace />;
+      }
+      if (permission === "attendance" && organization?.access && !organization.access.attendance) {
+        return <Navigate to="/" replace />;
+      }
       const hasPermission = (currentUser.permissions as any)?.[permission];
       if (!hasPermission) return <Navigate to="/" replace />;
     }
@@ -111,6 +131,14 @@ function App() {
                         element={
                           <ProtectedRoute permission="sites">
                             <SiteManagement />
+                          </ProtectedRoute>
+                        }
+                      />
+                      <Route
+                        path="/patrol"
+                        element={
+                          <ProtectedRoute permission="patrolLogs">
+                            <Patrol />
                           </ProtectedRoute>
                         }
                       />

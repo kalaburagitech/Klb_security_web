@@ -1,44 +1,371 @@
-import { useState } from "react";
-import { useQuery } from "convex/react";
+import { useEffect, useMemo, useState } from "react";
+import { useConvex, useQuery } from "convex/react";
 import { api } from "../../../services/convex";
 import { Layout } from "../../../components/Layout";
-import { Loader2, UserCheck, Eye, X, Image as ImageIcon } from "lucide-react";
+import {
+    Eye,
+    FileSpreadsheet,
+    FileText,
+    GraduationCap,
+    Image as ImageIcon,
+    Moon,
+    Sun,
+    UserCheck,
+    X,
+} from "lucide-react";
 import { cn } from "../../../lib/utils";
 import { useUser } from "@clerk/nextjs";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+import { userHasRole } from "../../../lib/userRoles";
 
+const REPORT_PAGE_SIZE = 25;
+
+function parseVisitDayStart(iso: string): number {
+    const [y, m, d] = iso.split("-").map(Number);
+    return new Date(y, m - 1, d, 0, 0, 0, 0).getTime();
+}
+
+function parseVisitDayEnd(iso: string): number {
+    const [y, m, d] = iso.split("-").map(Number);
+    return new Date(y, m - 1, d, 23, 59, 59, 999).getTime();
+}
+
+/** Local calendar date key (avoid UTC drift from toISOString). */
+function localDayKey(d: Date): string {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+}
+
+function VisitTypeIcon({ visitType }: { visitType?: string }) {
+    const cls = "h-3.5 w-3.5 shrink-0";
+    if (visitType === "SiteCheckDay") return <Sun className={`${cls} text-amber-400`} aria-hidden />;
+    if (visitType === "SiteCheckNight") return <Moon className={`${cls} text-slate-300`} aria-hidden />;
+    if (visitType === "Trainer") return <GraduationCap className={`${cls} text-sky-400`} aria-hidden />;
+    return null;
+}
+
+function VisitsPageSkeleton({ activeTab }: { activeTab: "details" | "report" }) {
+    return (
+        <div className="space-y-6 animate-pulse" aria-busy="true" aria-label="Loading visits">
+            <div className="h-9 w-56 rounded-lg bg-white/10" />
+            <div className="flex gap-6 border-b border-white/10 px-2 pb-2">
+                <div className="h-5 w-20 rounded bg-white/10" />
+                <div className="h-5 w-24 rounded bg-white/10" />
+            </div>
+            <div className="grid gap-4 rounded-2xl border border-white/10 bg-white/[0.02] p-4 md:grid-cols-3">
+                <div className="h-20 rounded-xl bg-white/5" />
+                <div className="h-20 rounded-xl bg-white/5" />
+                <div className="h-20 rounded-xl bg-white/5" />
+            </div>
+            <div className="min-h-[280px] rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                <div className="space-y-2">
+                    {Array.from({ length: activeTab === "report" ? 8 : 10 }).map((_, i) => (
+                        <div key={i} className="h-9 rounded-lg bg-white/5" />
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
+}
 
 export default function VisitLogs() {
     const { user } = useUser();
+    const convex = useConvex();
     const [selectedImage, setSelectedImage] = useState<string | null>(null);
+    const [activeTab, setActiveTab] = useState<"details" | "report">("details");
+    const [selectedRegionId, setSelectedRegionId] = useState("");
+    const [selectedCity, setSelectedCity] = useState("");
+    const [selectedDayDetails, setSelectedDayDetails] = useState<{
+        officerName: string;
+        dateLabel: string;
+        logs: any[];
+    } | null>(null);
 
-    // Fetch user details to get organizationId
+    const today = new Date();
+    const defaultToDate = today.toISOString().slice(0, 10);
+    const defaultFromDate = new Date(today.getTime() - 29 * 24 * 60 * 60 * 1000)
+        .toISOString()
+        .slice(0, 10);
+    const [reportFromDate, setReportFromDate] = useState(defaultFromDate);
+    const [reportToDate, setReportToDate] = useState(defaultToDate);
+    const [reportPageIndex, setReportPageIndex] = useState(0);
+    const [exportBusy, setExportBusy] = useState(false);
+
     const currentUser = useQuery(api.users.getByClerkId,
         user?.id ? { clerkId: user.id } : "skip"
     );
     const organizationId = currentUser?.organizationId;
-    const isOwner = currentUser?.role === "Owner";
-
-    const visitLogs = useQuery(
-        isOwner ? api.logs.listAllVisitLogs : api.logs.listVisitLogs,
-        isOwner ? {} : (organizationId ? { organizationId } : "skip")
+    const orgUsers = useQuery(
+        api.users.listByOrg,
+        organizationId ? { organizationId } : "skip"
+    );
+    const regions = useQuery(api.regions.list, {});
+    const sites = useQuery(
+        api.sites.listSitesByOrg,
+        organizationId
+            ? { organizationId, regionId: selectedRegionId || undefined }
+            : "skip"
     );
 
-    if (currentUser === undefined || (organizationId && visitLogs === undefined)) {
+    useEffect(() => {
+        if (currentUser?.regionId && !selectedRegionId) {
+            setSelectedRegionId(currentUser.regionId);
+        }
+    }, [currentUser?.regionId, selectedRegionId]);
+
+    useEffect(() => {
+        setReportPageIndex(0);
+    }, [reportFromDate, reportToDate, selectedRegionId, selectedCity]);
+
+    const reportFromMs = useMemo(() => parseVisitDayStart(reportFromDate), [reportFromDate]);
+    const reportToMs = useMemo(() => parseVisitDayEnd(reportToDate), [reportToDate]);
+
+    const visitReportPage = useQuery(
+        api.logs.listVisitLogsPage,
+        organizationId && selectedRegionId && activeTab === "report" && reportFromMs <= reportToMs
+            ? {
+                  organizationId,
+                  regionId: selectedRegionId,
+                  fromMs: reportFromMs,
+                  toMs: reportToMs,
+                  city: selectedCity || undefined,
+                  offset: reportPageIndex * REPORT_PAGE_SIZE,
+                  limit: REPORT_PAGE_SIZE,
+              }
+            : "skip"
+    );
+
+    const visitLogs = useQuery(
+        api.logs.listVisitLogs,
+        organizationId
+            ? {
+                organizationId,
+                regionId: selectedRegionId || undefined,
+                city: selectedCity || undefined,
+            }
+            : "skip"
+    );
+
+    const availableCities = useMemo(() => {
+        if (!selectedRegionId) {
+            const cities = (regions ?? []).flatMap((region: any) => region.cities ?? []);
+            return Array.from(new Set(cities.filter(Boolean))).sort();
+        }
+
+        const region = (regions ?? []).find((item: any) => item.regionId === selectedRegionId);
+        return Array.from(new Set((region?.cities ?? []).filter(Boolean))).sort();
+    }, [regions, selectedRegionId]);
+
+    const visitingOfficers = useMemo(() => {
+        return (orgUsers ?? []).filter((officer: any) => {
+            if (!userHasRole(officer, "Visiting Officer") || officer.status === "inactive") {
+                return false;
+            }
+
+            const matchesRegion = !selectedRegionId || officer.regionId === selectedRegionId;
+            const matchesCity =
+                !selectedCity ||
+                !officer.cities?.length ||
+                officer.cities.includes(selectedCity);
+
+            return matchesRegion && matchesCity;
+        });
+    }, [orgUsers, selectedCity, selectedRegionId]);
+
+    const siteLookup = useMemo(() => {
+        return new Map((sites ?? []).map((site: any) => [site._id, site]));
+    }, [sites]);
+
+    const officerIdSet = useMemo(
+        () => new Set(visitingOfficers.map((officer: any) => officer._id)),
+        [visitingOfficers]
+    );
+
+    const filteredVisitLogs = useMemo(() => {
+        return (visitLogs ?? []).filter((log: any) => officerIdSet.has(log.userId));
+    }, [officerIdSet, visitLogs]);
+
+    const past30Days = useMemo(() => {
+        return Array.from({ length: 30 }, (_, index) => {
+            const date = new Date();
+            date.setHours(0, 0, 0, 0);
+            date.setDate(date.getDate() - 29 + index);
+            const key = localDayKey(date);
+            return {
+                key,
+                day: date.getDate(),
+                weekday: date.toLocaleDateString("en-US", { weekday: "short" }).slice(0, 2).toUpperCase(),
+                fullLabel: date.toLocaleDateString("en-IN", {
+                    day: "2-digit",
+                    month: "short",
+                    year: "numeric",
+                }),
+            };
+        });
+    }, []);
+
+    const dailyCountsByOfficer = useMemo(() => {
+        const counts = new Map<string, Record<string, any[]>>();
+        filteredVisitLogs.forEach((log: any) => {
+            const createdAt = new Date(log.createdAt ?? log._creationTime);
+            const dayKey = localDayKey(createdAt);
+            if (!counts.has(log.userId)) {
+                counts.set(log.userId, {});
+            }
+            const officerMap = counts.get(log.userId)!;
+            if (!officerMap[dayKey]) {
+                officerMap[dayKey] = [];
+            }
+            officerMap[dayKey].push(log);
+        });
+        return counts;
+    }, [filteredVisitLogs]);
+
+    const fetchExportVisitItems = async (): Promise<any[]> => {
+        if (!organizationId || !selectedRegionId || reportFromMs > reportToMs) return [];
+        const { items } = await convex.query(api.logs.listVisitLogsExport, {
+            organizationId,
+            regionId: selectedRegionId,
+            fromMs: reportFromMs,
+            toMs: reportToMs,
+            city: selectedCity || undefined,
+            maxRows: 2500,
+        });
+        return items as any[];
+    };
+
+    const fetchExportRows = async () => {
+        const items = await fetchExportVisitItems();
+        return items.map((log) => {
+            const fromArr = (log.imageUrls as string[] | undefined)?.filter(Boolean) ?? [];
+            const urls = fromArr.length > 0 ? fromArr : log.imageUrl ? [log.imageUrl] : [];
+            return {
+                officer: log.userName || "Unknown",
+                site: log.siteName || "",
+                notes: log.remark || "",
+                visitType: log.visitType || "",
+                checkIn: new Date(log.createdAt ?? log._creationTime).toLocaleString(),
+                checkOut: log.checkOutAt ? new Date(log.checkOutAt).toLocaleString() : "",
+                photoUrls: urls.join(" | "),
+            };
+        });
+    };
+
+    const downloadCsv = async () => {
+        if (!organizationId || !selectedRegionId) return;
+        setExportBusy(true);
+        try {
+            const rows = await fetchExportRows();
+            if (!rows.length) return;
+
+            const headers = [
+                "Officer",
+                "Site",
+                "Notes",
+                "Type",
+                "Check-in",
+                "Check-out",
+                "Photo URLs",
+            ];
+            const escapeCsv = (value: string) => `"${String(value ?? "").replace(/"/g, "\"\"")}"`;
+            const content = [
+                headers.map(escapeCsv).join(","),
+                ...rows.map((row) =>
+                    [
+                        row.officer,
+                        row.site,
+                        row.notes,
+                        row.visitType,
+                        row.checkIn,
+                        row.checkOut,
+                        row.photoUrls,
+                    ]
+                        .map(escapeCsv)
+                        .join(",")
+                ),
+            ].join("\n");
+
+            const blob = new Blob([content], { type: "text/csv;charset=utf-8;" });
+            const url = window.URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = `visit-report-${reportFromDate}-to-${reportToDate}.csv`;
+            link.click();
+            window.URL.revokeObjectURL(url);
+        } finally {
+            setExportBusy(false);
+        }
+    };
+
+    const downloadPdf = async () => {
+        if (!organizationId || !selectedRegionId) return;
+        setExportBusy(true);
+        try {
+            const rows = await fetchExportRows();
+            if (!rows.length) return;
+
+            const doc = new jsPDF({ orientation: "landscape" });
+            doc.setFontSize(16);
+            doc.text("Visit Report", 14, 18);
+            doc.setFontSize(10);
+            doc.text(`From ${reportFromDate} To ${reportToDate}`, 14, 26);
+
+            autoTable(doc, {
+                startY: 32,
+                head: [["Officer", "Site", "Notes", "Type", "Check-in", "Check-out", "Photos"]],
+                body: rows.map((row) => [
+                    row.officer,
+                    row.site,
+                    row.notes.length > 80 ? `${row.notes.slice(0, 80)}…` : row.notes,
+                    row.visitType,
+                    row.checkIn,
+                    row.checkOut,
+                    row.photoUrls.length > 60 ? "see CSV" : row.photoUrls || "—",
+                ]),
+                styles: {
+                    fontSize: 7,
+                    cellPadding: 1.5,
+                },
+                headStyles: {
+                    fillColor: [30, 41, 59],
+                },
+            });
+
+            doc.save(`visit-report-${reportFromDate}-to-${reportToDate}.pdf`);
+        } finally {
+            setExportBusy(false);
+        }
+    };
+
+    const reportLoading =
+        activeTab === "report" &&
+        !!organizationId &&
+        Boolean(selectedRegionId) &&
+        reportFromMs <= reportToMs &&
+        visitReportPage === undefined;
+
+    if (
+        currentUser === undefined ||
+        regions === undefined ||
+        (organizationId && (visitLogs === undefined || orgUsers === undefined || sites === undefined)) ||
+        reportLoading
+    ) {
         return (
-            <Layout title="Visit Logs">
-                <div className="flex items-center justify-center h-64">
-                    <Loader2 className="w-8 h-8 text-primary animate-spin" />
-                </div>
+            <Layout title="Visits">
+                <VisitsPageSkeleton activeTab={activeTab} />
             </Layout>
         );
     }
 
     if (!organizationId) {
         return (
-            <Layout title="Visit Logs">
+            <Layout title="Visits">
                 <div className="flex flex-col items-center justify-center h-64 space-y-4">
                     <p className="text-muted-foreground text-center max-w-md">
-                        Please set up or join an organization to view visit logs.
+                        Please set up or join an organization to view visits.
                     </p>
                 </div>
             </Layout>
@@ -46,88 +373,420 @@ export default function VisitLogs() {
     }
 
     return (
-        <Layout title="Visit Logs">
+        <Layout title="Visits">
             <div className="space-y-6">
                 <div className="flex items-center justify-between">
                     <div>
-                        <h2 className="text-2xl font-bold text-white tracking-tight">Visit Registry</h2>
-                        <p className="text-sm text-muted-foreground mt-1">Record of all visitor and manager site inspections.</p>
+                        <h2 className="text-2xl font-bold text-white tracking-tight">Visits</h2>
+                        <p className="text-sm text-muted-foreground mt-1">
+                            Visiting officers and logs are scoped to your selected region (defaults to your profile region).
+                            Use the report tab for a paginated date-range export.
+                        </p>
                     </div>
                 </div>
 
-                <div className="glass rounded-2xl border border-white/10 overflow-hidden">
-                    <div className="overflow-x-auto custom-scrollbar">
-                        <table className="w-full text-left min-w-[800px]">
-                            <thead>
-                                <tr className="border-b border-white/5 bg-white/[0.02]">
-                                    <th className="px-6 py-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Visitor / Role</th>
-                                    <th className="px-6 py-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Site</th>
-                                    <th className="px-6 py-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Purpose</th>
-                                    <th className="px-6 py-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Time In</th>
-                                    <th className="px-6 py-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Status</th>
-                                    <th className="px-6 py-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider text-right">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-white/5">
-                                {visitLogs?.map((log: any) => (
-                                    <tr key={log._id} className="hover:bg-white/[0.02] transition-colors group">
-                                        <td className="px-6 py-4">
-                                            <div className="flex items-center gap-3">
-                                                <div className="w-8 h-8 rounded-full bg-white/5 border border-white/10 flex items-center justify-center">
-                                                    <UserCheck className="w-4 h-4 text-muted-foreground" />
-                                                </div>
-                                                <div className="flex flex-col">
-                                                    <span className="text-sm font-medium text-white/90">{log.userName}</span>
-                                                    <span className="text-[10px] text-muted-foreground group-hover:text-primary transition-colors">{log.userRole}</span>
-                                                </div>
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            <span className="text-sm text-white/80">{log.siteName}</span>
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            <span className="text-sm text-white/70">{log.remark || "Regular Inspection"}</span>
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            <span className="text-xs text-muted-foreground">
-                                                {new Date(log._creationTime).toLocaleString()}
-                                            </span>
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            <span className={cn(
-                                                "inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border",
-                                                "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
-                                            )}>
-                                                Logged
-                                            </span>
-                                        </td>
-                                        <td className="px-6 py-4 text-right">
-                                            {log.imageUrl && (
-                                                <button 
-                                                    onClick={() => setSelectedImage(log.imageUrl)}
-                                                    className="inline-flex items-center gap-2 px-3 py-1.5 bg-primary/10 text-primary border border-primary/20 rounded-xl text-[10px] font-bold uppercase tracking-wider hover:bg-primary hover:text-white transition-all shadow-sm active:scale-95"
-                                                >
-                                                    <Eye className="w-3.5 h-3.5" />
-                                                    View
-                                                </button>
-                                            )}
-                                        </td>
-                                    </tr>
-                                ))}
-                                {visitLogs?.length === 0 && (
-                                    <tr>
-                                        <td colSpan={6} className="px-6 py-12 text-center text-muted-foreground text-sm">
-                                            No visit logs found for this organization.
-                                        </td>
-                                    </tr>
-                                )}
-                            </tbody>
-                        </table>
+                <div className="flex gap-6 border-b border-white/10 px-2">
+                    <button
+                        onClick={() => setActiveTab("details")}
+                        className={cn(
+                            "pb-2 text-sm font-medium",
+                            activeTab === "details"
+                                ? "text-primary border-b-2 border-primary"
+                                : "text-muted-foreground"
+                        )}
+                    >
+                        Details
+                    </button>
+                    <button
+                        onClick={() => setActiveTab("report")}
+                        className={cn(
+                            "pb-2 text-sm font-medium",
+                            activeTab === "report"
+                                ? "text-primary border-b-2 border-primary"
+                                : "text-muted-foreground"
+                        )}
+                    >
+                        Visit Report
+                    </button>
+                </div>
+
+                <div className="grid gap-4 rounded-2xl border border-white/10 bg-white/[0.02] p-4 md:grid-cols-3">
+                    <label className="space-y-2">
+                        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Region</span>
+                        <select
+                            value={selectedRegionId}
+                            onChange={(e) => {
+                                setSelectedRegionId(e.target.value);
+                                setSelectedCity("");
+                            }}
+                            className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none transition focus:border-primary"
+                        >
+                            <option value="">All Regions</option>
+                            {(regions ?? []).map((region: any) => (
+                                <option key={region._id} value={region.regionId}>
+                                    {region.regionName} ({region.regionId})
+                                </option>
+                            ))}
+                        </select>
+                    </label>
+
+                    <label className="space-y-2">
+                        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">City</span>
+                        <select
+                            value={selectedCity}
+                            onChange={(e) => setSelectedCity(e.target.value)}
+                            className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none transition focus:border-primary"
+                        >
+                            <option value="">All Cities</option>
+                            {availableCities.map((city) => (
+                                <option key={city} value={city}>
+                                    {city}
+                                </option>
+                            ))}
+                        </select>
+                    </label>
+
+                    <div className="rounded-xl border border-white/10 bg-black/20 p-4">
+                        <p className="text-sm font-semibold text-white/90">
+                            Visiting Officers: {visitingOfficers.length}
+                        </p>
+                        <p className="mt-2 text-xs text-muted-foreground">
+                            {activeTab === "details"
+                                ? "The details view shows past 30 days coverage. Click any day circle to open visit details."
+                                : "The report view shows visit rows for the selected date range and lets you download CSV or PDF."}
+                        </p>
                     </div>
                 </div>
+
+                {activeTab === "details" && (
+                    <div className="glass rounded-2xl border border-white/10 overflow-hidden">
+                        <div className="overflow-x-auto custom-scrollbar">
+                            <table className="w-full min-w-[1400px] border-collapse">
+                                <thead>
+                                    <tr className="border-b border-white/5 bg-white/[0.02]">
+                                        <th className="sticky left-0 z-10 min-w-[220px] bg-neutral-950 px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                                            By Officer
+                                        </th>
+                                        {past30Days.map((day) => (
+                                            <th key={day.key} className="px-2 py-4 text-center">
+                                                <div className="text-xs font-semibold text-white/80">{day.day}</div>
+                                                <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                                                    {day.weekday}
+                                                </div>
+                                            </th>
+                                        ))}
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-white/5">
+                                    {visitingOfficers.map((officer: any) => (
+                                        <tr key={officer._id} className="hover:bg-white/[0.02]">
+                                            <td className="sticky left-0 z-10 bg-neutral-950 px-6 py-4">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/5">
+                                                        <UserCheck className="h-4 w-4 text-muted-foreground" />
+                                                    </div>
+                                                    <div>
+                                                        <div className="text-sm font-medium text-white/90">{officer.name}</div>
+                                                        <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                                                            {officer.regionId || "No Region"} / {officer.cities?.join(", ") || "All Cities"}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            {past30Days.map((day) => {
+                                                const logsForDay = dailyCountsByOfficer.get(officer._id)?.[day.key] ?? [];
+                                                const count = logsForDay.length;
+
+                                                return (
+                                                    <td key={`${officer._id}-${day.key}`} className="px-2 py-3 text-center">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => count > 0 && setSelectedDayDetails({
+                                                                officerName: officer.name,
+                                                                dateLabel: day.fullLabel,
+                                                                logs: logsForDay,
+                                                            })}
+                                                            className={cn(
+                                                                "mx-auto flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold transition",
+                                                                count > 0
+                                                                    ? "bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500 hover:text-white"
+                                                                    : "cursor-default bg-rose-500/20 text-rose-300"
+                                                            )}
+                                                        >
+                                                            {count}
+                                                        </button>
+                                                    </td>
+                                                );
+                                            })}
+                                        </tr>
+                                    ))}
+                                    {visitingOfficers.length === 0 && (
+                                        <tr>
+                                            <td colSpan={31} className="px-6 py-12 text-center text-sm text-muted-foreground">
+                                                No visiting officers found for the selected region and city.
+                                            </td>
+                                        </tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                )}
+
+                {activeTab === "report" && (
+                    <div className="space-y-4">
+                        {!selectedRegionId && (
+                            <p className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3 text-sm text-amber-200/90">
+                                Choose a region (or ensure your profile has a region) to load the visit report.
+                            </p>
+                        )}
+
+                        <div className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+                            <div className="grid gap-4 md:grid-cols-2">
+                                <label className="space-y-2">
+                                    <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">From Date</span>
+                                    <input
+                                        type="date"
+                                        value={reportFromDate}
+                                        onChange={(e) => setReportFromDate(e.target.value)}
+                                        className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none transition focus:border-primary"
+                                    />
+                                </label>
+
+                                <label className="space-y-2">
+                                    <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">To Date</span>
+                                    <input
+                                        type="date"
+                                        value={reportToDate}
+                                        onChange={(e) => setReportToDate(e.target.value)}
+                                        className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none transition focus:border-primary"
+                                    />
+                                </label>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => void downloadCsv()}
+                                    disabled={exportBusy || !selectedRegionId || reportFromMs > reportToMs}
+                                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-2 text-xs font-semibold text-emerald-400 transition hover:bg-emerald-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                    <FileSpreadsheet className="h-4 w-4" />
+                                    {exportBusy ? "Working…" : "Download CSV"}
+                                </button>
+
+                                <button
+                                    type="button"
+                                    onClick={() => void downloadPdf()}
+                                    disabled={exportBusy || !selectedRegionId || reportFromMs > reportToMs}
+                                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-primary/20 bg-primary/10 px-4 py-2 text-xs font-semibold text-primary transition hover:bg-primary hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                    <FileText className="h-4 w-4" />
+                                    {exportBusy ? "Working…" : "Download PDF"}
+                                </button>
+                            </div>
+                            <p className="text-[11px] text-muted-foreground">
+                                CSV includes direct photo URLs for each visit.
+                            </p>
+                        </div>
+
+                        {selectedRegionId && visitReportPage && (
+                            <p className="text-xs text-muted-foreground">
+                                Showing {visitReportPage.items.length} of {visitReportPage.total} visits in range
+                                {visitReportPage.total > visitReportPage.items.length ? " (paginated)" : ""}.
+                            </p>
+                        )}
+
+                        <div className="glass rounded-2xl border border-white/10 overflow-hidden">
+                            <div className="overflow-x-auto custom-scrollbar">
+                                <table className="w-full min-w-[900px] text-left">
+                                    <thead>
+                                        <tr className="border-b border-white/5 bg-white/[0.02]">
+                                            <th className="px-4 py-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Officer</th>
+                                            <th className="px-4 py-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Site</th>
+                                            <th className="px-4 py-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Notes</th>
+                                            <th className="px-4 py-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Type</th>
+                                            <th className="px-4 py-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Check-in</th>
+                                            <th className="px-4 py-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Check-out</th>
+                                            <th className="px-4 py-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground text-right">Photos</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-white/5">
+                                        {(visitReportPage?.items ?? []).map((log: any) => {
+                                            const fromArr = (log.imageUrls as string[] | undefined)?.filter(Boolean) ?? [];
+                                            const show = fromArr.length > 0 ? fromArr : log.imageUrl ? [log.imageUrl] : [];
+                                            return (
+                                                <tr key={log._id} className="hover:bg-white/[0.02] transition-colors">
+                                                    <td className="px-4 py-4 text-sm font-medium text-white/90">{log.userName}</td>
+                                                    <td className="px-4 py-4 text-sm text-white/80">{log.siteName}</td>
+                                                    <td className="max-w-[220px] px-4 py-4 text-xs text-white/70 line-clamp-3">{log.remark || "—"}</td>
+                                                    <td className="px-4 py-4 text-sm text-white/70">
+                                                        <span className="inline-flex items-center gap-1.5">
+                                                            <VisitTypeIcon visitType={log.visitType} />
+                                                            {log.visitType || "—"}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-4 py-4 text-xs text-muted-foreground whitespace-nowrap">
+                                                        {new Date(log.createdAt ?? log._creationTime).toLocaleString()}
+                                                    </td>
+                                                    <td className="px-4 py-4 text-xs text-muted-foreground whitespace-nowrap">
+                                                        {log.checkOutAt ? new Date(log.checkOutAt).toLocaleString() : "—"}
+                                                    </td>
+                                                    <td className="px-4 py-4 text-right">
+                                                        <div className="flex flex-wrap justify-end gap-1">
+                                                            {show.map((url: string, i: number) => (
+                                                                <button
+                                                                    key={`${log._id}-img-${i}`}
+                                                                    type="button"
+                                                                    onClick={() => setSelectedImage(url)}
+                                                                    className="h-10 w-10 overflow-hidden rounded-lg border border-white/10 bg-black/40 transition hover:border-primary/50"
+                                                                >
+                                                                    <img src={url} alt="" className="h-full w-full object-cover" loading="lazy" />
+                                                                </button>
+                                                            ))}
+                                                            {show.length === 0 && <span className="text-xs text-muted-foreground">—</span>}
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                        {selectedRegionId && visitReportPage && visitReportPage.items.length === 0 && (
+                                            <tr>
+                                                <td colSpan={7} className="px-6 py-12 text-center text-sm text-muted-foreground">
+                                                    No visit records in this region and date range.
+                                                </td>
+                                            </tr>
+                                        )}
+                                        {!selectedRegionId && (
+                                            <tr>
+                                                <td colSpan={7} className="px-6 py-12 text-center text-sm text-muted-foreground">
+                                                    Select a region to load visits.
+                                                </td>
+                                            </tr>
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        {selectedRegionId && visitReportPage && visitReportPage.total > REPORT_PAGE_SIZE && (
+                            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3">
+                                <p className="text-xs text-muted-foreground">
+                                    Page {reportPageIndex + 1} of {Math.max(1, Math.ceil(visitReportPage.total / REPORT_PAGE_SIZE))}
+                                </p>
+                                <div className="flex gap-2">
+                                    <button
+                                        type="button"
+                                        disabled={reportPageIndex <= 0}
+                                        onClick={() => setReportPageIndex((p) => Math.max(0, p - 1))}
+                                        className="rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium text-white/90 transition hover:bg-white/10 disabled:opacity-40"
+                                    >
+                                        Previous
+                                    </button>
+                                    <button
+                                        type="button"
+                                        disabled={!visitReportPage.hasMore}
+                                        onClick={() => setReportPageIndex((p) => p + 1)}
+                                        className="rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium text-white/90 transition hover:bg-white/10 disabled:opacity-40"
+                                    >
+                                        Next
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
             </div>
 
-            {/* Image Preview Modal */}
+            {selectedDayDetails && (
+                <div
+                    className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 p-4 backdrop-blur-sm"
+                    onClick={() => setSelectedDayDetails(null)}
+                >
+                    <div
+                        className="relative max-h-[85vh] w-full max-w-5xl overflow-hidden rounded-2xl border border-white/10 bg-neutral-900 shadow-2xl"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="flex items-center justify-between border-b border-white/5 bg-white/[0.02] p-4">
+                            <div>
+                                <h3 className="text-sm font-semibold text-white/90">{selectedDayDetails.officerName}</h3>
+                                <p className="text-xs text-muted-foreground">{selectedDayDetails.dateLabel}</p>
+                            </div>
+                            <button
+                                onClick={() => setSelectedDayDetails(null)}
+                                className="rounded-lg p-1 text-muted-foreground transition-colors hover:bg-white/10 hover:text-white"
+                            >
+                                <X className="h-5 w-5" />
+                            </button>
+                        </div>
+                        <div className="max-h-[70vh] overflow-y-auto p-4">
+                            <div className="grid gap-4">
+                                {selectedDayDetails.logs.map((log: any) => {
+                                    const site = siteLookup.get(log.siteId);
+                                    return (
+                                        <div key={log._id} className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+                                            <div className="grid gap-3 md:grid-cols-2">
+                                                <div>
+                                                    <p className="text-xs uppercase tracking-wider text-muted-foreground">Site</p>
+                                                    <p className="text-sm text-white/90">{log.siteName}</p>
+                                                </div>
+                                                <div>
+                                                    <p className="text-xs uppercase tracking-wider text-muted-foreground">Region / City</p>
+                                                    <p className="text-sm text-white/90">{site?.regionId || "-"} / {site?.city || "-"}</p>
+                                                </div>
+                                                <div>
+                                                    <p className="text-xs uppercase tracking-wider text-muted-foreground">Point</p>
+                                                    <p className="text-sm text-white/90">{log.pointName || "Visit Scan"}</p>
+                                                </div>
+                                                <div>
+                                                    <p className="text-xs uppercase tracking-wider text-muted-foreground">Check-in</p>
+                                                    <p className="text-sm text-white/90">{new Date(log.createdAt ?? log._creationTime).toLocaleString()}</p>
+                                                </div>
+                                                <div>
+                                                    <p className="text-xs uppercase tracking-wider text-muted-foreground">Check-out</p>
+                                                    <p className="text-sm text-white/90">
+                                                        {log.checkOutAt ? new Date(log.checkOutAt).toLocaleString() : "—"}
+                                                    </p>
+                                                </div>
+                                                <div>
+                                                    <p className="text-xs uppercase tracking-wider text-muted-foreground">Purpose / notes</p>
+                                                    <p className="text-sm text-white/90">{log.remark || "Regular Inspection"}</p>
+                                                </div>
+                                                <div>
+                                                    <p className="text-xs uppercase tracking-wider text-muted-foreground">Visit Type</p>
+                                                    <p className="flex items-center gap-2 text-sm text-white/90">
+                                                        <VisitTypeIcon visitType={log.visitType} />
+                                                        {log.visitType || "General"}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            {(() => {
+                                                const fromArr = (log.imageUrls as string[] | undefined)?.filter(Boolean) ?? [];
+                                                const urls = fromArr.length > 0 ? fromArr : log.imageUrl ? [log.imageUrl] : [];
+                                                if (!urls.length) return null;
+                                                return (
+                                                    <div className="mt-4 flex flex-wrap gap-2">
+                                                        {urls.map((url: string, i: number) => (
+                                                            <button
+                                                                key={`${log._id}-d-${i}`}
+                                                                type="button"
+                                                                onClick={() => setSelectedImage(url)}
+                                                                className="h-20 w-20 overflow-hidden rounded-xl border border-white/10 bg-black/40 transition hover:border-primary/50"
+                                                            >
+                                                                <img src={url} alt="" className="h-full w-full object-cover" />
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                );
+                                            })()}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {selectedImage && (
                 <div 
                     className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/90 backdrop-blur-sm animate-in fade-in duration-200"

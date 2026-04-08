@@ -1,22 +1,20 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput } from 'react-native';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, ActivityIndicator } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-// import { useQuery } from 'convex/react';
-// import { api } from '../services/convex';
 import { siteService, regionService } from '../services/api';
 import { Building2, Search, MapPin, ChevronRight, ArrowLeft, CheckCircle } from 'lucide-react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { usePatrolStore } from '../store/usePatrolStore';
 import { useCustomAuth } from '../context/AuthContext';
 import { Modal, ScrollView } from 'react-native';
-import { isAdministrativeRole, canSelectAllSitesForVisits } from '../utils/roleUtils';
+import { isAdministrativeRole } from '../utils/roleUtils';
+import { visitTypeLabel } from '../utils/visitTypes';
 
 export default function SiteSelection() {
     const insets = useSafeAreaInsets();
     const navigation = useNavigation<any>();
     const route = useRoute<any>();
     const { userId, organizationId, customUser } = useCustomAuth();
-    const isAdmin = isAdministrativeRole(customUser?.role);
     const [sites, setSites] = useState<any[]>([]);
     const [regions, setRegions] = useState<any[]>([]);
     const { lastRegionId, lastCity, setLastSelection } = usePatrolStore();
@@ -31,6 +29,16 @@ export default function SiteSelection() {
     const [showCityPicker, setShowCityPicker] = useState(false);
     const { isVisit, visitType } = route.params || {};
 
+    /** New visit: city + sites only (region comes from profile / site data). */
+    const isVisitFlow =
+        Boolean(isVisit) && Boolean(visitType) && String(visitType) !== 'setup';
+
+    const [visitFlowSites, setVisitFlowSites] = useState<any[]>([]);
+    const [visitFlowLoading, setVisitFlowLoading] = useState(isVisitFlow);
+    const [selectedVisitCity, setSelectedVisitCity] = useState<string | null>(null);
+    const [visitSearchQuery, setVisitSearchQuery] = useState('');
+    const visitCityInitRef = useRef(false);
+
     const [step, setStep] = useState<'region' | 'city' | 'site'>(
         initialRegion ? (initialCity ? 'site' : 'city') : 'region'
     );
@@ -38,7 +46,7 @@ export default function SiteSelection() {
     // Auth state loads async; if the role changes to admin after first render,
     // reset region/city filters and jump directly to the site list.
 
-    React.useEffect(() => {
+    useEffect(() => {
         const fetchRegions = async () => {
             try {
                 const response = await regionService.getRegions();
@@ -47,50 +55,124 @@ export default function SiteSelection() {
                 console.error("Error fetching regions:", error);
             }
         };
-        fetchRegions();
-    }, []);
+        if (!isVisitFlow) fetchRegions();
+    }, [isVisitFlow]);
+
+    useEffect(() => {
+        if (!isVisitFlow || !userId) return;
+        visitCityInitRef.current = false;
+        setVisitFlowLoading(true);
+        let cancelled = false;
+        (async () => {
+            try {
+                const adminWide = isAdministrativeRole(customUser) && !customUser?.regionId;
+                const response = adminWide
+                    ? await siteService.getAllSites()
+                    : await siteService.getSitesByUser(
+                          userId,
+                          customUser?.regionId || undefined,
+                          undefined
+                      );
+                const data = response.data || [];
+                if (!cancelled) setVisitFlowSites(data);
+            } catch (error) {
+                console.error('Error fetching visit sites:', error);
+                if (!cancelled) setVisitFlowSites([]);
+            } finally {
+                if (!cancelled) setVisitFlowLoading(false);
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [isVisitFlow, userId, customUser?.regionId, customUser]);
+
+    const visitCities = useMemo(() => {
+        const s = new Set<string>();
+        visitFlowSites.forEach((x: any) => {
+            const c = x?.city?.trim();
+            if (c) s.add(c);
+        });
+        return Array.from(s).sort((a, b) => a.localeCompare(b));
+    }, [visitFlowSites]);
+
+    const visitHasUncategorized = useMemo(
+        () => visitFlowSites.some((x: any) => !x?.city?.trim()),
+        [visitFlowSites]
+    );
+
+    useEffect(() => {
+        visitCityInitRef.current = false;
+        setSelectedVisitCity(null);
+    }, [visitType]);
+
+    useEffect(() => {
+        if (!isVisitFlow || visitFlowLoading || visitCityInitRef.current) return;
+        if (visitCities.length === 0 && !visitHasUncategorized) return;
+        visitCityInitRef.current = true;
+        const pref = customUser?.city?.trim();
+        if (pref && visitCities.includes(pref)) setSelectedVisitCity(pref);
+        else if (visitCities.length > 0) setSelectedVisitCity(visitCities[0]);
+        else if (visitHasUncategorized) setSelectedVisitCity('__OTHER__');
+    }, [isVisitFlow, visitFlowLoading, visitCities, visitHasUncategorized, customUser?.city]);
+
+    const visitFilteredSites = useMemo(() => {
+        let list = visitFlowSites;
+        if (selectedVisitCity === '__OTHER__') {
+            list = list.filter((x: any) => !x?.city?.trim());
+        } else if (selectedVisitCity) {
+            list = list.filter((x: any) => (x?.city || '').trim() === selectedVisitCity);
+        }
+        const q = visitSearchQuery.trim().toLowerCase();
+        if (!q) return list;
+        return list.filter(
+            (site: any) =>
+                (site.name || '').toLowerCase().includes(q) ||
+                (site.locationName || '').toLowerCase().includes(q) ||
+                (site.city || '').toLowerCase().includes(q)
+        );
+    }, [visitFlowSites, selectedVisitCity, visitSearchQuery]);
 
     React.useEffect(() => {
-        if (userId && step === 'site') {
-            const fetchSites = async () => {
-                try {
-                    const isAdmin = isAdministrativeRole(customUser?.role);
-                    const fetchMethod = isAdmin ?
-                        siteService.getAllSites() :
-                        siteService.getSitesByUser(userId, selectedRegionId || undefined, selectedCity || undefined);
+        if (isVisitFlow || !userId || step !== 'site') return;
+        const fetchSites = async () => {
+            try {
+                const isAdminUser = isAdministrativeRole(customUser);
+                const fetchMethod = isAdminUser
+                    ? siteService.getAllSites()
+                    : siteService.getSitesByUser(userId, selectedRegionId || undefined, selectedCity || undefined);
 
-                    const response = await fetchMethod;
-                    let data = response.data || [];
+                const response = await fetchMethod;
+                let data = response.data || [];
 
-                    // Admins fetch all sites and filter client-side by the selected region/city.
-                    if (isAdmin) {
-                        const regionNorm = selectedRegionId ? selectedRegionId.toLowerCase().trim() : null;
-                        const cityNorm = selectedCity ? selectedCity.toLowerCase().trim() : null;
+                if (isAdminUser) {
+                    const regionNorm = selectedRegionId ? selectedRegionId.toLowerCase().trim() : null;
+                    const cityNorm = selectedCity ? selectedCity.toLowerCase().trim() : null;
 
-                        data = data.filter((site: any) => {
-                            const siteRegionNorm = site?.regionId ? String(site.regionId).toLowerCase().trim() : '';
-                            const siteCityNorm = site?.city ? String(site.city).toLowerCase().trim() : '';
+                    data = data.filter((site: any) => {
+                        const siteRegionNorm = site?.regionId ? String(site.regionId).toLowerCase().trim() : '';
+                        const siteCityNorm = site?.city ? String(site.city).toLowerCase().trim() : '';
 
-                            if (regionNorm && siteRegionNorm !== regionNorm) return false;
-                            if (cityNorm && siteCityNorm !== cityNorm) return false;
-                            return true;
-                        });
-                    }
-
-                    setSites(data);
-                } catch (error) {
-                    console.error("Error fetching sites:", error);
+                        if (regionNorm && siteRegionNorm !== regionNorm) return false;
+                        if (cityNorm && siteCityNorm !== cityNorm) return false;
+                        return true;
+                    });
                 }
-            };
-            fetchSites();
-        }
-    }, [userId, customUser?.role, step, selectedRegionId, selectedCity]);
+
+                setSites(data);
+            } catch (error) {
+                console.error('Error fetching sites:', error);
+            }
+        };
+        fetchSites();
+    }, [userId, customUser, step, selectedRegionId, selectedCity, isVisitFlow]);
     const [searchQuery, setSearchQuery] = useState('');
     const setCurrentSite = usePatrolStore((state) => state.setCurrentSite);
 
-    const filteredSites = sites?.filter(site =>
-        site.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        site.locationName.toLowerCase().includes(searchQuery.toLowerCase())
+    const filteredSites = sites?.filter(
+        (site) =>
+            (site.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+            (site.locationName || '').toLowerCase().includes(searchQuery.toLowerCase())
     );
 
     const handleSelectSite = (site: any) => {
@@ -102,14 +184,15 @@ export default function SiteSelection() {
                 siteName: site.name,
             });
         } else if (visitType) {
-            navigation.navigate('VisitForm', { 
+            navigation.navigate('VisitForm', {
                 type: visitType,
                 siteId: site._id,
                 siteName: site.name,
                 siteLat: site.latitude,
                 siteLng: site.longitude,
                 allowedRadius: site.allowedRadius || 100,
-                organizationId: customUser?.organizationId
+                organizationId: customUser?.organizationId,
+                isManual: true,
             });
         } else {
             navigation.navigate('PatrolStart', { 
@@ -130,12 +213,131 @@ export default function SiteSelection() {
                     <ArrowLeft color="white" size={24} />
                 </TouchableOpacity>
                 <View>
-                    <Text style={styles.title}>{isVisit ? (visitType === 'setup' ? 'QR Tool Setup' : visitType + ' Visit') : 'Select Site'}</Text>
-                    <Text style={styles.subTitle}>{isVisit ? 'Choose a site for ' + (visitType === 'setup' ? 'QR configuration' : 'inspection') : 'Choose a location to start patrol'}</Text>
+                    <Text style={styles.title}>
+                        {isVisitFlow
+                            ? visitTypeLabel(String(visitType))
+                            : isVisit
+                              ? visitType === 'setup'
+                                  ? 'QR Tool Setup'
+                                  : `${visitType} Visit`
+                              : 'Select Site'}
+                    </Text>
+                    <Text style={styles.subTitle}>
+                        {isVisitFlow
+                            ? 'Pick a city, then choose a site in that city'
+                            : isVisit
+                              ? `Choose a site for ${visitType === 'setup' ? 'QR configuration' : 'inspection'}`
+                              : 'Choose a location to start patrol'}
+                    </Text>
                 </View>
             </View>
 
-            {step === 'region' ? (
+            {isVisitFlow ? (
+                <>
+                    {visitFlowLoading ? (
+                        <View style={styles.visitLoading}>
+                            <ActivityIndicator color="#3b82f6" size="large" />
+                            <Text style={styles.visitLoadingTxt}>Loading sites…</Text>
+                        </View>
+                    ) : (
+                        <View style={{ flex: 1 }}>
+                            <View style={styles.visitCitySection}>
+                                <Text style={styles.visitCityHeading}>City</Text>
+                                <ScrollView
+                                    horizontal
+                                    showsHorizontalScrollIndicator={false}
+                                    contentContainerStyle={styles.visitChipRow}
+                                >
+                                    {visitCities.map((city) => (
+                                        <TouchableOpacity
+                                            key={city}
+                                            style={[
+                                                styles.visitChip,
+                                                selectedVisitCity === city && styles.visitChipActive,
+                                            ]}
+                                            onPress={() => setSelectedVisitCity(city)}
+                                        >
+                                            <Text
+                                                style={[
+                                                    styles.visitChipTxt,
+                                                    selectedVisitCity === city && styles.visitChipTxtActive,
+                                                ]}
+                                            >
+                                                {city}
+                                            </Text>
+                                        </TouchableOpacity>
+                                    ))}
+                                    {visitHasUncategorized ? (
+                                        <TouchableOpacity
+                                            style={[
+                                                styles.visitChip,
+                                                selectedVisitCity === '__OTHER__' && styles.visitChipActive,
+                                            ]}
+                                            onPress={() => setSelectedVisitCity('__OTHER__')}
+                                        >
+                                            <Text
+                                                style={[
+                                                    styles.visitChipTxt,
+                                                    selectedVisitCity === '__OTHER__' && styles.visitChipTxtActive,
+                                                ]}
+                                            >
+                                                Other
+                                            </Text>
+                                        </TouchableOpacity>
+                                    ) : null}
+                                </ScrollView>
+                            </View>
+
+                            <View style={styles.searchContainer}>
+                                <Search color="#94a3b8" size={18} style={styles.searchIcon} />
+                                <TextInput
+                                    style={styles.searchInput}
+                                    placeholder="Search sites"
+                                    placeholderTextColor="#64748b"
+                                    value={visitSearchQuery}
+                                    onChangeText={setVisitSearchQuery}
+                                />
+                            </View>
+
+                            <FlatList
+                                style={{ flex: 1 }}
+                                data={visitFilteredSites}
+                                keyExtractor={(item) => item._id}
+                                contentContainerStyle={styles.listContent}
+                                renderItem={({ item }) => (
+                                    <TouchableOpacity
+                                        style={styles.siteItem}
+                                        onPress={() => handleSelectSite(item)}
+                                    >
+                                        <View style={styles.iconContainer}>
+                                            <Building2 color="#3b82f6" size={22} />
+                                        </View>
+                                        <View style={styles.info}>
+                                            <Text style={styles.siteName}>{item.name}</Text>
+                                            <View style={styles.locationRow}>
+                                                <MapPin color="#94a3b8" size={14} />
+                                                <Text style={styles.location}>
+                                                    {(item.city || '—') + (item.locationName ? ` · ${item.locationName}` : '')}
+                                                </Text>
+                                            </View>
+                                        </View>
+                                        <ChevronRight color="#334155" size={20} />
+                                    </TouchableOpacity>
+                                )}
+                                ListEmptyComponent={
+                                    <View style={styles.emptyContainer}>
+                                        <Text style={styles.emptyText}>
+                                            {selectedVisitCity
+                                                ? 'No sites for this city'
+                                                : 'No sites available'}
+                                        </Text>
+                                    </View>
+                                }
+                            />
+                        </View>
+                    )}
+                </>
+            ) : step === 'region' ? (
                 <View style={{ flex: 1, paddingHorizontal: 24 }}>
                     <Text style={styles.sectionTitle}>Select Region</Text>
                     <TouchableOpacity
@@ -251,6 +453,8 @@ export default function SiteSelection() {
                 </>
             )}
 
+            {!isVisitFlow ? (
+                <>
             <Modal
                 visible={showRegionPicker}
                 transparent={true}
@@ -348,6 +552,8 @@ export default function SiteSelection() {
                     </View>
                 </View>
             </Modal>
+                </>
+            ) : null}
             <View style={{ height: insets.bottom }} />
         </SafeAreaView>
     );
@@ -618,4 +824,35 @@ const styles = StyleSheet.create({
         fontSize: 12,
         fontWeight: 'bold',
     },
+    visitLoading: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        gap: 12,
+    },
+    visitLoadingTxt: { color: '#94a3b8', fontSize: 14 },
+    visitCitySection: { paddingHorizontal: 24, marginBottom: 12 },
+    visitCityHeading: {
+        color: '#64748b',
+        fontSize: 11,
+        fontWeight: '800',
+        letterSpacing: 1,
+        marginBottom: 10,
+        textTransform: 'uppercase',
+    },
+    visitChipRow: { flexDirection: 'row', gap: 8, paddingBottom: 4 },
+    visitChip: {
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        borderRadius: 14,
+        backgroundColor: 'rgba(15, 23, 42, 0.95)',
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.08)',
+    },
+    visitChipActive: {
+        borderColor: 'rgba(59, 130, 246, 0.5)',
+        backgroundColor: 'rgba(59, 130, 246, 0.18)',
+    },
+    visitChipTxt: { color: '#94a3b8', fontSize: 14, fontWeight: '700' },
+    visitChipTxtActive: { color: '#fff' },
 });

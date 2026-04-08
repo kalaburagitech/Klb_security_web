@@ -1,22 +1,67 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, ActivityIndicator, Alert, Modal } from 'react-native';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Modal, FlatList } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { ChevronLeft, CheckCircle, X, User, Clock, MapPin, RefreshCw } from 'lucide-react-native';
-import { useNavigation } from '@react-navigation/native';
+import { ChevronLeft, CheckCircle, X, User, Clock, MapPin, RefreshCw, ScanLine } from 'lucide-react-native';
+import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import * as Location from 'expo-location';
-import { faceRecognitionService, regionService, attendanceService } from '../services/api';
+import { Accuracy } from 'expo-location';
+import { faceRecognitionService, regionService, attendanceService, siteService } from '../services/api';
 import { useCustomAuth } from '../context/AuthContext';
 import { showError, showSuccess } from '../utils/toastUtils';
+import { getCurrentShift, getNextShift } from '../utils/shiftUtils';
+import { SkeletonBox } from '../components/SkeletonBlocks';
+import { assertWithinSiteRadius } from '../utils/geoUtils';
+
+function toYMD(d: Date): string {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+}
+
+type Step = 'region' | 'city' | 'site' | 'shift' | 'camera' | 'loading_sites';
+
+function uniqueCitiesFromUser(customUser: { cities?: string[]; city?: string } | null | undefined): string[] {
+    const raw = [...(customUser?.cities || []), customUser?.city].filter(Boolean) as string[];
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const c of raw) {
+        const k = String(c).trim();
+        if (!k) continue;
+        const low = k.toLowerCase();
+        if (seen.has(low)) continue;
+        seen.add(low);
+        out.push(k);
+    }
+    return out;
+}
+
+function normShift(s?: string | null): string {
+    const t = (s ?? '').trim();
+    return t.length ? t.toLowerCase() : 'default';
+}
 
 export default function MarkAttendanceScreen() {
     const insets = useSafeAreaInsets();
     const navigation = useNavigation<any>();
-    const { organizationId } = useCustomAuth();
+    const route = useRoute<any>();
+    const { organizationId, userId, customUser } = useCustomAuth();
     const [permission, requestPermission] = useCameraPermissions();
     const cameraRef = useRef<any>(null);
+    const scanBusyRef = useRef(false);
 
-    const [step, setStep] = useState<'region' | 'city' | 'camera'>('region');
+    const [step, setStep] = useState<Step>('region');
+    const [workDate, setWorkDate] = useState(() => toYMD(new Date()));
+    const [expectedEmpId, setExpectedEmpId] = useState<string | undefined>(undefined);
+    const [checkoutOnly, setCheckoutOnly] = useState(false);
+
+    const [candidateSites, setCandidateSites] = useState<any[]>([]);
+    const [selectedSiteDoc, setSelectedSiteDoc] = useState<any | null>(null);
+    const [selectedShift, setSelectedShift] = useState<{ name: string; start: string; end: string; strength?: number } | null>(null);
+    const [showSitePicker, setShowSitePicker] = useState(false);
+    const [showShiftPicker, setShowShiftPicker] = useState(false);
+    const [loadingSites, setLoadingSites] = useState(false);
     const [region, setRegion] = useState('');
     const [city, setCity] = useState('');
     const [regions, setRegions] = useState<Array<{ regionId: string; regionName: string; cities?: string[] }>>([]);
@@ -29,17 +74,116 @@ export default function MarkAttendanceScreen() {
     const [checkingStatus, setCheckingStatus] = useState(false);
     const [location, setLocation] = useState<Location.LocationObject | null>(null);
     const [facing, setFacing] = useState<'front' | 'back'>('front');
+    const [liveScanning, setLiveScanning] = useState(false);
+    const [scannedPeople, setScannedPeople] = useState<Record<string, { emp_id: string; name: string; match_score: number }>>({});
+    const [pickMatches, setPickMatches] = useState<any[] | null>(null);
+    /** Multi-select employee IDs for batch check-in / check-out (not used for strict single check-out verify). */
+    const [selectedEmpIds, setSelectedEmpIds] = useState<string[]>([]);
+
+    const strictSingleCheckout = checkoutOnly && !!expectedEmpId;
 
     useEffect(() => {
         fetchRegions();
         requestLocationPermission();
     }, []);
 
-    useEffect(() => {
-        if (detectedPerson && step === 'camera') {
-            checkAttendanceStatus();
-        }
-    }, [detectedPerson, step]);
+    useFocusEffect(
+        useCallback(() => {
+            const p = route.params || {};
+            if (p.presetSite) {
+                if (p.workDate) setWorkDate(p.workDate);
+                else setWorkDate(toYMD(new Date()));
+                setCheckoutOnly(!!p.checkoutOnly);
+                setExpectedEmpId(p.expectedEmpId);
+                const s = p.presetSite;
+                setRegion(p.presetRegionId || s.regionId || '');
+                setCity(p.presetCity || s.city || '');
+                setSelectedSiteDoc(s);
+                setCandidateSites([s]);
+                const shifts = Array.isArray(s.shifts) ? s.shifts : [];
+                if (p.presetShift) {
+                    setSelectedShift(p.presetShift);
+                } else if (shifts.length > 1) {
+                    setSelectedShift(null);
+                    setDetectedPerson(null);
+                    setAttendanceStatus(null);
+                    setStep('shift');
+                    return;
+                } else if (shifts.length === 1) {
+                    setSelectedShift(shifts[0]);
+                } else {
+                    setSelectedShift(null);
+                }
+                setDetectedPerson(null);
+                setAttendanceStatus(null);
+                setStep('camera');
+                return;
+            }
+            setLiveScanning(false);
+            setScannedPeople({});
+            setPickMatches(null);
+            setSelectedEmpIds([]);
+            if (p.workDate) {
+                setWorkDate(p.workDate);
+            } else {
+                setWorkDate(toYMD(new Date()));
+            }
+            setExpectedEmpId(p.expectedEmpId);
+            setCheckoutOnly(!!p.checkoutOnly);
+            setSelectedSiteDoc(null);
+            setSelectedShift(null);
+            setCandidateSites([]);
+            setDetectedPerson(null);
+            setAttendanceStatus(null);
+            /** Home / quick checkout: open camera immediately (skip city/sites). */
+            if (p.checkoutOnly && p.directCamera && customUser?.regionId) {
+                setRegion(customUser.regionId);
+                const uc = uniqueCitiesFromUser(customUser);
+                setCity(uc[0] || '');
+                const stub = (p as any).checkoutSiteStub;
+                if (stub?._id) {
+                    setSelectedSiteDoc(stub);
+                    setCandidateSites([stub]);
+                }
+                const sn = (p as any).checkoutShiftName;
+                setSelectedShift(
+                    sn ? { name: String(sn), start: '', end: '' } : null
+                );
+                setStep('camera');
+                return;
+            }
+            if (p.checkoutOnly && customUser?.regionId) {
+                setRegion(customUser.regionId);
+                const uc = uniqueCitiesFromUser(customUser);
+                if (uc.length === 1) {
+                    setCity(uc[0]);
+                    setStep('camera');
+                } else if (uc.length > 1) {
+                    setCity('');
+                    setStep('city');
+                } else {
+                    setCity('');
+                    setStep('camera');
+                }
+                return;
+            }
+            const rid = customUser?.regionId || '';
+            setRegion(rid);
+            if (!rid) {
+                setCity('');
+                setStep('region');
+                return;
+            }
+            const uc = uniqueCitiesFromUser(customUser);
+            if (uc.length > 1) {
+                setCity('');
+                setStep('city');
+            } else {
+                setCity(uc[0] || '');
+                setStep('loading_sites');
+            }
+        }, [route.params, customUser])
+    );
 
     const requestLocationPermission = async () => {
         try {
@@ -63,44 +207,111 @@ export default function MarkAttendanceScreen() {
         }
     };
 
-    const checkAttendanceStatus = async () => {
-        if (!detectedPerson) return;
-        
-        setCheckingStatus(true);
-        try {
-            const today = new Date().toISOString().split('T')[0];
-            const response = await faceRecognitionService.checkAttendance({
-                emp_id: detectedPerson.emp_id,
-                date: today,
+    const applyStatusFromRow = (row: any) => {
+        const hasCheckedIn = row?.checkInTime != null;
+        const hasCheckedOut = row?.checkOutTime != null;
+        if (hasCheckedIn && hasCheckedOut) {
+            setAttendanceStatus({
+                fullyDone: true,
+                checked_in: false,
+                checkInTime: row.checkInTime,
+                checkOutTime: row.checkOutTime,
             });
-            // Handle different response formats
-            const data = response.data;
-            if (typeof data === 'string') {
-                // If response is a string, parse it or set default
-                setAttendanceStatus({ checked_in: false, checkInTime: undefined, checkOutTime: undefined });
-            } else {
-                // Check if person has checked in but not checked out
-                const hasCheckedIn = data.checkInTime !== undefined && data.checkInTime !== null;
-                const hasCheckedOut = data.checkOutTime !== undefined && data.checkOutTime !== null;
-                const isCheckedIn = hasCheckedIn && !hasCheckedOut;
-                
-                setAttendanceStatus({
-                    checked_in: isCheckedIn,
-                    checkInTime: data.checkInTime,
-                    checkOutTime: data.checkOutTime,
-                });
-            }
-        } catch (error: any) {
-            console.error('Error checking attendance:', error);
-            // If error, assume not checked in (allows check-in)
-            setAttendanceStatus({ checked_in: false, checkInTime: undefined, checkOutTime: undefined });
-        } finally {
-            setCheckingStatus(false);
+        } else if (hasCheckedIn) {
+            setAttendanceStatus({
+                fullyDone: false,
+                checked_in: true,
+                checkInTime: row.checkInTime,
+                checkOutTime: row.checkOutTime,
+            });
+        } else {
+            setAttendanceStatus({
+                fullyDone: false,
+                checked_in: false,
+                checkInTime: undefined,
+                checkOutTime: undefined,
+            });
         }
     };
 
-    const handleFaceDetected = async (imageUri: string) => {
-        setLoading(true);
+    const checkAttendanceStatus = useCallback(async () => {
+        if (!detectedPerson) return;
+
+        setCheckingStatus(true);
+        try {
+            if (organizationId) {
+                const params: Record<string, string> = {
+                    organizationId,
+                    empId: String(detectedPerson.emp_id),
+                    date: workDate,
+                };
+                if (selectedSiteDoc?._id) params.siteId = selectedSiteDoc._id;
+                const res = await attendanceService.list(params);
+                const rows = Array.isArray(res.data) ? res.data : [];
+                const sk = normShift(selectedShift?.name);
+                let subset = rows.filter((r: any) => normShift(r.shiftName) === sk);
+                if (subset.length === 0) subset = rows;
+                const row = subset[0];
+                if (row) {
+                    applyStatusFromRow(row);
+                    return;
+                }
+            }
+
+            const response = await faceRecognitionService.checkAttendance({
+                emp_id: detectedPerson.emp_id,
+                date: workDate,
+            });
+            const data = response.data;
+            if (typeof data === 'string') {
+                setAttendanceStatus({ checked_in: false, fullyDone: false, checkInTime: undefined, checkOutTime: undefined });
+            } else {
+                applyStatusFromRow(data);
+            }
+        } catch (error: any) {
+            console.error('Error checking attendance:', error);
+            setAttendanceStatus({ checked_in: false, fullyDone: false, checkInTime: undefined, checkOutTime: undefined });
+        } finally {
+            setCheckingStatus(false);
+        }
+    }, [detectedPerson, organizationId, workDate, selectedSiteDoc?._id, selectedShift?.name]);
+
+    useEffect(() => {
+        if (!strictSingleCheckout) return;
+        if (detectedPerson && step === 'camera') {
+            checkAttendanceStatus();
+        }
+    }, [detectedPerson, step, checkAttendanceStatus, strictSingleCheckout]);
+
+    const mergeMatchesIntoScanned = (matches: any[]) => {
+        setScannedPeople((prev) => {
+            const next = { ...prev };
+            for (const m of matches) {
+                const id = String(m.emp_id ?? m.empId ?? '');
+                if (!id) continue;
+                const score = Number(m.match_score ?? m.score ?? 0);
+                const cur = next[id];
+                if (!cur || score > (cur.match_score ?? 0)) {
+                    next[id] = {
+                        emp_id: id,
+                        name: String(m.name ?? 'Unknown'),
+                        match_score: score,
+                    };
+                }
+            }
+            return next;
+        });
+    };
+
+    const toggleSelectEmp = (id: string) => {
+        setSelectedEmpIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+    };
+
+    const handleFaceDetected = async (
+        imageUri: string,
+        opts?: { silent?: boolean; mergeOnly?: boolean }
+    ) => {
+        if (!opts?.silent) setLoading(true);
         try {
             const formData = new FormData();
             const filename = imageUri.split('/').pop() || 'face.jpg';
@@ -111,138 +322,370 @@ export default function MarkAttendanceScreen() {
             } as any);
             formData.append('region', region);
             formData.append('city', city);
-            formData.append('emp_id', ''); // Let API search all
+            formData.append('emp_id', '');
 
             const response = await faceRecognitionService.recognize(formData);
-            
-            if (response.data.success && response.data.matches && response.data.matches.length > 0) {
-                const match = response.data.matches[0];
+            const payload = (response.data || {}) as Record<string, any>;
+            const matches = Array.isArray(payload.matches) ? payload.matches : [];
+            const ok = payload.success !== false && matches.length > 0;
+
+            if (!ok) {
+                if (!opts?.silent) showError('No Match', 'Face not recognized. Please try again.');
+                return;
+            }
+
+            if (opts?.mergeOnly) {
+                mergeMatchesIntoScanned(matches);
+                return;
+            }
+
+            const strict = checkoutOnly && !!expectedEmpId;
+            if (!strict) {
+                mergeMatchesIntoScanned(matches);
+                setPickMatches(null);
+                return;
+            }
+
+            if (matches.length === 1) {
+                const match = matches[0];
                 setDetectedPerson({
                     emp_id: match.emp_id,
-                    emp_code: match.emp_code,
                     name: match.name,
                     match_score: match.match_score,
                     face_encoding_id: match.face_encoding_id,
                 });
+                mergeMatchesIntoScanned(matches);
             } else {
-                showError('No Match', 'Face not recognized. Please try again.');
+                mergeMatchesIntoScanned(matches);
+                setPickMatches(matches);
             }
         } catch (error: any) {
             console.error('Recognition error:', error);
-            showError('Error', error.response?.data?.detail || 'Failed to recognize face');
+            if (!opts?.silent) showError('Error', error.response?.data?.detail || 'Failed to recognize face');
         } finally {
-            setLoading(false);
+            if (!opts?.silent) setLoading(false);
         }
     };
 
     const captureAndRecognize = async () => {
         if (!cameraRef.current) return;
-        
+
         try {
             const photo = await cameraRef.current.takePictureAsync({
                 quality: 0.8,
                 base64: false,
             });
-            if (photo && photo.uri) {
-                await handleFaceDetected(photo.uri);
-            }
+            if (photo?.uri) await handleFaceDetected(photo.uri);
         } catch (error) {
             console.error('Capture error:', error);
             showError('Error', 'Failed to capture image');
         }
     };
 
+    const captureAndRecognizeSilent = async () => {
+        if (!cameraRef.current || scanBusyRef.current) return;
+        scanBusyRef.current = true;
+        try {
+            const photo = await cameraRef.current.takePictureAsync({
+                quality: 0.65,
+                base64: false,
+            });
+            if (photo?.uri) await handleFaceDetected(photo.uri, { silent: true, mergeOnly: true });
+        } catch {
+            /* ignore bursty live-scan failures */
+        } finally {
+            scanBusyRef.current = false;
+        }
+    };
+
+    useEffect(() => {
+        if (!liveScanning || step !== 'camera') return;
+        if (strictSingleCheckout && detectedPerson) return;
+        const id = setInterval(() => {
+            captureAndRecognizeSilent();
+        }, 2800);
+        return () => clearInterval(id);
+    }, [liveScanning, step, detectedPerson, strictSingleCheckout]);
+
+    const goToCameraStep = useCallback(() => {
+        if (!permission?.granted) {
+            requestPermission().then((result) => {
+                if (result.granted) {
+                    setStep('camera');
+                } else {
+                    showError('Permission Required', 'Camera permission is needed for face recognition');
+                }
+            });
+        } else {
+            setStep('camera');
+        }
+    }, [permission?.granted, requestPermission]);
+
+    const advanceAfterSiteSelect = useCallback(
+        (site: any) => {
+            setSelectedSiteDoc(site);
+            const shifts = Array.isArray(site?.shifts) ? site.shifts : [];
+            const auto = getCurrentShift(shifts, new Date()) || getNextShift(shifts, new Date());
+            if (shifts.length > 1) {
+                setSelectedShift(auto || shifts[0] || null);
+                setStep('shift');
+            } else if (shifts.length === 1) {
+                setSelectedShift(shifts[0]);
+                goToCameraStep();
+            } else {
+                setSelectedShift(null);
+                goToCameraStep();
+            }
+        },
+        [goToCameraStep]
+    );
+
+    useEffect(() => {
+        if (step !== 'loading_sites') return;
+        if (!userId || !region) {
+            setStep('region');
+            return;
+        }
+        let cancelled = false;
+        (async () => {
+            setLoadingSites(true);
+            try {
+                const response = await siteService.getSitesByUser(userId, region, city || undefined);
+                const list = response.data || [];
+                if (cancelled) return;
+                setCandidateSites(list);
+                if (list.length === 0) {
+                    showError('Sites', 'No sites linked for this location.');
+                    const uc = uniqueCitiesFromUser(customUser);
+                    setStep(uc.length > 1 ? 'city' : 'region');
+                    return;
+                }
+                if (list.length === 1) {
+                    advanceAfterSiteSelect(list[0]);
+                } else {
+                    setSelectedSiteDoc(null);
+                    setSelectedShift(null);
+                    setStep('site');
+                }
+            } catch (e) {
+                console.error(e);
+                if (!cancelled) {
+                    showError('Sites', 'Could not load sites.');
+                    setStep('city');
+                }
+            } finally {
+                if (!cancelled) setLoadingSites(false);
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [step, userId, region, city, customUser, advanceAfterSiteSelect]);
+
+    const backFromCamera = () => {
+        setDetectedPerson(null);
+        setAttendanceStatus(null);
+        if ((route.params as any)?.fromSiteDashboard) {
+            navigation.goBack();
+            return;
+        }
+        if (checkoutOnly) {
+            navigation.goBack();
+            return;
+        }
+        const shifts = Array.isArray(selectedSiteDoc?.shifts) ? selectedSiteDoc.shifts : [];
+        if (shifts.length > 1) {
+            setStep('shift');
+        } else if (candidateSites.length > 1) {
+            setStep('site');
+        } else if (uniqueCitiesFromUser(customUser).length > 1) {
+            setStep('city');
+        } else {
+            navigation.goBack();
+        }
+    };
+
+    const advanceFromCity = () => {
+        if (!userId || !region) return;
+        if (checkoutOnly) {
+            goToCameraStep();
+            return;
+        }
+        const needsCity = uniqueCitiesFromUser(customUser).length > 1;
+        if (needsCity && !String(city || '').trim()) {
+            showError('City', 'Select a city.');
+            return;
+        }
+        setStep('loading_sites');
+    };
+
+    const markPersonAttendance = async (
+        person: { emp_id: string; name: string },
+        action: 'check_in' | 'check_out',
+        lat: number,
+        lon: number,
+        accuracy?: number
+    ) => {
+        const response = await faceRecognitionService.markAttendance({
+            emp_id: person.emp_id,
+            status: 'present',
+            action,
+            date: workDate,
+            latitude: lat,
+            longitude: lon,
+            location_accuracy: accuracy,
+        });
+
+        if (!response.data) {
+            throw new Error('Face service did not confirm');
+        }
+
+        let existingCheckInTime: number | undefined;
+        if (action === 'check_out') {
+            try {
+                const existingRecords = await attendanceService.list({
+                    organizationId: organizationId || undefined,
+                    empId: String(person.emp_id),
+                    date: workDate,
+                    siteId: selectedSiteDoc?._id,
+                });
+                const rows = Array.isArray(existingRecords.data) ? existingRecords.data : [];
+                const sk = normShift(selectedShift?.name);
+                const existingRecord =
+                    rows.find((r: any) => normShift(r.shiftName) === sk) || rows[0];
+                existingCheckInTime = existingRecord?.checkInTime;
+            } catch (error) {
+                console.error('Error fetching existing record:', error);
+            }
+        }
+
+        await attendanceService.create({
+            empId: person.emp_id,
+            name: person.name,
+            date: workDate,
+            checkInTime: action === 'check_in' ? Date.now() : existingCheckInTime,
+            checkOutTime: action === 'check_out' ? Date.now() : undefined,
+            status: 'present',
+            latitude: lat,
+            longitude: lon,
+            locationAccuracy: accuracy,
+            region: regions.find((r) => r.regionId === region)?.regionName || region,
+            organizationId: organizationId || undefined,
+            siteId: selectedSiteDoc?._id,
+            siteName: selectedSiteDoc?.name,
+            shiftName: selectedShift?.name,
+        });
+    };
+
+    const resolveDeviceLocation = async (): Promise<{ lat: number; lon: number; accuracy?: number }> => {
+        try {
+            const loc = await Location.getCurrentPositionAsync({
+                accuracy: Accuracy.Balanced,
+            });
+            return {
+                lat: loc.coords.latitude,
+                lon: loc.coords.longitude,
+                accuracy: loc.coords.accuracy ?? undefined,
+            };
+        } catch {
+            if (location) {
+                return {
+                    lat: location.coords.latitude,
+                    lon: location.coords.longitude,
+                    accuracy: location.coords.accuracy ?? undefined,
+                };
+            }
+            throw new Error('Could not get GPS location. Enable location and try again.');
+        }
+    };
+
+    const handleBatchMark = async (action: 'check_in' | 'check_out') => {
+        if (selectedEmpIds.length === 0) {
+            showError('Selection', 'Tap people below to select them, then mark attendance.');
+            return;
+        }
+        setLoading(true);
+        const failed: string[] = [];
+        let ok = 0;
+        try {
+            const { lat, lon, accuracy } = await resolveDeviceLocation();
+            assertWithinSiteRadius(selectedSiteDoc, lat, lon, accuracy, 'mark attendance');
+
+            for (const id of selectedEmpIds) {
+                const p = scannedPeople[id];
+                if (!p) continue;
+                try {
+                    await markPersonAttendance(p, action, lat, lon, accuracy);
+                    ok++;
+                } catch (e: any) {
+                    const msg = e?.response?.data?.error || e?.response?.data?.detail || e?.message || 'Failed';
+                    failed.push(`${p.name}: ${msg}`);
+                }
+            }
+
+            if (ok > 0) {
+                showSuccess('Done', `${ok} checked ${action === 'check_in' ? 'in' : 'out'}${failed.length ? ` · ${failed.length} skipped` : ''}`);
+            }
+            if (failed.length > 0 && ok === 0) {
+                showError('Attendance', failed.slice(0, 3).join('\n') + (failed.length > 3 ? '\n…' : ''));
+            }
+            setSelectedEmpIds([]);
+            if (ok > 0) {
+                setTimeout(() => {
+                    if ((route.params as any)?.fromSiteDashboard) {
+                        navigation.goBack();
+                    } else {
+                        navigation.navigate('MainTabs');
+                    }
+                }, 1200);
+            }
+        } catch (e: any) {
+            showError('Location', e?.message || 'Cannot verify you are at the site.');
+        } finally {
+            setLoading(false);
+        }
+    };
+
     const handleMarkAttendance = async (action: 'check_in' | 'check_out') => {
         if (!detectedPerson) return;
 
+        if (checkoutOnly && expectedEmpId && String(detectedPerson.emp_id) !== String(expectedEmpId)) {
+            showError('Verification failed', 'Face does not match this attendance record.');
+            return;
+        }
+
         setLoading(true);
         try {
-            const today = new Date().toISOString().split('T')[0];
-            
-            // Get current location if available
-            let lat: number | undefined;
-            let lon: number | undefined;
-            let accuracy: number | undefined;
-            
-            if (location) {
-                lat = location.coords.latitude;
-                lon = location.coords.longitude;
-                accuracy = location.coords.accuracy || undefined;
-            } else {
-                try {
-                    const loc = await Location.getCurrentPositionAsync({});
-                    lat = loc.coords.latitude;
-                    lon = loc.coords.longitude;
-                    accuracy = loc.coords.accuracy || undefined;
-                } catch (error) {
-                    console.error('Location error:', error);
-                }
-            }
+            const { lat, lon, accuracy } = await resolveDeviceLocation();
+            assertWithinSiteRadius(selectedSiteDoc, lat, lon, accuracy, 'mark attendance');
 
-            const response = await faceRecognitionService.markAttendance({
-                emp_id: detectedPerson.emp_id,
-                status: 'present',
-                action,
-                date: today,
-                latitude: lat,
-                longitude: lon,
-                location_accuracy: accuracy,
-            });
+            await markPersonAttendance(detectedPerson, action, lat, lon, accuracy);
 
-            if (response.data) {
-                // Save to web API
-                try {
-                    const selectedRegion = regions.find(r => r.regionId === region);
-                    // Get existing record to preserve check-in time when checking out
-                    let existingCheckInTime: number | undefined;
-                    if (action === 'check_out') {
-                        try {
-                            const existingRecords = await attendanceService.list({
-                                empId: detectedPerson.emp_id,
-                                date: today,
-                            });
-                            const existingRecord = existingRecords.data?.[0];
-                            existingCheckInTime = existingRecord?.checkInTime;
-                        } catch (error) {
-                            console.error('Error fetching existing record:', error);
-                        }
-                    }
+            setTimeout(async () => {
+                await checkAttendanceStatus();
+            }, 800);
 
-                    await attendanceService.create({
-                        empId: detectedPerson.emp_id,
-                        name: detectedPerson.name,
-                        date: today,
-                        checkInTime: action === 'check_in' ? Date.now() : existingCheckInTime,
-                        checkOutTime: action === 'check_out' ? Date.now() : undefined,
-                        status: 'present',
-                        latitude: lat,
-                        longitude: lon,
-                        locationAccuracy: accuracy,
-                        region: regions.find(r => r.regionId === region)?.regionName || region,
-                        city: city,
-                        organizationId,
-                    });
-                } catch (error) {
-                    console.error('Error saving to web API:', error);
-                    // Don't fail the whole process if web API fails
-                }
-
-                // Wait a moment for the API to process, then refresh attendance status
-                setTimeout(async () => {
-                    await checkAttendanceStatus();
-                }, 800);
-
-                showSuccess(
-                    'Success',
-                    `Successfully ${action === 'check_in' ? 'checked in' : 'checked out'}`
-                );
-                setTimeout(() => {
+            showSuccess(
+                'Success',
+                `Successfully ${action === 'check_in' ? 'checked in' : 'checked out'}`
+            );
+            setTimeout(() => {
+                if ((route.params as any)?.fromSiteDashboard) {
+                    navigation.goBack();
+                } else if (checkoutOnly) {
+                    navigation.goBack();
+                } else {
                     navigation.navigate('MainTabs');
-                }, 1500);
-            }
+                }
+            }, 1500);
         } catch (error: any) {
             console.error('Mark attendance error:', error);
-            showError('Error', error.response?.data?.detail || 'Failed to mark attendance');
+            const msg =
+                error?.message ||
+                error?.response?.data?.detail ||
+                error?.response?.data?.error ||
+                'Failed to mark attendance';
+            showError('Attendance', String(msg));
         } finally {
             setLoading(false);
         }
@@ -253,6 +696,26 @@ export default function MarkAttendanceScreen() {
             <SafeAreaView style={styles.container}>
                 <View style={styles.centerContainer}>
                     <Text style={styles.text}>Loading camera permissions...</Text>
+                </View>
+                <View style={{ height: insets.bottom }} />
+            </SafeAreaView>
+        );
+    }
+
+    if (step === 'loading_sites') {
+        return (
+            <SafeAreaView style={styles.container}>
+                <View style={styles.header}>
+                    <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+                        <ChevronLeft color="white" size={24} />
+                    </TouchableOpacity>
+                    <Text style={styles.headerTitle}>Mark Attendance</Text>
+                    <View style={{ width: 44 }} />
+                </View>
+                <View style={[styles.centerContainer, { paddingHorizontal: 32 }]}>
+                    <SkeletonBox height={16} width={180} radius={8} style={{ marginBottom: 20 }} />
+                    <SkeletonBox height={12} width={240} radius={6} style={{ marginBottom: 24 }} />
+                    <Text style={[styles.text, { fontSize: 15 }]}>Loading sites for your region…</Text>
                 </View>
                 <View style={{ height: insets.bottom }} />
             </SafeAreaView>
@@ -340,10 +803,18 @@ export default function MarkAttendanceScreen() {
     }
 
     if (step === 'city') {
+        const cityOptions = uniqueCitiesFromUser(customUser);
+        const mustPickCity = cityOptions.length > 1;
         return (
             <SafeAreaView style={styles.container}>
                 <View style={styles.header}>
-                    <TouchableOpacity onPress={() => setStep('region')} style={styles.backButton}>
+                    <TouchableOpacity
+                        onPress={() => {
+                            if (customUser?.regionId && !checkoutOnly) navigation.goBack();
+                            else setStep('region');
+                        }}
+                        style={styles.backButton}
+                    >
                         <ChevronLeft color="white" size={24} />
                     </TouchableOpacity>
                     <Text style={styles.headerTitle}>Select City</Text>
@@ -353,11 +824,13 @@ export default function MarkAttendanceScreen() {
                 <ScrollView contentContainerStyle={styles.scrollContent}>
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                         <Text style={styles.sectionTitle}>Select City</Text>
-                        <TouchableOpacity onPress={() => setStep('region')}>
-                            <Text style={{ color: '#2563eb', fontSize: 12 }}>Change Region</Text>
-                        </TouchableOpacity>
+                        {!customUser?.regionId ? (
+                            <TouchableOpacity onPress={() => setStep('region')}>
+                                <Text style={{ color: '#2563eb', fontSize: 12 }}>Change Region</Text>
+                            </TouchableOpacity>
+                        ) : null}
                     </View>
-                    <Text style={styles.sectionSubtitle}>Choose the city for attendance marking</Text>
+                    <Text style={styles.sectionSubtitle}>Your assigned cities — then we load your sites</Text>
 
                     <TouchableOpacity
                         style={styles.regionButton}
@@ -372,25 +845,15 @@ export default function MarkAttendanceScreen() {
                     </TouchableOpacity>
 
                     <TouchableOpacity
-                        style={[styles.continueButton, !city && styles.disabled]}
-                        onPress={() => {
-                            if (city) {
-                                if (!permission?.granted) {
-                                    requestPermission().then((result) => {
-                                        if (result.granted) {
-                                            setStep('camera');
-                                        } else {
-                                            showError('Permission Required', 'Camera permission is needed for face recognition');
-                                        }
-                                    });
-                                } else {
-                                    setStep('camera');
-                                }
-                            }
-                        }}
-                        disabled={!city}
+                        style={[styles.continueButton, (mustPickCity && !city) || loadingSites ? styles.disabled : undefined]}
+                        onPress={() => advanceFromCity()}
+                        disabled={(mustPickCity && !city) || loadingSites}
                     >
-                        <Text style={styles.continueButtonText}>Continue to Recognize</Text>
+                        {loadingSites ? (
+                            <ActivityIndicator color="white" />
+                        ) : (
+                            <Text style={styles.continueButtonText}>Continue to site / recognize</Text>
+                        )}
                     </TouchableOpacity>
                 </ScrollView>
 
@@ -409,7 +872,7 @@ export default function MarkAttendanceScreen() {
                                 </TouchableOpacity>
                             </View>
                             <ScrollView>
-                                {regions.find(r => r.regionId === region)?.cities?.map((c) => (
+                                {cityOptions.map((c) => (
                                     <TouchableOpacity
                                         key={c}
                                         style={[styles.regionOption, city === c && styles.regionOptionSelected]}
@@ -433,6 +896,158 @@ export default function MarkAttendanceScreen() {
         );
     }
 
+    if (step === 'site') {
+        return (
+            <SafeAreaView style={styles.container}>
+                <View style={styles.header}>
+                    <TouchableOpacity
+                        onPress={() => {
+                            if (uniqueCitiesFromUser(customUser).length > 1) setStep('city');
+                            else navigation.goBack();
+                        }}
+                        style={styles.backButton}
+                    >
+                        <ChevronLeft color="white" size={24} />
+                    </TouchableOpacity>
+                    <Text style={styles.headerTitle}>Select site</Text>
+                    <View style={{ width: 44 }} />
+                </View>
+                <ScrollView contentContainerStyle={styles.scrollContent}>
+                    <Text style={styles.sectionTitle}>On-site shift</Text>
+                    <Text style={styles.sectionSubtitle}>Choose the site you are reporting attendance for.</Text>
+                    <TouchableOpacity style={styles.regionButton} onPress={() => setShowSitePicker(true)}>
+                        <View style={styles.regionButtonContent}>
+                            <Text style={[styles.regionButtonText, !selectedSiteDoc && styles.regionPlaceholder]}>
+                                {selectedSiteDoc?.name || 'Select site'}
+                            </Text>
+                            <ChevronLeft color="#64748b" size={20} style={{ transform: [{ rotate: '-90deg' }] }} />
+                        </View>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={[styles.continueButton, !selectedSiteDoc && styles.disabled]}
+                        onPress={() => selectedSiteDoc && advanceAfterSiteSelect(selectedSiteDoc)}
+                        disabled={!selectedSiteDoc}
+                    >
+                        <Text style={styles.continueButtonText}>Continue</Text>
+                    </TouchableOpacity>
+                </ScrollView>
+                <Modal visible={showSitePicker} transparent animationType="slide" onRequestClose={() => setShowSitePicker(false)}>
+                    <View style={styles.modalOverlay}>
+                        <View style={styles.modalContent}>
+                            <View style={styles.modalHeader}>
+                                <Text style={styles.modalTitle}>Sites</Text>
+                                <TouchableOpacity onPress={() => setShowSitePicker(false)}>
+                                    <Text style={styles.modalClose}>Done</Text>
+                                </TouchableOpacity>
+                            </View>
+                            <ScrollView>
+                                {candidateSites.map((s: any) => (
+                                    <TouchableOpacity
+                                        key={s._id}
+                                        style={[styles.regionOption, selectedSiteDoc?._id === s._id && styles.regionOptionSelected]}
+                                        onPress={() => {
+                                            setSelectedSiteDoc(s);
+                                            setShowSitePicker(false);
+                                        }}
+                                    >
+                                        <Text
+                                            style={[
+                                                styles.regionOptionText,
+                                                selectedSiteDoc?._id === s._id && styles.regionOptionTextSelected,
+                                            ]}
+                                        >
+                                            {s.name}
+                                        </Text>
+                                        {selectedSiteDoc?._id === s._id && <CheckCircle color="#2563eb" size={20} />}
+                                    </TouchableOpacity>
+                                ))}
+                            </ScrollView>
+                        </View>
+                    </View>
+                </Modal>
+                <View style={{ height: insets.bottom }} />
+            </SafeAreaView>
+        );
+    }
+
+    if (step === 'shift') {
+        const shifts = Array.isArray(selectedSiteDoc?.shifts) ? selectedSiteDoc.shifts : [];
+        return (
+            <SafeAreaView style={styles.container}>
+                <View style={styles.header}>
+                    <TouchableOpacity
+                        onPress={() => {
+                            if ((route.params as any)?.fromSiteDashboard) {
+                                navigation.goBack();
+                                return;
+                            }
+                            candidateSites.length > 1 ? setStep('site') : setStep('city');
+                        }}
+                        style={styles.backButton}
+                    >
+                        <ChevronLeft color="white" size={24} />
+                    </TouchableOpacity>
+                    <Text style={styles.headerTitle}>Select shift</Text>
+                    <View style={{ width: 44 }} />
+                </View>
+                <ScrollView contentContainerStyle={styles.scrollContent}>
+                    <Text style={styles.sectionTitle}>Shift</Text>
+                    <Text style={styles.sectionSubtitle}>{selectedSiteDoc?.name}</Text>
+                    <TouchableOpacity style={styles.regionButton} onPress={() => setShowShiftPicker(true)}>
+                        <View style={styles.regionButtonContent}>
+                            <Text style={[styles.regionButtonText, !selectedShift && styles.regionPlaceholder]}>
+                                {selectedShift ? `${selectedShift.name} (${selectedShift.start}–${selectedShift.end})` : 'Select shift'}
+                            </Text>
+                            <ChevronLeft color="#64748b" size={20} style={{ transform: [{ rotate: '-90deg' }] }} />
+                        </View>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={[styles.continueButton, !selectedShift && styles.disabled]}
+                        onPress={() => selectedShift && goToCameraStep()}
+                        disabled={!selectedShift}
+                    >
+                        <Text style={styles.continueButtonText}>Open camera</Text>
+                    </TouchableOpacity>
+                </ScrollView>
+                <Modal visible={showShiftPicker} transparent animationType="slide" onRequestClose={() => setShowShiftPicker(false)}>
+                    <View style={styles.modalOverlay}>
+                        <View style={styles.modalContent}>
+                            <View style={styles.modalHeader}>
+                                <Text style={styles.modalTitle}>Shifts</Text>
+                                <TouchableOpacity onPress={() => setShowShiftPicker(false)}>
+                                    <Text style={styles.modalClose}>Done</Text>
+                                </TouchableOpacity>
+                            </View>
+                            <ScrollView>
+                                {shifts.map((sh: any, idx: number) => (
+                                    <TouchableOpacity
+                                        key={`${sh.name}-${idx}`}
+                                        style={[styles.regionOption, selectedShift?.name === sh.name && styles.regionOptionSelected]}
+                                        onPress={() => {
+                                            setSelectedShift(sh);
+                                            setShowShiftPicker(false);
+                                        }}
+                                    >
+                                        <Text
+                                            style={[
+                                                styles.regionOptionText,
+                                                selectedShift?.name === sh.name && styles.regionOptionTextSelected,
+                                            ]}
+                                        >
+                                            {sh.name} · {sh.start}–{sh.end}
+                                        </Text>
+                                        {selectedShift?.name === sh.name && <CheckCircle color="#2563eb" size={20} />}
+                                    </TouchableOpacity>
+                                ))}
+                            </ScrollView>
+                        </View>
+                    </View>
+                </Modal>
+                <View style={{ height: insets.bottom }} />
+            </SafeAreaView>
+        );
+    }
+
     if (step === 'camera' && !permission.granted) {
         return (
             <SafeAreaView style={styles.container}>
@@ -441,7 +1056,10 @@ export default function MarkAttendanceScreen() {
                     <TouchableOpacity style={styles.button} onPress={requestPermission}>
                         <Text style={styles.buttonText}>Grant Permission</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity style={[styles.button, { marginTop: 12, backgroundColor: '#64748b' }]} onPress={() => setStep('region')}>
+                    <TouchableOpacity
+                        style={[styles.button, { marginTop: 12, backgroundColor: '#64748b' }]}
+                        onPress={() => (customUser?.regionId ? navigation.goBack() : setStep('region'))}
+                    >
                         <Text style={styles.buttonText}>Back</Text>
                     </TouchableOpacity>
                 </View>
@@ -459,12 +1077,12 @@ export default function MarkAttendanceScreen() {
             />
             <View style={styles.cameraOverlay}>
                 <View style={styles.cameraHeader}>
-                    <TouchableOpacity onPress={() => { setStep('city'); setDetectedPerson(null); setAttendanceStatus(null); }} style={styles.iconBtn}>
+                    <TouchableOpacity onPress={backFromCamera} style={styles.iconBtn}>
                         <ChevronLeft color="white" size={24} />
                     </TouchableOpacity>
-                    <Text style={styles.cameraTitle}>Face Recognition</Text>
-                    <TouchableOpacity 
-                        onPress={() => setFacing(facing === 'front' ? 'back' : 'front')} 
+                    <Text style={styles.cameraTitle}>{checkoutOnly ? 'Check-out verify' : 'Face Recognition'}</Text>
+                    <TouchableOpacity
+                        onPress={() => setFacing(facing === 'front' ? 'back' : 'front')}
                         style={styles.cameraSwitchBtn}
                     >
                         <RefreshCw color="white" size={20} />
@@ -472,7 +1090,80 @@ export default function MarkAttendanceScreen() {
                     </TouchableOpacity>
                 </View>
 
-                {detectedPerson ? (
+                {!strictSingleCheckout && (
+                    <>
+                        <View style={styles.cameraContent} pointerEvents="box-none">
+                            <View style={styles.faceFrame}>
+                                <View style={[styles.frameCorner, styles.topLeft]} />
+                                <View style={[styles.frameCorner, styles.topRight]} />
+                                <View style={[styles.frameCorner, styles.bottomLeft]} />
+                                <View style={[styles.frameCorner, styles.bottomRight]} />
+                            </View>
+                            <Text style={styles.instructionText}>
+                                Live scan adds faces · tap names to select · mark check-in/out for all selected
+                            </Text>
+                        </View>
+
+                        {Object.keys(scannedPeople).length > 0 ? (
+                            <View style={styles.batchSelectPanel}>
+                                <Text style={styles.scannedStripLabel}>Recognized — tap to select / unselect</Text>
+                                <ScrollView
+                                    horizontal
+                                    showsHorizontalScrollIndicator={false}
+                                    contentContainerStyle={styles.scannedChipsRow}
+                                >
+                                    {Object.values(scannedPeople).map((p) => {
+                                        const on = selectedEmpIds.includes(p.emp_id);
+                                        return (
+                                            <TouchableOpacity
+                                                key={p.emp_id}
+                                                style={[styles.personChip, on && styles.personChipSelected]}
+                                                onPress={() => toggleSelectEmp(p.emp_id)}
+                                            >
+                                                {on ? (
+                                                    <CheckCircle color="#34d399" size={14} style={styles.chipCheck} />
+                                                ) : null}
+                                                <Text style={styles.personChipName} numberOfLines={1}>
+                                                    {p.name}
+                                                </Text>
+                                                <Text style={styles.personChipId}>{p.emp_id}</Text>
+                                            </TouchableOpacity>
+                                        );
+                                    })}
+                                </ScrollView>
+                            </View>
+                        ) : null}
+                    </>
+                )}
+
+                {strictSingleCheckout && Object.keys(scannedPeople).length > 0 && (
+                    <View style={styles.scannedStrip}>
+                        <Text style={styles.scannedStripLabel}>Detected — tap a person</Text>
+                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.scannedChipsRow}>
+                            {Object.values(scannedPeople).map((p) => (
+                                <TouchableOpacity
+                                    key={p.emp_id}
+                                    style={styles.personChip}
+                                    onPress={() => {
+                                        setDetectedPerson({
+                                            emp_id: p.emp_id,
+                                            name: p.name,
+                                            match_score: p.match_score,
+                                        });
+                                        setPickMatches(null);
+                                    }}
+                                >
+                                    <Text style={styles.personChipName} numberOfLines={1}>
+                                        {p.name}
+                                    </Text>
+                                    <Text style={styles.personChipId}>{p.emp_id}</Text>
+                                </TouchableOpacity>
+                            ))}
+                        </ScrollView>
+                    </View>
+                )}
+
+                {strictSingleCheckout && detectedPerson ? (
                     <View style={styles.detectedContainer}>
                         <View style={styles.detectedCard}>
                             <View style={styles.detectedHeader}>
@@ -489,12 +1180,7 @@ export default function MarkAttendanceScreen() {
                                     <Text style={styles.infoLabel}>Employee ID:</Text>
                                     <Text style={styles.infoValue}>{detectedPerson.emp_id}</Text>
                                 </View>
-                                {detectedPerson.emp_code && (
-                                    <View style={styles.infoRow}>
-                                        <Text style={styles.infoLabel}>Employee Code:</Text>
-                                        <Text style={styles.infoValue}>{detectedPerson.emp_code}</Text>
-                                    </View>
-                                )}
+
                                 <View style={styles.infoRow}>
                                     <Text style={styles.infoLabel}>Match Score:</Text>
                                     <Text style={styles.infoValue}>{detectedPerson.match_score}%</Text>
@@ -508,11 +1194,34 @@ export default function MarkAttendanceScreen() {
                                 </View>
                             ) : attendanceStatus ? (
                                 <View style={styles.attendanceStatus}>
-                                    {attendanceStatus.checked_in ? (
+                                    {attendanceStatus.fullyDone ? (
+                                        <>
+                                            <View style={styles.statusBadge}>
+                                                <CheckCircle color="#10b981" size={20} />
+                                                <Text style={styles.statusText}>Checked out</Text>
+                                            </View>
+                                            <Text style={styles.doneHint}>
+                                                {workDate} · In{' '}
+                                                {attendanceStatus.checkInTime
+                                                    ? new Date(attendanceStatus.checkInTime).toLocaleTimeString([], {
+                                                          hour: '2-digit',
+                                                          minute: '2-digit',
+                                                      })
+                                                    : '—'}{' '}
+                                                · Out{' '}
+                                                {attendanceStatus.checkOutTime
+                                                    ? new Date(attendanceStatus.checkOutTime).toLocaleTimeString([], {
+                                                          hour: '2-digit',
+                                                          minute: '2-digit',
+                                                      })
+                                                    : '—'}
+                                            </Text>
+                                        </>
+                                    ) : attendanceStatus.checked_in ? (
                                         <>
                                             <View style={styles.statusBadge}>
                                                 <Clock color="#10b981" size={20} />
-                                                <Text style={styles.statusText}>Already Checked In</Text>
+                                                <Text style={styles.statusText}>Checked in</Text>
                                             </View>
                                             <TouchableOpacity
                                                 style={[styles.actionButton, styles.checkOutButton]}
@@ -529,11 +1238,32 @@ export default function MarkAttendanceScreen() {
                                                 )}
                                             </TouchableOpacity>
                                         </>
+                                    ) : checkoutOnly ? (
+                                        <>
+                                            <View style={styles.statusBadge}>
+                                                <Clock color="#38bdf8" size={20} />
+                                                <Text style={styles.statusText}>Confirm check-out</Text>
+                                            </View>
+                                            <TouchableOpacity
+                                                style={[styles.actionButton, styles.checkOutButton]}
+                                                onPress={() => handleMarkAttendance('check_out')}
+                                                disabled={loading}
+                                            >
+                                                {loading ? (
+                                                    <ActivityIndicator color="white" />
+                                                ) : (
+                                                    <>
+                                                        <X color="white" size={20} />
+                                                        <Text style={styles.actionButtonText}>Complete check-out</Text>
+                                                    </>
+                                                )}
+                                            </TouchableOpacity>
+                                        </>
                                     ) : (
                                         <>
                                             <View style={styles.statusBadge}>
                                                 <CheckCircle color="#f59e0b" size={20} />
-                                                <Text style={styles.statusText}>Not Checked In</Text>
+                                                <Text style={styles.statusText}>Not checked in</Text>
                                             </View>
                                             <TouchableOpacity
                                                 style={[styles.actionButton, styles.checkInButton]}
@@ -559,13 +1289,14 @@ export default function MarkAttendanceScreen() {
                                 onPress={() => {
                                     setDetectedPerson(null);
                                     setAttendanceStatus(null);
+                                    setPickMatches(null);
                                 }}
                             >
                                 <Text style={styles.retryButtonText}>Try Again</Text>
                             </TouchableOpacity>
                         </View>
                     </View>
-                ) : (
+                ) : strictSingleCheckout ? (
                     <View style={styles.cameraContent}>
                         <View style={styles.faceFrame}>
                             <View style={[styles.frameCorner, styles.topLeft]} />
@@ -575,24 +1306,110 @@ export default function MarkAttendanceScreen() {
                         </View>
                         <Text style={styles.instructionText}>Position your face within the frame</Text>
                     </View>
-                )}
+                ) : null}
 
                 <View style={styles.cameraFooter}>
-                    {!detectedPerson && !loading && (
-                        <TouchableOpacity
-                            style={styles.captureButton}
-                            onPress={captureAndRecognize}
-                            disabled={loading}
-                        >
-                            {loading ? (
-                                <ActivityIndicator color="white" />
-                            ) : (
-                                <Text style={styles.captureButtonText}>Capture & Recognize</Text>
-                            )}
-                        </TouchableOpacity>
+                    {(!strictSingleCheckout || !detectedPerson) && (
+                        <>
+                            <TouchableOpacity
+                                style={[styles.captureButton, styles.liveScanBtn, liveScanning && styles.liveScanBtnOn]}
+                                onPress={() => setLiveScanning((v) => !v)}
+                            >
+                                <ScanLine color="white" size={20} />
+                                <Text style={styles.captureButtonText}>
+                                    {liveScanning ? 'Stop live scan' : 'Live scan (~3s)'}
+                                </Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[styles.captureButton, { marginTop: 10, backgroundColor: '#1d4ed8' }]}
+                                onPress={captureAndRecognize}
+                                disabled={loading}
+                            >
+                                {loading ? (
+                                    <ActivityIndicator color="white" />
+                                ) : (
+                                    <Text style={styles.captureButtonText}>Capture once</Text>
+                                )}
+                            </TouchableOpacity>
+                            {!strictSingleCheckout ? (
+                                <>
+                                    <TouchableOpacity
+                                        style={[
+                                            styles.captureButton,
+                                            {
+                                                marginTop: 10,
+                                                backgroundColor: '#059669',
+                                                opacity: selectedEmpIds.length ? 1 : 0.45,
+                                            },
+                                        ]}
+                                        onPress={() => handleBatchMark('check_in')}
+                                        disabled={loading || selectedEmpIds.length === 0}
+                                    >
+                                        <Text style={styles.captureButtonText}>
+                                            Mark check-in ({selectedEmpIds.length})
+                                        </Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity
+                                        style={[
+                                            styles.captureButton,
+                                            {
+                                                marginTop: 8,
+                                                backgroundColor: '#b91c1c',
+                                                opacity: selectedEmpIds.length ? 1 : 0.45,
+                                            },
+                                        ]}
+                                        onPress={() => handleBatchMark('check_out')}
+                                        disabled={loading || selectedEmpIds.length === 0}
+                                    >
+                                        <Text style={styles.captureButtonText}>
+                                            Mark check-out ({selectedEmpIds.length})
+                                        </Text>
+                                    </TouchableOpacity>
+                                </>
+                            ) : null}
+                        </>
                     )}
                 </View>
             </View>
+
+            <Modal visible={!!pickMatches?.length} transparent animationType="fade" onRequestClose={() => setPickMatches(null)}>
+                <View style={styles.modalOverlay}>
+                    <View style={[styles.modalContent, { maxHeight: '72%' }]}>
+                        <View style={styles.modalHeader}>
+                            <Text style={styles.modalTitle}>Multiple matches</Text>
+                            <TouchableOpacity onPress={() => setPickMatches(null)}>
+                                <Text style={styles.modalClose}>Cancel</Text>
+                            </TouchableOpacity>
+                        </View>
+                        <FlatList
+                            data={pickMatches || []}
+                            keyExtractor={(item, i) => `${item.emp_id}-${i}`}
+                            renderItem={({ item }) => (
+                                <TouchableOpacity
+                                    style={styles.regionOption}
+                                    onPress={() => {
+                                        setDetectedPerson({
+                                            emp_id: item.emp_id,
+                                            name: item.name,
+                                            match_score: item.match_score,
+                                            face_encoding_id: item.face_encoding_id,
+                                        });
+                                        mergeMatchesIntoScanned([item]);
+                                        setPickMatches(null);
+                                    }}
+                                >
+                                    <View style={{ flex: 1 }}>
+                                        <Text style={styles.regionOptionText}>{item.name}</Text>
+                                        <Text style={{ color: '#64748b', fontSize: 13, marginTop: 4 }}>ID {item.emp_id}</Text>
+                                    </View>
+                                    <ChevronLeft color="#64748b" size={18} style={{ transform: [{ rotate: '180deg' }] }} />
+                                </TouchableOpacity>
+                            )}
+                        />
+                    </View>
+                </View>
+            </Modal>
+
             <View style={{ height: insets.bottom }} />
         </SafeAreaView>
     );
@@ -822,11 +1639,64 @@ const styles = StyleSheet.create({
         paddingVertical: 16,
         borderRadius: 24,
     },
+    liveScanBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+        backgroundColor: '#0f172a',
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.12)',
+    },
+    liveScanBtnOn: {
+        borderColor: '#34d399',
+        backgroundColor: 'rgba(16,185,129,0.15)',
+    },
     captureButtonText: {
         color: 'white',
         fontSize: 16,
         fontWeight: 'bold',
     },
+    scannedStrip: {
+        paddingHorizontal: 16,
+        paddingBottom: 8,
+        maxHeight: 100,
+    },
+    scannedStripLabel: {
+        color: '#93c5fd',
+        fontSize: 11,
+        fontWeight: '700',
+        marginBottom: 8,
+        textTransform: 'uppercase',
+        letterSpacing: 0.6,
+    },
+    scannedChipsRow: {
+        flexDirection: 'row',
+        gap: 8,
+        paddingRight: 8,
+    },
+    batchSelectPanel: {
+        paddingHorizontal: 12,
+        paddingBottom: 6,
+        maxHeight: 120,
+        backgroundColor: 'rgba(2,6,23,0.55)',
+    },
+    personChip: {
+        position: 'relative',
+        paddingVertical: 10,
+        paddingHorizontal: 14,
+        borderRadius: 14,
+        backgroundColor: 'rgba(15,23,42,0.92)',
+        borderWidth: 2,
+        borderColor: 'rgba(59,130,246,0.35)',
+        maxWidth: 160,
+    },
+    personChipSelected: {
+        borderColor: '#34d399',
+        backgroundColor: 'rgba(16,185,129,0.18)',
+    },
+    chipCheck: { position: 'absolute', top: 6, right: 6 },
+    personChipName: { color: '#fff', fontSize: 14, fontWeight: '700', paddingRight: 16 },
+    personChipId: { color: '#64748b', fontSize: 11, marginTop: 4, fontWeight: '600' },
     detectedContainer: {
         flex: 1,
         justifyContent: 'center',
@@ -921,6 +1791,13 @@ const styles = StyleSheet.create({
     retryButtonText: {
         color: '#64748b',
         fontSize: 14,
+    },
+    doneHint: {
+        color: '#94a3b8',
+        fontSize: 13,
+        textAlign: 'center',
+        marginTop: 8,
+        lineHeight: 18,
     },
     text: {
         color: 'white',

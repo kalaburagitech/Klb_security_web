@@ -12,7 +12,7 @@ import { isAdministrativeRole } from '../../utils/roleUtils';
 export default function HistoryScreen() {
     const insets = useSafeAreaInsets();
     const { organizationId, userId, customUser } = useCustomAuth();
-    const isAdmin = isAdministrativeRole(customUser?.role);
+    const isAdmin = isAdministrativeRole(customUser);
     const route = useRoute<any>();
     const [selectedFilterSite, setSelectedFilterSite] = useState<string | null>(route?.params?.siteId || null);
     

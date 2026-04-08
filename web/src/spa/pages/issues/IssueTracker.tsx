@@ -7,6 +7,7 @@ import { api } from "../../../services/convex";
 import { useUser } from "@clerk/nextjs";
 import { toast } from "sonner";
 import type { Id } from "../../../../convex/_generated/dataModel";
+import { userHasAnyRole } from "../../../lib/userRoles";
 
 export default function IssueTracker() {
     const { user } = useUser();
@@ -17,13 +18,16 @@ export default function IssueTracker() {
         user?.id ? { clerkId: user.id } : "skip"
     );
     const organizationId = currentUser?.organizationId;
-    const orgs = useQuery(api.organizations.list);
+    const orgs = useQuery(
+        api.organizations.list,
+        currentUser?.organizationId ? { currentOrganizationId: currentUser.organizationId } : {}
+    );
 
     const orgIssues = useQuery((api.logs as any).listIssuesByOrg,
         (organizationId || (selectedOrgId as Id<"organizations">)) ? { organizationId: (organizationId || selectedOrgId) as Id<"organizations"> } : "skip"
     );
     const allIssuesList = useQuery(api.logs.listAllIssues);
-    const isSuperAdmin = currentUser?.role === "Owner" || currentUser?.role === "Deployment Manager";
+    const isSuperAdmin = userHasAnyRole(currentUser, ["Owner", "Deployment Manager"]);
     const issues = isSuperAdmin ? allIssuesList : orgIssues;
 
     const resolveIssue = useMutation(api.logs.resolveIssue);

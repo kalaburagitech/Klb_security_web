@@ -1,5 +1,25 @@
 import { v } from "convex/values";
-import { mutation } from "./_generated/server";
+import { mutation, query } from "./_generated/server";
+
+export const listRecentByUser = query({
+  args: {
+    userId: v.id("users"),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const cap = Math.min(Math.max(args.limit ?? 25, 1), 100);
+    const logs = await ctx.db
+      .query("loginLogs")
+      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .collect();
+
+    const sorted = logs.sort(
+      (a, b) =>
+        (b.loginTime ?? b._creationTime) - (a.loginTime ?? a._creationTime)
+    );
+    return sorted.slice(0, cap);
+  },
+});
 
 export const logLogin = mutation({
   args: {

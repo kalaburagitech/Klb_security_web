@@ -26,7 +26,7 @@ export default function IssueReview() {
     });
 
     const fetchIssues = async () => {
-        const isAdmin = isAdministrativeRole(customUser?.role);
+        const isAdmin = isAdministrativeRole(customUser);
         const effectiveOrgId = isAdmin ? 'all' : (organizationId as string);
         if (!effectiveOrgId) return;
 

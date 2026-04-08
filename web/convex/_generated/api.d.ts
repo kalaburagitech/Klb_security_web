@@ -17,12 +17,18 @@ import type * as images from "../images.js";
 import type * as jwt from "../jwt.js";
 import type * as loginLogs from "../loginLogs.js";
 import type * as logs from "../logs.js";
+import type * as mainOrganization from "../mainOrganization.js";
+import type * as migrations_migrateUserRoles from "../migrations/migrateUserRoles.js";
+import type * as migrations_stripLegacyUserRoleField from "../migrations/stripLegacyUserRoleField.js";
 import type * as monitoring from "../monitoring.js";
+import type * as organizationAccess from "../organizationAccess.js";
 import type * as organizations from "../organizations.js";
 import type * as patrolPoints from "../patrolPoints.js";
+import type * as patrolSessions from "../patrolSessions.js";
 import type * as regions from "../regions.js";
 import type * as reports from "../reports.js";
 import type * as sites from "../sites.js";
+import type * as userAccess from "../userAccess.js";
 import type * as users from "../users.js";
 
 import type {
@@ -41,12 +47,18 @@ declare const fullApi: ApiFromModules<{
   jwt: typeof jwt;
   loginLogs: typeof loginLogs;
   logs: typeof logs;
+  mainOrganization: typeof mainOrganization;
+  "migrations/migrateUserRoles": typeof migrations_migrateUserRoles;
+  "migrations/stripLegacyUserRoleField": typeof migrations_stripLegacyUserRoleField;
   monitoring: typeof monitoring;
+  organizationAccess: typeof organizationAccess;
   organizations: typeof organizations;
   patrolPoints: typeof patrolPoints;
+  patrolSessions: typeof patrolSessions;
   regions: typeof regions;
   reports: typeof reports;
   sites: typeof sites;
+  userAccess: typeof userAccess;
   users: typeof users;
 }>;
 

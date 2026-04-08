@@ -19,7 +19,7 @@ export function Layout({ children, title = "Security Dashboard" }: LayoutProps) 
     );
     
     const organization = useQuery(api.organizations.get, 
-        currentUser?.organizationId ? { id: currentUser.organizationId } : "skip"
+        currentUser?.organizationId ? { id: currentUser.organizationId, currentOrganizationId: currentUser.organizationId } : "skip"
     );
 
     return (
@@ -42,14 +42,6 @@ export function Layout({ children, title = "Security Dashboard" }: LayoutProps) 
                         <h2 className="text-sm md:text-lg font-semibold tracking-tight text-white/90 truncate max-w-[150px] md:max-w-none">
                             {title}
                         </h2>
-                        <div className="hidden md:flex items-center bg-white/5 rounded-full px-3 py-1 border border-white/10 ml-4 group transition-colors focus-within:border-primary/50">
-                            <Search className="w-3.5 h-3.5 text-muted-foreground group-hover:text-primary transition-colors" />
-                            <input
-                                type="text"
-                                placeholder="Search..."
-                                className="bg-transparent border-none focus:outline-none text-xs px-2 py-1 w-48 text-white placeholder:text-muted-foreground"
-                            />
-                        </div>
                     </div>
 
                     <div className="flex items-center gap-4">

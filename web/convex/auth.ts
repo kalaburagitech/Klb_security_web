@@ -1,56 +1,143 @@
+import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
-import { mutation } from "./_generated/server";
+import { normalizePermissionsForRoles } from "./userAccess";
+import { ensureMainOrganization } from "./mainOrganization";
 
+function rolesForUserDoc(u: { roles?: string[] }): string[] {
+  if (u.roles && u.roles.length > 0) return u.roles;
+  return ["NEW_USER"];
+}
+
+// Get or create user when they sign in
 export const getOrCreateUser = mutation({
   args: {
     clerkId: v.string(),
+    email: v.optional(v.string()),
     name: v.string(),
-    email: v.string(),
   },
   handler: async (ctx, args) => {
-    // Check if user exists by email
-    const userByEmail = await ctx.db
-      .query("users")
-      .withIndex("by_email", (q) => q.eq("email", args.email))
-      .unique();
+    const { clerkId, email, name } = args;
 
-    if (userByEmail) {
-      // If user exists but clerkId is different (e.g. pending user), update it
-      if (userByEmail.clerkId !== args.clerkId) {
-        await ctx.db.patch(userByEmail._id, { clerkId: args.clerkId });
+    // Prefer the existing Clerk link when it exists.
+    const existingUser = await ctx.db
+      .query("users")
+      .withIndex("by_clerkId", (q) => q.eq("clerkId", clerkId))
+      .first();
+
+    if (existingUser) {
+      const normalizedPermissions = normalizePermissionsForRoles(
+        rolesForUserDoc(existingUser),
+        existingUser.permissions
+      );
+
+      // Update user info if needed
+      if (
+        existingUser.name !== name ||
+        existingUser.email !== email ||
+        JSON.stringify(existingUser.permissions || {}) !== JSON.stringify(normalizedPermissions)
+      ) {
+        await ctx.db.patch(existingUser._id, {
+          name,
+          email: email || existingUser.email,
+          permissions: normalizedPermissions,
+        });
+        return {
+          ...existingUser,
+          name,
+          email: email || existingUser.email,
+          permissions: normalizedPermissions,
+        };
       }
-      return userByEmail;
+      return existingUser;
     }
 
-    // Check if user exists by clerkId
-    const userByClerkId = await ctx.db
+    // If the email already exists, link this Clerk account to that user.
+    if (email) {
+      const existingByEmail = await ctx.db
+        .query("users")
+        .withIndex("by_email", (q) => q.eq("email", email))
+        .first();
+
+      if (existingByEmail) {
+        const nextName = name || existingByEmail.name;
+        await ctx.db.patch(existingByEmail._id, {
+          clerkId,
+          name: nextName,
+          email,
+          permissions: normalizePermissionsForRoles(
+            rolesForUserDoc(existingByEmail),
+            existingByEmail.permissions
+          ),
+        });
+
+        return {
+          ...existingByEmail,
+          clerkId,
+          name: nextName,
+          email,
+          permissions: normalizePermissionsForRoles(
+            rolesForUserDoc(existingByEmail),
+            existingByEmail.permissions
+          ),
+        };
+      }
+    }
+
+    // For any other new user, ensure we have a valid main organization.
+    const finalOrgId = await ensureMainOrganization(ctx);
+
+    // First-time login without a matching user record stays pending until approved.
+    const userId = await ctx.db.insert("users", {
+      clerkId,
+      name,
+      email: email || undefined,
+      roles: ["NEW_USER"],
+      status: "active",
+      organizationId: finalOrgId,
+      cities: [],
+      permissions: normalizePermissionsForRoles(["NEW_USER"]),
+      creationTime: Date.now(),
+    });
+    return await ctx.db.get(userId);
+  },
+});
+
+// Get current user
+export const getCurrentUser = query({
+  args: { clerkId: v.string() },
+  handler: async (ctx, args) => {
+    const user = await ctx.db
       .query("users")
       .withIndex("by_clerkId", (q) => q.eq("clerkId", args.clerkId))
-      .unique();
+      .first();
+    return user;
+  },
+});
 
-    if (userByClerkId) {
-      return userByClerkId;
-    }
-
-    // Create new user
-    // We need an organizationId. Let's find one or create a "System" organization.
-    let org = await ctx.db.query("organizations").filter(q => q.eq(q.field("name"), "System")).unique();
-    if (!org) {
-      const orgId = await ctx.db.insert("organizations", {
-        name: "System",
-        createdAt: Date.now(),
-      });
-      org = await ctx.db.get(orgId);
-    }
-
-    const userId = await ctx.db.insert("users", {
-      clerkId: args.clerkId,
-      name: args.name,
-      email: args.email,
-      role: "NEW_USER",
-      organizationId: org!._id,
-    });
-
-    return await ctx.db.get(userId);
+// Update user
+export const updateUser = mutation({
+  args: {
+    id: v.id("users"),
+    name: v.optional(v.string()),
+    email: v.optional(v.string()),
+    roles: v.optional(
+      v.array(
+        v.union(
+          v.literal("Owner"),
+          v.literal("Deployment Manager"),
+          v.literal("Manager"),
+          v.literal("Visiting Officer"),
+          v.literal("SO"),
+          v.literal("Client"),
+          v.literal("NEW_USER")
+        )
+      )
+    ),
+    organizationId: v.optional(v.id("organizations")),
+  },
+  handler: async (ctx, args) => {
+    const { id, ...updates } = args;
+    await ctx.db.patch(id, updates);
+    return id;
   },
 });

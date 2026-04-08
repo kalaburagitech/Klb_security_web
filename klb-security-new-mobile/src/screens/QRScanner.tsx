@@ -1,54 +1,102 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, Dimensions, Alert } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import { ArrowLeft, Zap, ZapOff, Info } from 'lucide-react-native';
 // import { useQuery } from 'convex/react';
 // import { api } from '../services/convex';
-import { siteService } from '../services/api';
+import { siteService, logService } from '../services/api';
 import { usePatrolStore } from '../store/usePatrolStore';
 import { useCustomAuth } from '../context/AuthContext';
 import * as Location from 'expo-location';
 
 const { width } = Dimensions.get('window');
 
+function formatPatrolElapsed(ms: number) {
+    if (!Number.isFinite(ms) || ms < 0) ms = 0;
+    const s = Math.floor(ms / 1000);
+    const m = Math.floor(s / 60);
+    const h = Math.floor(m / 60);
+    if (h > 0) {
+        return `${h}:${String(m % 60).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+    }
+    return `${m}:${String(s % 60).padStart(2, '0')}`;
+}
+
 export default function QRScanner() {
     const [permission, requestPermission] = useCameraPermissions();
     const [scanned, setScanned] = useState(false);
+    const [cameraKey, setCameraKey] = useState(0);
+    const scanLockRef = useRef(false);
     const [torch, setTorch] = useState(false);
     const navigation = useNavigation<any>();
     const route = useRoute<any>();
     const { customUser } = useCustomAuth();
     const activeSession = usePatrolStore((state) => state.activeSession);
+    const lastScannedPointName = usePatrolStore((state) => state.lastScannedPointName);
+    const setSession = usePatrolStore((state) => state.setSession);
+    const setPatrolSubject = usePatrolStore((state) => state.setPatrolSubject);
 
-    const { isVisit, siteId, siteName, mode, pointId, pointName } = route.params || {};
+    const { isVisit, siteId, siteName, mode, pointId, pointName, pendingPointName } = route.params || {};
 
     const [targetSite, setTargetSite] = useState<any>(null);
+    const [nowTick, setNowTick] = useState(Date.now());
+
+    const scanCount = activeSession?.scannedPointIds?.length ?? 0;
+
+    useEffect(() => {
+        if (!activeSession?.startTime || mode === 'setup' || isVisit) return;
+        const id = setInterval(() => setNowTick(Date.now()), 1000);
+        return () => clearInterval(id);
+    }, [activeSession?.startTime, mode, isVisit]);
+
     useEffect(() => {
         if (mode === 'setup' && siteId) {
-            // Using getAllSites for now and filtering since getSiteById isn't in api.ts yet
-            siteService.getAllSites()
-                .then((res: any) => {
-                    const site = res.data.find((s: any) => s._id === siteId);
-                    setTargetSite(site);
-                })
-                .catch((err: any) => console.error("Error fetching site details:", err));
+            siteService
+                .getSiteById(siteId)
+                .then((res: any) => setTargetSite(res.data))
+                .catch((err: any) => {
+                    console.error('Error fetching site:', err);
+                    setTargetSite(null);
+                });
         }
     }, [mode, siteId]);
 
-    const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
-        const R = 6371000; // Radius of the earth in meters
-        const dLat = (lat2 - lat1) * Math.PI / 180;
-        const dLon = (lon2 - lon1) * Math.PI / 180;
-        const a =
-            Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-            Math.sin(dLon / 2) * Math.sin(dLon / 2);
-        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-        return R * c; // Distance in meters
-    };
+    useFocusEffect(
+        useCallback(() => {
+            scanLockRef.current = false;
+            setScanned(false);
+            return undefined;
+        }, [])
+    );
 
-    const isPointRecentlyScanned = usePatrolStore((state) => state.isPointRecentlyScanned);
+    const unlockScanner = useCallback(() => {
+        scanLockRef.current = false;
+        setScanned(false);
+        setCameraKey((k) => k + 1);
+    }, []);
+
+    const endPatrolSession = async () => {
+        const s = usePatrolStore.getState().activeSession;
+        let discarded = false;
+        if (s?.id) {
+            try {
+                const res = await logService.endSession(s.id);
+                discarded = res?.data?.discarded === true;
+            } catch (e) {
+                console.warn('[QRScanner] end session', e);
+            }
+        }
+        setSession(null);
+        setPatrolSubject(null);
+        if (discarded) {
+            Alert.alert(
+                'Patrol not saved',
+                'No checkpoints were scanned in this round, so nothing was saved.'
+            );
+        }
+        navigation.navigate('MainTabs', { screen: 'Patrol' } as never);
+    };
 
     if (!permission) return <View style={styles.container} />;
 
@@ -63,66 +111,50 @@ export default function QRScanner() {
         );
     }
 
-    const handleBarCodeScanned = async ({ data }: any) => {
-        if (scanned) return;
+    const handleBarCodeScanned = async (payload: { data: string }) => {
+        const data = payload?.data;
+        if (data == null || data === '') return;
+        if (scanned || scanLockRef.current) return;
+        scanLockRef.current = true;
         setScanned(true);
 
-        // Duplicate scan check
-        if (!mode && isPointRecentlyScanned(data)) {
-            Alert.alert(
-                "Duplicate Scan",
-                "This point was recently scanned. Please wait before scanning it again.",
-                [{ text: "OK", onPress: () => setScanned(false) }]
-            );
-            return;
-        }
-
         if (mode === 'setup') {
-            if (!targetSite) {
-                Alert.alert("Error", "Site data not found.");
-                setScanned(false);
+            if (!siteId) {
+                Alert.alert('Error', 'Missing site. Go back and select a site again.');
+                unlockScanner();
                 return;
             }
 
             try {
+                let latStr = '';
+                let lngStr = '';
                 const { status } = await Location.requestForegroundPermissionsAsync();
                 if (status !== 'granted') {
-                    Alert.alert("Permission Error", "Location permission is required for setup.");
-                    setScanned(false);
-                    return;
-                }
-
-                const location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
-                const distance = calculateDistance(
-                    location.coords.latitude,
-                    location.coords.longitude,
-                    targetSite.latitude,
-                    targetSite.longitude
-                );
-
-                if (distance > 100) {
                     Alert.alert(
-                        "Geo-fence Error",
-                        `You are too far from the site (${Math.round(distance)}m). You must be within 100m to setup a point.`
+                        'Location required',
+                        'Location is needed to save this checkpoint’s GPS (your phone’s position). We do not use the site centre for this step.'
                     );
-                    setScanned(false);
+                    unlockScanner();
                     return;
                 }
+                const location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+                latStr = location.coords.latitude.toString();
+                lngStr = location.coords.longitude.toString();
 
                 navigation.navigate('CreatePoint', {
                     mode: 'setup',
                     siteId,
-                    siteName: targetSite?.name || siteName,
+                    siteName: targetSite?.name || siteName || 'Site',
                     pointId,
-                    pointName,
+                    pointName: pointName || pendingPointName,
                     qrCode: data,
-                    lat: location.coords.latitude.toString(),
-                    lng: location.coords.longitude.toString()
+                    lat: latStr,
+                    lng: lngStr,
                 });
             } catch (error) {
                 console.error(error);
                 Alert.alert("Location Error", "Could not verify your location.");
-                setScanned(false);
+                unlockScanner();
             }
         } else if (isVisit) {
             navigation.navigate('VisitForm', {
@@ -132,18 +164,17 @@ export default function QRScanner() {
                 organizationId: customUser?.organizationId
             });
         } else {
-            // Pass data to PatrolForm for validation and logging
             navigation.navigate('PatrolForm', { qrCode: data });
         }
-
-        // Reset scanned after 2 seconds to allow re-entry if back
-        setTimeout(() => setScanned(false), 2000);
     };
 
     return (
         <View style={styles.container}>
             <CameraView
+                key={cameraKey}
                 style={StyleSheet.absoluteFillObject}
+                facing="back"
+                barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
                 onBarcodeScanned={scanned ? undefined : handleBarCodeScanned}
                 enableTorch={torch}
             />
@@ -165,6 +196,24 @@ export default function QRScanner() {
                     </TouchableOpacity>
                 </View>
 
+                {!isVisit && !mode && activeSession ? (
+                    <View style={styles.patrolHud}>
+                        <View style={styles.hudRow}>
+                            <Text style={styles.hudTimer}>
+                                {formatPatrolElapsed(nowTick - activeSession.startTime)}
+                            </Text>
+                            <View style={styles.hudPill}>
+                                <Text style={styles.hudPillText}>{scanCount} scanned</Text>
+                            </View>
+                        </View>
+                        <Text style={styles.hudLast} numberOfLines={2}>
+                            {lastScannedPointName
+                                ? `Last: ${lastScannedPointName}`
+                                : 'Scan a checkpoint QR to begin logging'}
+                        </Text>
+                    </View>
+                ) : null}
+
                 <View style={styles.scannerOuter}>
                     <View style={styles.scannerInner}>
                         <View style={styles.cornerTopLeft} />
@@ -174,22 +223,35 @@ export default function QRScanner() {
                         <View style={styles.scanLine} />
                     </View>
                     <View style={styles.scanBadge}>
-                        <Text style={styles.scanBadgeText}>{scanned ? "Processing..." : "Ready to scan"}</Text>
+                        <Text style={styles.scanBadgeText}>
+                            {scanned ? 'Open Scan again if stuck' : 'Ready to scan'}
+                        </Text>
                     </View>
                 </View>
 
                 <View style={styles.footer}>
+                    <TouchableOpacity style={styles.scanAgainBtn} onPress={unlockScanner} activeOpacity={0.88}>
+                        <Text style={styles.scanAgainText}>Scan again</Text>
+                    </TouchableOpacity>
                     <View style={styles.infoBox}>
                         <Info color="#3b82f6" size={18} />
                         <Text style={styles.infoText}>
                             {mode === 'setup'
-                                ? "Scan the QR code to register this point at your current location."
-                                : "Align the QR inside the frame. It will capture automatically."}
+                                ? 'Scan the label, then save on the next screen. Default radius 200m.'
+                                : 'Aim at the QR. Distance and site are checked on the next screen.'}
                         </Text>
                     </View>
-                    <View style={styles.sessionPill}>
-                        <Text style={styles.sessionInfo}>Session live</Text>
-                    </View>
+                    {mode !== 'setup' && !isVisit && activeSession ? (
+                        <TouchableOpacity style={styles.endPatrolBtn} onPress={endPatrolSession} activeOpacity={0.9}>
+                            <Text style={styles.endPatrolText}>Stop patrol</Text>
+                        </TouchableOpacity>
+                    ) : (
+                        <View style={styles.sessionPill}>
+                            <Text style={styles.sessionInfo}>
+                                {isVisit ? 'Visit mode' : mode === 'setup' ? 'Setup mode' : 'Patrol'}
+                            </Text>
+                        </View>
+                    )}
                 </View>
             </View>
         </View>
@@ -237,6 +299,47 @@ const styles = StyleSheet.create({
         fontWeight: '600',
         textTransform: 'uppercase',
         letterSpacing: 1,
+    },
+    patrolHud: {
+        marginHorizontal: 20,
+        marginBottom: 8,
+        paddingVertical: 12,
+        paddingHorizontal: 16,
+        borderRadius: 16,
+        backgroundColor: 'rgba(2, 6, 23, 0.82)',
+        borderWidth: 1,
+        borderColor: 'rgba(59,130,246,0.35)',
+    },
+    hudRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 12,
+    },
+    hudTimer: {
+        color: '#fff',
+        fontSize: 22,
+        fontWeight: '800',
+    },
+    hudPill: {
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 12,
+        backgroundColor: 'rgba(16,185,129,0.2)',
+        borderWidth: 1,
+        borderColor: 'rgba(16,185,129,0.4)',
+    },
+    hudPillText: {
+        color: '#6ee7b7',
+        fontSize: 12,
+        fontWeight: '800',
+    },
+    hudLast: {
+        color: '#94a3b8',
+        fontSize: 12,
+        fontWeight: '600',
+        marginTop: 8,
+        lineHeight: 18,
     },
     iconBtn: {
         width: 44,
@@ -311,6 +414,23 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         paddingHorizontal: 40,
     },
+    scanAgainBtn: {
+        marginBottom: 12,
+        paddingVertical: 12,
+        paddingHorizontal: 24,
+        borderRadius: 14,
+        backgroundColor: 'rgba(37, 99, 235, 0.35)',
+        borderWidth: 1,
+        borderColor: 'rgba(96, 165, 250, 0.5)',
+        width: '100%',
+        maxWidth: 280,
+    },
+    scanAgainText: {
+        color: '#e0e7ff',
+        fontSize: 15,
+        fontWeight: '800',
+        textAlign: 'center',
+    },
     infoBox: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -341,6 +461,21 @@ const styles = StyleSheet.create({
         fontWeight: '800',
         textTransform: 'uppercase',
         letterSpacing: 1,
+    },
+    endPatrolBtn: {
+        marginBottom: 12,
+        paddingVertical: 14,
+        paddingHorizontal: 28,
+        borderRadius: 16,
+        backgroundColor: 'rgba(239, 68, 68, 0.2)',
+        borderWidth: 1,
+        borderColor: 'rgba(239, 68, 68, 0.45)',
+    },
+    endPatrolText: {
+        color: '#f87171',
+        fontSize: 14,
+        fontWeight: '800',
+        textAlign: 'center',
     },
     text: {
         color: 'white',

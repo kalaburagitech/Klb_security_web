@@ -13,9 +13,6 @@ import { API_URL } from './api';
  * @returns storageId string (assetId) to store in the log record
  */
 export async function uploadImage(uri: string): Promise<string> {
-    console.log(`[Upload] Starting upload for URI: ${uri}`);
-    
-    // Step 1: Get a fresh upload URL from our web API
     try {
         const urlRes = await fetch(`${API_URL}/upload/generate-url`, {
             method: 'POST',
@@ -57,7 +54,6 @@ export async function uploadImage(uri: string): Promise<string> {
             throw new Error('storageId not returned from Convex storage');
         }
 
-        console.log(`[Upload] Successfully uploaded. storageId: ${storageId}`);
         return storageId;
     } catch (error: any) {
         console.error('[Upload] Error in uploadImage:', error);

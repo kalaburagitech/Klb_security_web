@@ -1,23 +1,44 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
+import { ensureMainOrganization } from "./mainOrganization";
+import { isOrgAdminRoles } from "./userAccess";
+
+const shiftValidator = v.object({
+    name: v.string(),
+    start: v.string(),
+    end: v.string(),
+    strength: v.number(),
+});
 
 // Site Management
 export const createSite = mutation({
     args: {
         name: v.string(),
-        locationName: v.string(),
+        locationName: v.optional(v.string()),
         latitude: v.number(),
         longitude: v.number(),
         allowedRadius: v.number(),
-        organizationId: v.id("organizations"),
+        organizationId: v.optional(v.id("organizations")),
         regionId: v.optional(v.string()),
         city: v.optional(v.string()),
         shiftStart: v.optional(v.string()),
         shiftEnd: v.optional(v.string()),
+        shifts: v.optional(v.array(shiftValidator)),
     },
     handler: async (ctx, args) => {
-        return await ctx.db.insert("sites", args);
+        const organizationId = await ensureMainOrganization(ctx);
+        const shifts = args.shifts?.length
+            ? args.shifts
+            : (args.shiftStart && args.shiftEnd
+                ? [{ name: "General Shift", start: args.shiftStart, end: args.shiftEnd, strength: 0 }]
+                : []);
+
+        return await ctx.db.insert("sites", {
+            ...args,
+            organizationId,
+            shifts,
+        });
     },
 });
 
@@ -25,19 +46,31 @@ export const updateSite = mutation({
     args: {
         id: v.id("sites"),
         name: v.string(),
-        locationName: v.string(),
+        locationName: v.optional(v.string()),
         latitude: v.number(),
         longitude: v.number(),
         allowedRadius: v.number(),
-        organizationId: v.id("organizations"),
+        organizationId: v.optional(v.id("organizations")),
         regionId: v.optional(v.string()),
         city: v.optional(v.string()),
         shiftStart: v.optional(v.string()),
         shiftEnd: v.optional(v.string()),
+        shifts: v.optional(v.array(shiftValidator)),
     },
     handler: async (ctx, args) => {
         const { id, ...data } = args;
-        await ctx.db.patch(id, data);
+        const organizationId = await ensureMainOrganization(ctx);
+        const shifts = data.shifts?.length
+            ? data.shifts
+            : (data.shiftStart && data.shiftEnd
+                ? [{ name: "General Shift", start: data.shiftStart, end: data.shiftEnd, strength: 0 }]
+                : []);
+
+        await ctx.db.patch(id, {
+            ...data,
+            organizationId,
+            shifts,
+        });
     },
 });
 
@@ -107,17 +140,11 @@ export const listSitesByUser = query({
         const user = await ctx.db.get(args.userId);
         if (!user) return [];
 
-        const rawRole = (user.role as string || '').toLowerCase().trim();
-        
-        const isActuallyAdmin = 
-            rawRole.includes("owner") || 
-            rawRole.includes("manager") || 
-            rawRole.includes("officer") ||
-            rawRole === "deployment manager" || 
-            rawRole === "higher officer";
+        const roles = user.roles ?? [];
+        const isActuallyAdmin = isOrgAdminRoles(roles);
 
         if (isActuallyAdmin) {
-            console.log(`[Convex] User ${args.userId} identifies as administrative (${user.role}). Fetching all organization sites.`);
+            console.log(`[Convex] User ${args.userId} has org admin role(s). Fetching all organization sites.`);
             let sites = await ctx.db
                 .query("sites")
                 .withIndex("by_org", (q) => q.eq("organizationId", user.organizationId))
@@ -265,7 +292,9 @@ export const searchSites = query({
             const lower = args.searchQuery.toLowerCase().trim();
             sites = sites.filter((s) =>
                 s.name.toLowerCase().includes(lower) ||
-                s.locationName?.toLowerCase().includes(lower)
+                s.locationName?.toLowerCase().includes(lower) ||
+                s.city?.toLowerCase().includes(lower) ||
+                s.regionId?.toLowerCase().includes(lower)
             );
         }
 

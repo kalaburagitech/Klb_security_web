@@ -1,46 +1,48 @@
-/**
- * Roles that can monitor ALL sites in the organization.
- */
-export const isAdministrativeRole = (role?: string): boolean => {
-    const rawRole = (role || '').toLowerCase().trim();
-    
-    // Explicit exclusions for staff roles
-    if (rawRole.includes('security officer') || rawRole === 'so' || rawRole === 'sg' || rawRole === 'new_user') {
-        return false;
+export type RoleSource =
+    | string
+    | undefined
+    | null
+    | { roles?: string[] };
+
+export function getUserRoles(source: RoleSource): string[] {
+    if (source == null) return [];
+    if (typeof source === 'string') return source ? [source] : [];
+    if (typeof source === 'object' && source.roles && source.roles.length > 0) {
+        return [...source.roles];
     }
+    return [];
+}
 
-    // Keyword matching for monitoring/administrative roles
-    return (
-        rawRole.includes('owner') ||
-        rawRole.includes('manager') ||
-        rawRole.includes('officer') ||
-        rawRole.includes('so')
+/** Owner, Deployment Manager, Manager — org admin capabilities. */
+export function isAdministrativeRole(source: RoleSource): boolean {
+    return getUserRoles(source).some((r) =>
+        ['Owner', 'Deployment Manager', 'Manager'].includes(r)
     );
-};
+}
 
 /**
- * Roles that can access the Monitoring Dashboard (OfficerDashboard).
- * Includes both full admins and supervisory roles (SO) who only see assigned sites.
+ * Home = OfficerDashboard for admins + SO (field supervisors).
+ * Visiting Officers use the standard guard home unless they also have SO/Manager/etc.
  */
-export const canAccessMonitoringDashboard = (role?: string): boolean => {
-    const normalizedRole = (role || '').toLowerCase().trim();
-    const monitoringRoles = [
-        'so',
-        'security officer'
-    ];
-    return isAdministrativeRole(role) || monitoringRoles.includes(normalizedRole);
-};
+export function canAccessMonitoringDashboard(source: RoleSource): boolean {
+    const roles = getUserRoles(source);
+    if (isAdministrativeRole(source)) return true;
+    return roles.includes('SO');
+}
 
-/**
- * Roles that can search and select ANY site in their organization for visits.
- */
-export const canSelectAllSitesForVisits = (role?: string): boolean => {
-    const normalizedRole = (role || '').toLowerCase().trim();
-    const visitAllowedRoles = [
-        'so',
-        'security officer',
-        'sg',
-        'security guard'
-    ];
-    return isAdministrativeRole(role) || visitAllowedRoles.includes(normalizedRole);
-};
+export function canSelectAllSitesForVisits(source: RoleSource): boolean {
+    const roles = getUserRoles(source).map((r) => r.toLowerCase().trim());
+    if (isAdministrativeRole(source)) return true;
+    return roles.some(
+        (r) =>
+            r === 'so' ||
+            r.includes('security officer') ||
+            r === 'sg' ||
+            r.includes('security guard')
+    );
+}
+
+/** True if user is assigned Visiting Officer (alone or among other roles). */
+export function hasVisitingOfficerRole(source: RoleSource): boolean {
+    return getUserRoles(source).includes('Visiting Officer');
+}

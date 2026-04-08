@@ -11,12 +11,18 @@ import SignInScreen from '../screens/auth/SignInScreen';
 import SignUpScreen from '../screens/auth/SignUpScreen';
 import CreatePointScreen from '../screens/CreatePointScreen';
 import IssueReview from '../screens/IssueReview';
-import OfficerDashboard from '../screens/OfficerDashboard';
-import QRManagement from '../screens/QRManagement';
-import VisitingReport from '../screens/VisitingReport';
+import PatrolQRScreen from '../screens/PatrolQRScreen';
 import EnrollmentScreen from '../screens/EnrollmentScreen';
 import MarkAttendanceScreen from '../screens/MarkAttendanceScreen';
 import SplashScreen from '../screens/SplashScreen';
+import HistoryScreen from '../screens/tabs/HistoryScreen';
+import VisitOfficerDetailScreen from '../screens/VisitOfficerDetailScreen';
+import SiteAttendanceDashboardScreen from '../screens/SiteAttendanceDashboardScreen';
+import AttendanceRecordsScreen from '../screens/AttendanceRecordsScreen';
+import PatrolSiteDetailScreen from '../screens/PatrolSiteDetailScreen';
+import PatrolOfficerSelectScreen from '../screens/PatrolOfficerSelectScreen';
+import PatrolAddPointNameScreen from '../screens/PatrolAddPointNameScreen';
+import PatrolSessionDetailScreen from '../screens/PatrolSessionDetailScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -51,11 +57,18 @@ export default function RootNavigator() {
                     <Stack.Screen name="VisitForm" component={VisitForm} />
                     <Stack.Screen name="IncidentReport" component={IncidentReport} />
                     <Stack.Screen name="CreatePoint" component={CreatePointScreen} />
-                    <Stack.Screen name="QRManagement" component={QRManagement} />
-                    <Stack.Screen name="VisitingReport" component={VisitingReport} />
+                    <Stack.Screen name="PatrolQR" component={PatrolQRScreen} />
                     <Stack.Screen name="IssueReview" component={IssueReview} />
                     <Stack.Screen name="Enrollment" component={EnrollmentScreen} />
                     <Stack.Screen name="MarkAttendance" component={MarkAttendanceScreen} />
+                    <Stack.Screen name="SiteAttendanceDashboard" component={SiteAttendanceDashboardScreen} />
+                    <Stack.Screen name="AttendanceRecords" component={AttendanceRecordsScreen} />
+                    <Stack.Screen name="PatrolSiteDetail" component={PatrolSiteDetailScreen} />
+                    <Stack.Screen name="PatrolAddPointName" component={PatrolAddPointNameScreen} />
+                    <Stack.Screen name="PatrolSessionDetail" component={PatrolSessionDetailScreen} />
+                    <Stack.Screen name="PatrolOfficerSelect" component={PatrolOfficerSelectScreen} />
+                    <Stack.Screen name="PatrolHistory" component={HistoryScreen} />
+                    <Stack.Screen name="VisitOfficerDetail" component={VisitOfficerDetailScreen} />
                 </>
             ) : (
                 <>

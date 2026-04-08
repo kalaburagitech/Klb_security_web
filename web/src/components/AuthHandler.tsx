@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { useMutation, useAction } from "convex/react";
 import { api } from "../services/convex";
 import { useNavigate } from "react-router-dom";
+import { primaryRoleForJwt, shouldRestrictToPendingUser } from "../lib/userRoles";
 
 export default function AuthHandler({ children }: { children: React.ReactNode }) {
     const { user, isLoaded } = useUser();
@@ -34,13 +35,13 @@ export default function AuthHandler({ children }: { children: React.ReactNode })
                     if (convexUser) {
                         console.log("AuthHandler: user synced successfully:", {
                             id: convexUser._id,
-                            role: convexUser.role,
+                            roles: convexUser.roles,
                             clerkIdInConvex: convexUser.clerkId
                         });
                         const token = await generateToken({
                             userId: convexUser._id,
                             email: convexUser.email || "",
-                            role: convexUser.role,
+                            role: primaryRoleForJwt(convexUser),
                             permissions: convexUser.permissions,
                         });
 
@@ -59,7 +60,7 @@ export default function AuthHandler({ children }: { children: React.ReactNode })
                         console.log("AuthHandler: sync complete");
                         setIsSynced(true);
 
-                        if (convexUser.role === "NEW_USER" && window.location.pathname !== "/restricted") {
+                        if ((shouldRestrictToPendingUser(convexUser) || convexUser.status === "inactive") && window.location.pathname !== "/restricted") {
                             console.log("AuthHandler: redirecting to restricted access");
                             navigate("/restricted");
                         }

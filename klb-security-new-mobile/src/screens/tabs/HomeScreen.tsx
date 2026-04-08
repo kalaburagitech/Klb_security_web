@@ -1,17 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, Dimensions } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-// import { useQuery } from 'convex/react';
-// import { api } from '../../services/convex';
-import { siteService, pointService } from '../../services/api';
-import { usePatrolStore } from '../../store/usePatrolStore';
-import { Scan, Clock, CheckCircle, AlertTriangle, Building2, MapPin, LogOut, QrCode, GraduationCap, SunMoon, Plus, X, Search } from 'lucide-react-native';
-import { useNavigation, useIsFocused } from '@react-navigation/native';
+import { Building2, CheckCircle, LogOut, Scan, ShieldAlert } from 'lucide-react-native';
+import { useNavigation } from '@react-navigation/native';
 import { useCustomAuth } from '../../context/AuthContext';
-import { SiteHistoryPreview } from '../../components/SiteHistoryPreview';
-import { useMutation } from 'convex/react';
-import { isAdministrativeRole, canSelectAllSitesForVisits } from '../../utils/roleUtils';
-import { Modal } from 'react-native';
+import { AttendanceWeekView } from '../../components/AttendanceWeekView';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const isSmallScreen = SCREEN_WIDTH < 375;
@@ -19,308 +12,111 @@ const isSmallScreen = SCREEN_WIDTH < 375;
 export default function HomeScreen() {
     const insets = useSafeAreaInsets();
     const navigation = useNavigation<any>();
-    const { userId, customUser, logout, organizationId } = useCustomAuth();
-    const [activeSession, setActiveSession] = useState<any>(null); // Still need to migrate getActiveSession
-    const [sites, setSites] = useState<any[]>([]);
-    const [elapsedMs, setElapsedMs] = useState(0);
-    const [showVisitMenu, setShowVisitMenu] = useState(false);
-    const sessionMinutes = 60;
-    const isAdmin = isAdministrativeRole(customUser?.role);
-
-    React.useEffect(() => {
-        if (!userId) return;
-
-        const fetchSites = async () => {
-            try {
-                const response = isAdmin
-                    ? await siteService.getAllSites()
-                    : await siteService.getSitesByUser(userId);
-                setSites(response.data || []);
-            } catch (error) {
-                console.error("Error fetching sites:", error);
-            }
-        };
-
-        fetchSites();
-    }, [userId, isAdmin, organizationId]);
-    const endSession = async (options: any) => { console.log('Mocked end session', options); };
-    const setSession = usePatrolStore((state) => state.setSession);
+    const { customUser, logout } = useCustomAuth();
     const [refreshing, setRefreshing] = useState(false);
-
-    useEffect(() => {
-        if (activeSession) {
-            setSession({
-                id: activeSession._id,
-                siteId: activeSession.siteId,
-                siteName: "", // We can look this up
-                startTime: activeSession.startTime,
-                scannedPointIds: activeSession.scannedPoints
-            });
-        } else {
-            setSession(null);
-        }
-    }, [activeSession]);
-
-    useEffect(() => {
-        if (!activeSession?.startTime) {
-            setElapsedMs(0);
-            return;
-        }
-        const tick = () => setElapsedMs(Date.now() - activeSession.startTime);
-        tick();
-        const id = setInterval(tick, 1000);
-        return () => clearInterval(id);
-    }, [activeSession?.startTime]);
-
-    const formatDuration = (ms: number) => {
-        const totalSeconds = Math.max(0, Math.floor(ms / 1000));
-        const hours = Math.floor(totalSeconds / 3600);
-        const minutes = Math.floor((totalSeconds % 3600) / 60);
-        const seconds = totalSeconds % 60;
-        if (hours > 0) {
-            return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-        }
-        return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-    };
-
-    const remainingMs = sessionMinutes * 60 * 1000 - elapsedMs;
-
-    const onRefresh = () => {
-        setRefreshing(true);
-        setTimeout(() => setRefreshing(false), 1000);
-    };
+    const [weekRefresh, setWeekRefresh] = useState(0);
 
     return (
         <SafeAreaView style={styles.container}>
             <View style={styles.backgroundOrbs} pointerEvents="none">
                 <View style={styles.orbA} />
                 <View style={styles.orbB} />
-                <View style={styles.orbC} />
             </View>
             <ScrollView
                 contentContainerStyle={styles.scrollContent}
-                refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#2563eb" />}
+                refreshControl={
+                    <RefreshControl
+                        refreshing={refreshing}
+                        onRefresh={() => {
+                            setRefreshing(true);
+                            setTimeout(() => setRefreshing(false), 800);
+                        }}
+                        tintColor="#2563eb"
+                    />
+                }
             >
                 <View style={styles.header}>
                     <View style={styles.headerLeft}>
-                        <Text style={styles.greeting} numberOfLines={1} adjustsFontSizeToFit>Security Dashboard</Text>
-                        <Text style={styles.subGreeting} numberOfLines={1}>Monitor and manage patrols</Text>
+                        <Text style={styles.greeting} numberOfLines={1}>
+                            Home
+                        </Text>
+                        <Text style={styles.subGreeting} numberOfLines={1}>
+                            {customUser?.name ? `Hi, ${customUser.name}` : 'Welcome'}
+                        </Text>
                     </View>
-                    <View style={styles.headerRight}>
-                        <TouchableOpacity
-                            onPress={() => logout()}
-                            style={styles.logoutBtn}
-                        >
-                            <LogOut color="#ef4444" size={16} />
-                            {!isSmallScreen && <Text style={styles.logoutText}>Log Out</Text>}
-                        </TouchableOpacity>
-                    </View>
+                    <TouchableOpacity onPress={() => logout()} style={styles.logoutBtn}>
+                        <LogOut color="#ef4444" size={16} />
+                        {!isSmallScreen && <Text style={styles.logoutText}>Log Out</Text>}
+                    </TouchableOpacity>
                 </View>
 
-                {/* Active Session Status / Start Action */}
-                {activeSession ? (
-                    <View style={styles.activeSessionCard}>
-                        <View style={styles.activeBadgeRow}>
-                            <View style={styles.activeBadge}>
-                                <View style={styles.pulse} />
-                                <Text style={styles.activeText}>ACTIVE PATROL</Text>
-                            </View>
-                            <View style={styles.countdownBadge}>
-                                <Clock color="#e2e8f0" size={14} />
-                                <Text style={styles.countdownText}>
-                                    {remainingMs >= 0 ? formatDuration(remainingMs) : `+${formatDuration(Math.abs(remainingMs))}`}
-                                </Text>
-                            </View>
+                <View style={styles.actionContainer}>
+                    <TouchableOpacity
+                        style={[styles.actionBar, styles.attendanceBar]}
+                        onPress={() => navigation.navigate('MarkAttendance')}
+                    >
+                        <View style={[styles.actionIcon, { backgroundColor: '#10b981' }]}>
+                            <CheckCircle color="white" size={isSmallScreen ? 20 : 24} />
                         </View>
-                        <Text style={styles.activeSiteTitle}>On duty at selected site</Text>
-                        <View style={styles.sessionStatsRow}>
-                            <View style={styles.sessionStat}>
-                                <Text style={styles.sessionLabel}>Elapsed</Text>
-                                <Text style={styles.sessionValue}>{formatDuration(elapsedMs)}</Text>
-                            </View>
-                            <View style={styles.sessionDivider} />
-                            <View style={styles.sessionStat}>
-                                <Text style={styles.sessionLabel}>Scans</Text>
-                                <Text style={styles.sessionValue}>{activeSession.scannedPoints?.length || 0}</Text>
-                            </View>
+                        <View style={styles.actionContent}>
+                            <Text style={styles.actionTitle} numberOfLines={1}>
+                                Attendance
+                            </Text>
+                            <Text style={styles.actionSub} numberOfLines={2}>
+                                Check in or check out with face verification
+                            </Text>
                         </View>
-                        <View style={styles.activeActions}>
-                            <TouchableOpacity
-                                style={styles.resumeBtn}
-                                onPress={() => navigation.navigate('QRScanner')}
-                            >
-                                <Scan color="white" size={20} />
-                                <Text style={styles.resumeText}>Resume Patrol</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                                style={styles.stopBtn}
-                                onPress={() => endSession({ sessionId: activeSession._id })}
-                            >
-                                <LogOut color="#ef4444" size={20} />
-                                <Text style={styles.stopText}>Stop</Text>
-                            </TouchableOpacity>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                        style={[styles.actionBar, styles.enrollBar]}
+                        onPress={() => navigation.navigate('Enrollment')}
+                    >
+                        <View style={[styles.actionIcon, { backgroundColor: '#3b82f6' }]}>
+                            <Building2 color="white" size={isSmallScreen ? 20 : 24} />
                         </View>
-                    </View>
-                ) : (
-                    <View style={styles.actionContainer}>
-                        {/* Attendance - For All, but primary for SG */}
-                        <TouchableOpacity
-                            style={[styles.startPatrolBar, { backgroundColor: '#064e3b', borderColor: '#065f46', marginBottom: 12 }]}
-                            onPress={() => navigation.navigate('MarkAttendance')}
-                        >
-                            <View style={[styles.startIcon, { backgroundColor: '#10b981' }]}>
-                                <CheckCircle color="white" size={isSmallScreen ? 20 : 24} />
-                            </View>
-                            <View style={styles.startPatrolContent}>
-                                <Text style={styles.startTitle} numberOfLines={1}>Mark Attendance</Text>
-                                <Text style={styles.startSub} numberOfLines={2}>Submit your daily duty check-in/out</Text>
-                            </View>
-                        </TouchableOpacity>
-
-                        {/* Enrollment */}
-                        <TouchableOpacity
-                            style={[styles.startPatrolBar, { backgroundColor: '#0f172a', marginBottom: 12 }]}
-                            onPress={() => navigation.navigate('Enrollment')}
-                        >
-                            <View style={[styles.startIcon, { backgroundColor: '#3b82f6' }]}>
-                                <Building2 color="white" size={isSmallScreen ? 20 : 24} />
-                            </View>
-                            <View style={styles.startPatrolContent}>
-                                <Text style={styles.startTitle} numberOfLines={1}>Enrollment</Text>
-                                <Text 
-                                    style={styles.startSub} 
-                                    numberOfLines={2}
-                                    ellipsizeMode="tail"
-                                >
-                                    Register person with face recognition
-                                </Text>
-                            </View>
-                        </TouchableOpacity>
-
-                        {/* Site Visits - Only for Administrative roles */}
-                        {isAdministrativeRole(customUser?.role) && (
-                            <TouchableOpacity
-                                style={[styles.startPatrolBar, { backgroundColor: '#1e1b4b', borderColor: '#312e81', marginTop: 0 }]}
-                                onPress={() => setShowVisitMenu(true)}
-                            >
-                                <View style={[styles.startIcon, { backgroundColor: '#3b82f6' }]}>
-                                    <QrCode color="white" size={isSmallScreen ? 20 : 24} />
-                                </View>
-                                <View style={styles.startPatrolContent}>
-                                    <Text style={styles.startTitle} numberOfLines={1}>Site Visits</Text>
-                                    <Text 
-                                        style={[styles.startSub, { color: '#93c5fd' }]} 
-                                        numberOfLines={2}
-                                        ellipsizeMode="tail"
-                                    >
-                                        Day/Night Checks & Trainer Visits
-                                    </Text>
-                                </View>
-                            </TouchableOpacity>
-                        )}
-                    </View>
-                )}
-
-                {/* Stats Grid */}
-                <View style={styles.statsGrid}>
-                    <View style={styles.statCard}>
-                        <Clock color="#cbd5e1" size={20} />
-                        <Text style={styles.statValue}>12h</Text>
-                        <Text style={styles.statLabel}>Today&apos;s Duty</Text>
-                    </View>
-                    <View style={styles.statCard}>
-                        <CheckCircle color="#10b981" size={20} />
-                        <Text style={styles.statValue}>24</Text>
-                        <Text style={styles.statLabel}>Total Scans</Text>
-                    </View>
-                    <View style={styles.statCard}>
-                        <AlertTriangle color="#f59e0b" size={20} />
-                        <Text style={styles.statValue}>2</Text>
-                        <Text style={styles.statLabel}>Incidents</Text>
-                    </View>
+                        <View style={styles.actionContent}>
+                            <Text style={styles.actionTitle} numberOfLines={1}>
+                                Enrollment
+                            </Text>
+                            <Text style={styles.actionSub} numberOfLines={2}>
+                                Register face for attendance recognition
+                            </Text>
+                        </View>
+                    </TouchableOpacity>
                 </View>
 
+                <View style={styles.quickRow}>
+                    <TouchableOpacity
+                        style={[styles.quickHalf, styles.patrolQuick]}
+                        onPress={() => navigation.navigate('Patrol')}
+                    >
+                        <View style={[styles.quickIcon, { backgroundColor: 'rgba(245, 158, 11, 0.25)' }]}>
+                            <Scan color="#fbbf24" size={isSmallScreen ? 20 : 22} />
+                        </View>
+                        <Text style={styles.quickTitle}>Patrol</Text>
+                        <Text style={styles.quickSub} numberOfLines={2}>
+                            Site visit & QR points
+                        </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={[styles.quickHalf, styles.issuesQuick]}
+                        onPress={() => navigation.navigate('Issues')}
+                    >
+                        <View style={[styles.quickIcon, { backgroundColor: 'rgba(239, 68, 68, 0.2)' }]}>
+                            <ShieldAlert color="#f87171" size={isSmallScreen ? 20 : 22} />
+                        </View>
+                        <Text style={styles.quickTitle}>Issues</Text>
+                        <Text style={styles.quickSub} numberOfLines={2}>
+                            Report & review issues
+                        </Text>
+                    </TouchableOpacity>
+                </View>
+
+                <AttendanceWeekView navigation={navigation} refreshToken={weekRefresh} />
             </ScrollView>
-
-            <Modal
-                visible={showVisitMenu}
-                transparent={true}
-                animationType="slide"
-                onRequestClose={() => setShowVisitMenu(false)}
-            >
-                <View style={styles.modalOverlay}>
-                    <View style={styles.modalContent}>
-                        <View style={styles.modalHeader}>
-                            <View>
-                                <Text style={styles.modalTitle}>Visit Operations</Text>
-                                <Text style={styles.modalSub}>Select activity to perform</Text>
-                            </View>
-                            <TouchableOpacity onPress={() => setShowVisitMenu(false)}>
-                                <X color="#64748b" size={24} />
-                            </TouchableOpacity>
-                        </View>
-                        <View style={styles.visitOptionsGrid}>
-                            <TouchableOpacity
-                                style={styles.visitOptionCard}
-                                onPress={() => {
-                                    setShowVisitMenu(false);
-                                    navigation.navigate('SiteSelection', { isVisit: true, visitType: 'setup' });
-                                }}
-                            >
-                                <View style={[styles.visitOptionIcon, { backgroundColor: '#3b82f6' }]}>
-                                    <QrCode color="white" size={24} />
-                                </View>
-                                <Text style={styles.visitOptionText}>QR Tool</Text>
-                                <Text style={styles.visitOptionDesc}>Configure sites</Text>
-                            </TouchableOpacity>
-
-                            <TouchableOpacity
-                                style={styles.visitOptionCard}
-                                onPress={() => {
-                                    setShowVisitMenu(false);
-                                    navigation.navigate('SiteSelection', { isVisit: true, visitType: 'Trainer' });
-                                }}
-                            >
-                                <View style={[styles.visitOptionIcon, { backgroundColor: '#8b5cf6' }]}>
-                                    <GraduationCap color="white" size={24} />
-                                </View>
-                                <Text style={styles.visitOptionText}>Trainer</Text>
-                                <Text style={styles.visitOptionDesc}>Activity training</Text>
-                            </TouchableOpacity>
-
-                            <TouchableOpacity
-                                style={styles.visitOptionCard}
-                                onPress={() => {
-                                    setShowVisitMenu(false);
-                                    navigation.navigate('SiteSelection', { isVisit: true, visitType: 'SiteCheckDay' });
-                                }}
-                            >
-                                <View style={[styles.visitOptionIcon, { backgroundColor: '#f59e0b' }]}>
-                                    <SunMoon color="white" size={24} />
-                                </View>
-                                <Text style={styles.visitOptionText}>Day Check</Text>
-                                <Text style={styles.visitOptionDesc}>Day shift audit</Text>
-                            </TouchableOpacity>
-
-                            <TouchableOpacity
-                                style={styles.visitOptionCard}
-                                onPress={() => {
-                                    setShowVisitMenu(false);
-                                    navigation.navigate('SiteSelection', { isVisit: true, visitType: 'SiteCheckNight' });
-                                }}
-                            >
-                                <View style={[styles.visitOptionIcon, { backgroundColor: '#1e293b' }]}>
-                                    <Clock color="white" size={24} />
-                                </View>
-                                <Text style={styles.visitOptionText}>Night Check</Text>
-                                <Text style={styles.visitOptionDesc}>Night shift audit</Text>
-                            </TouchableOpacity>
-                        </View>
-                    </View>
-                </View>
-            </Modal>
             <View style={{ height: insets.bottom }} />
-        </SafeAreaView >
+        </SafeAreaView>
     );
 }
 
@@ -335,426 +131,141 @@ const styles = StyleSheet.create({
     },
     orbA: {
         position: 'absolute',
-        width: 280,
-        height: 280,
-        borderRadius: 140,
-        backgroundColor: 'rgba(59, 130, 246, 0.18)',
-        top: -120,
-        left: -80,
-    },
-    orbB: {
-        position: 'absolute',
-        width: 220,
-        height: 220,
-        borderRadius: 110,
-        backgroundColor: 'rgba(16, 185, 129, 0.12)',
-        top: 160,
-        right: -100,
-    },
-    orbC: {
-        position: 'absolute',
         width: 260,
         height: 260,
         borderRadius: 130,
-        backgroundColor: 'rgba(148, 163, 184, 0.08)',
-        bottom: -120,
-        left: 40,
+        backgroundColor: 'rgba(59, 130, 246, 0.14)',
+        top: -100,
+        left: -60,
+    },
+    orbB: {
+        position: 'absolute',
+        width: 200,
+        height: 200,
+        borderRadius: 100,
+        backgroundColor: 'rgba(16, 185, 129, 0.1)',
+        bottom: 80,
+        right: -80,
     },
     scrollContent: {
         padding: isSmallScreen ? 16 : 24,
-        paddingBottom: 40,
+        paddingBottom: 48,
     },
     header: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'flex-start',
-        marginBottom: isSmallScreen ? 24 : 32,
+        marginBottom: 24,
         gap: 12,
     },
-    headerLeft: {
-        flex: 1,
-        minWidth: 0,
+    headerLeft: { flex: 1, minWidth: 0 },
+    greeting: {
+        fontSize: isSmallScreen ? 24 : 28,
+        fontWeight: '800',
+        color: 'white',
+        letterSpacing: 0.5,
     },
-    headerRight: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        flexShrink: 0,
+    subGreeting: {
+        fontSize: 14,
+        color: '#64748b',
+        marginTop: 6,
+        fontWeight: '600',
     },
     logoutBtn: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 4,
-        paddingHorizontal: isSmallScreen ? 8 : 12,
-        paddingVertical: isSmallScreen ? 6 : 8,
-        borderRadius: 8,
+        gap: 6,
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        borderRadius: 12,
         backgroundColor: 'rgba(239, 68, 68, 0.1)',
         borderWidth: 1,
         borderColor: 'rgba(239, 68, 68, 0.2)',
     },
     logoutText: {
         color: '#ef4444',
-        fontSize: isSmallScreen ? 10 : 11,
-        fontWeight: 'bold',
-        textTransform: 'uppercase',
-    },
-    greeting: {
-        fontSize: isSmallScreen ? 22 : 28,
-        fontWeight: 'bold',
-        color: 'white',
-    },
-    subGreeting: {
-        fontSize: isSmallScreen ? 13 : 16,
-        color: '#64748b',
-        marginTop: 4,
-    },
-    startPatrolBar: {
-        flexDirection: 'row',
-        alignItems: 'flex-start',
-        backgroundColor: 'rgba(15, 23, 42, 0.9)',
-        padding: isSmallScreen ? 12 : 20,
-        borderRadius: 20,
-        borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.08)',
-        gap: isSmallScreen ? 10 : 16,
-        minHeight: isSmallScreen ? 70 : 80,
-        width: '100%',
-        maxWidth: '100%',
-    },
-    startIcon: {
-        width: isSmallScreen ? 44 : 56,
-        height: isSmallScreen ? 44 : 56,
-        borderRadius: isSmallScreen ? 22 : 28,
-        backgroundColor: '#2563eb',
-        justifyContent: 'center',
-        alignItems: 'center',
-        flexShrink: 0,
-        marginTop: 2,
-    },
-    startPatrolContent: {
-        flex: 1,
-        minWidth: 0,
-        paddingRight: 0,
-        overflow: 'hidden',
-    },
-    startTitle: {
-        fontSize: isSmallScreen ? 15 : 18,
-        fontWeight: 'bold',
-        color: 'white',
-    },
-    startSub: {
-        fontSize: isSmallScreen ? 10 : 13,
-        color: '#64748b',
-        marginTop: 4,
-        lineHeight: isSmallScreen ? 14 : 18,
-        width: '100%',
-    },
-    activeSessionCard: {
-        backgroundColor: 'rgba(15, 23, 42, 0.92)',
-        padding: 24,
-        borderRadius: 32,
-        marginBottom: 32,
-        borderWidth: 1,
-        borderColor: '#1e293b',
-        alignItems: 'center',
-    },
-    activeBadgeRow: {
-        width: '100%',
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 12,
-    },
-    activeBadge: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: 'rgba(16, 185, 129, 0.1)',
-        paddingHorizontal: 12,
-        paddingVertical: 6,
-        borderRadius: 20,
-        gap: 8,
-    },
-    countdownBadge: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 6,
-        backgroundColor: 'rgba(148, 163, 184, 0.12)',
-        paddingHorizontal: 10,
-        paddingVertical: 6,
-        borderRadius: 14,
-    },
-    countdownText: {
-        color: '#e2e8f0',
-        fontSize: 12,
-        fontWeight: '700',
-        letterSpacing: 0.5,
-    },
-    pulse: {
-        width: 8,
-        height: 8,
-        borderRadius: 4,
-        backgroundColor: '#10b981',
-    },
-    activeText: {
-        color: '#10b981',
-        fontSize: 12,
-        fontWeight: 'bold',
-        letterSpacing: 0.5,
-    },
-    activeSiteTitle: {
-        color: 'white',
-        fontSize: 20,
-        fontWeight: 'bold',
-        marginBottom: 16,
-    },
-    sessionStatsRow: {
-        width: '100%',
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        backgroundColor: 'rgba(2, 6, 23, 0.7)',
-        borderRadius: 18,
-        paddingVertical: 12,
-        paddingHorizontal: 16,
-        borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.06)',
-        marginBottom: 16,
-    },
-    sessionStat: {
-        alignItems: 'center',
-        flex: 1,
-    },
-    sessionDivider: {
-        width: 1,
-        height: 28,
-        backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    },
-    sessionLabel: {
-        color: '#94a3b8',
         fontSize: 11,
-        fontWeight: '700',
-        textTransform: 'uppercase',
-        letterSpacing: 1,
-    },
-    sessionValue: {
-        color: 'white',
-        fontSize: 18,
         fontWeight: '800',
-        marginTop: 4,
-    },
-    resumeBtn: {
-        flex: 1,
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: '#2563eb',
-        paddingHorizontal: 20,
-        paddingVertical: 14,
-        borderRadius: 16,
-        gap: 10,
-        justifyContent: 'center',
-    },
-    resumeText: {
-        color: 'white',
-        fontSize: 16,
-        fontWeight: 'bold',
-    },
-    activeActions: {
-        flexDirection: 'row',
-        gap: 12,
-        width: '100%',
-    },
-    stopBtn: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: 'rgba(239, 68, 68, 0.1)',
-        borderWidth: 1,
-        borderColor: 'rgba(239, 68, 68, 0.2)',
-        paddingHorizontal: 20,
-        paddingVertical: 14,
-        borderRadius: 16,
-        gap: 8,
-    },
-    stopText: {
-        color: '#ef4444',
-        fontSize: 16,
-        fontWeight: 'bold',
-    },
-    siteMain: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 16,
+        textTransform: 'uppercase',
     },
     actionContainer: {
-        marginBottom: isSmallScreen ? 24 : 32,
-        width: '100%',
-    },
-    statsGrid: {
-        flexDirection: 'row',
-        gap: isSmallScreen ? 8 : 12,
-        marginBottom: isSmallScreen ? 24 : 32,
-    },
-    statCard: {
-        flex: 1,
-        backgroundColor: '#0f172a',
-        padding: isSmallScreen ? 12 : 16,
-        borderRadius: 20,
-        borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.05)',
-        alignItems: 'center',
-        gap: isSmallScreen ? 6 : 8,
-        minWidth: 0,
-    },
-    statValue: {
-        fontSize: isSmallScreen ? 18 : 20,
-        fontWeight: 'bold',
-        color: 'white',
-    },
-    statLabel: {
-        fontSize: isSmallScreen ? 10 : 11,
-        color: '#64748b',
-        fontWeight: '600',
-        textAlign: 'center',
-    },
-    sectionTitle: {
-        fontSize: isSmallScreen ? 16 : 18,
-        fontWeight: 'bold',
-        color: 'white',
-        marginBottom: 16,
-    },
-    siteCard: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: 'rgba(15, 23, 42, 0.9)',
-        padding: isSmallScreen ? 12 : 16,
-        borderRadius: 20,
-        marginBottom: 12,
-        borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.08)',
-        gap: isSmallScreen ? 12 : 16,
-    },
-    siteIcon: {
-        width: 48,
-        height: 48,
-        borderRadius: 16,
-        backgroundColor: '#1e293b',
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    siteInfo: {
-        flex: 1,
-    },
-    siteName: {
-        fontSize: 16,
-        fontWeight: 'bold',
-        color: 'white',
-    },
-    locationRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 4,
-        marginTop: 4,
-    },
-    locationText: {
-        fontSize: 13,
-        color: '#64748b',
-    },
-    progressText: {
-        color: '#3b82f6',
-        fontSize: 16,
-        fontWeight: 'bold',
-        marginBottom: 16,
-    },
-    siteBadge: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 6,
-        backgroundColor: 'rgba(16, 185, 129, 0.12)',
-        paddingHorizontal: 10,
-        paddingVertical: 6,
-        borderRadius: 14,
-    },
-    siteBadgeText: {
-        color: '#10b981',
-        fontSize: 11,
-        fontWeight: '800',
-        textTransform: 'uppercase',
-        letterSpacing: 0.5,
-    },
-    searchAllBtn: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 6,
-        paddingHorizontal: 12,
-        paddingVertical: 6,
-        borderRadius: 12,
-        backgroundColor: 'rgba(59, 130, 246, 0.1)',
-        borderWidth: 1,
-        borderColor: 'rgba(59, 130, 246, 0.15)',
-    },
-    searchAllText: {
-        color: '#3b82f6',
-        fontSize: 12,
-        fontWeight: '900',
-        textTransform: 'uppercase',
-    },
-    modalOverlay: {
-        flex: 1,
-        backgroundColor: 'rgba(0, 0, 0, 0.7)',
-        justifyContent: 'flex-end',
-    },
-    modalContent: {
-        backgroundColor: '#0f172a',
-        borderTopLeftRadius: 32,
-        borderTopRightRadius: 32,
-        paddingBottom: 40,
-    },
-    modalHeader: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        padding: 24,
-        borderBottomWidth: 1,
-        borderBottomColor: 'rgba(255, 255, 255, 0.05)',
-    },
-    modalTitle: {
-        fontSize: 20,
-        fontWeight: 'bold',
-        color: 'white',
-    },
-    modalSub: {
-        color: '#64748b',
-        fontSize: 12,
-        marginTop: 2,
-    },
-    visitOptionsGrid: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        padding: 20,
         gap: 12,
+        marginBottom: 28,
     },
-    visitOptionCard: {
-        width: (SCREEN_WIDTH - 52) / 2,
-        backgroundColor: '#1e293b',
-        borderRadius: 24,
-        padding: 20,
+    actionBar: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: isSmallScreen ? 14 : 18,
+        borderRadius: 20,
         borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.05)',
+        gap: 14,
+        minHeight: 76,
     },
-    visitOptionIcon: {
-        width: 48,
-        height: 48,
+    attendanceBar: {
+        backgroundColor: 'rgba(6, 78, 59, 0.35)',
+        borderColor: 'rgba(16, 185, 129, 0.25)',
+    },
+    enrollBar: {
+        backgroundColor: 'rgba(15, 23, 42, 0.95)',
+        borderColor: 'rgba(255, 255, 255, 0.08)',
+    },
+    quickRow: {
+        flexDirection: 'row',
+        gap: 12,
+        marginBottom: 28,
+    },
+    quickHalf: {
+        flex: 1,
+        minWidth: 0,
+        padding: isSmallScreen ? 14 : 16,
+        borderRadius: 20,
+        borderWidth: 1,
+        alignItems: 'center',
+        gap: 8,
+    },
+    patrolQuick: {
+        backgroundColor: 'rgba(120, 53, 15, 0.2)',
+        borderColor: 'rgba(245, 158, 11, 0.25)',
+    },
+    issuesQuick: {
+        backgroundColor: 'rgba(127, 29, 29, 0.2)',
+        borderColor: 'rgba(239, 68, 68, 0.22)',
+    },
+    quickIcon: {
+        width: isSmallScreen ? 44 : 48,
+        height: isSmallScreen ? 44 : 48,
+        borderRadius: 14,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    quickTitle: {
+        fontSize: isSmallScreen ? 15 : 16,
+        fontWeight: '800',
+        color: 'white',
+    },
+    quickSub: {
+        fontSize: 11,
+        color: '#94a3b8',
+        textAlign: 'center',
+        lineHeight: 14,
+    },
+    actionIcon: {
+        width: isSmallScreen ? 48 : 54,
+        height: isSmallScreen ? 48 : 54,
         borderRadius: 16,
         justifyContent: 'center',
         alignItems: 'center',
-        marginBottom: 12,
     },
-    visitOptionText: {
+    actionContent: { flex: 1, minWidth: 0 },
+    actionTitle: {
+        fontSize: isSmallScreen ? 16 : 18,
+        fontWeight: '800',
         color: 'white',
-        fontSize: 16,
-        fontWeight: 'bold',
     },
-    visitOptionDesc: {
-        color: '#64748b',
-        fontSize: 11,
+    actionSub: {
+        fontSize: 12,
+        color: '#94a3b8',
         marginTop: 4,
+        lineHeight: 17,
     },
 });

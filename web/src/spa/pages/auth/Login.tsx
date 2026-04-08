@@ -1,7 +1,31 @@
-import { SignIn } from "@clerk/nextjs";
+import { SignIn, useUser } from "@clerk/nextjs";
 import { ShieldCheck } from "lucide-react";
+import { Navigate } from "react-router-dom";
+import { useQuery } from "convex/react";
+import { api } from "../../../services/convex";
+import { shouldRestrictToPendingUser } from "../../../lib/userRoles";
 
 export default function Login() {
+  const { user, isLoaded } = useUser();
+  const currentUser = useQuery(
+    api.users.getByClerkId,
+    user?.id ? { clerkId: user.id } : "skip"
+  );
+
+  if (!isLoaded) {
+    return null;
+  }
+
+  if (user) {
+    if (shouldRestrictToPendingUser(currentUser) || currentUser?.status === "inactive") {
+      return <Navigate to="/restricted" replace />;
+    }
+
+    if (currentUser) {
+      return <Navigate to="/dashboard" replace />;
+    }
+  }
+
   return (
     <div className="min-h-screen bg-black flex flex-col items-center justify-center p-4 relative overflow-hidden">
       {/* Background decorative elements */}

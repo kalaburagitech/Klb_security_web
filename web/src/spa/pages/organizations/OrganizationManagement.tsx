@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../services/convex";
 import { Layout } from "../../../components/Layout";
@@ -6,7 +6,7 @@ import {
     Plus,
     Pencil,
     Trash2,
-    Building2,
+    Power,
     Calendar,
     Search,
     Loader2,
@@ -16,18 +16,44 @@ import {
 import { toast } from "sonner";
 import { cn } from "../../../lib/utils";
 import type { Id } from "../../../../convex/_generated/dataModel";
+import { useUser } from "@clerk/nextjs";
 
 export default function OrganizationManagement() {
-    const orgs = useQuery((api as any).organizations.list);
+    const { user } = useUser();
+    const currentUser = useQuery(
+        api.users.getByClerkId,
+        user?.id ? { clerkId: user.id } : "skip"
+    );
+    const orgs = useQuery(
+        (api as any).organizations.list,
+        currentUser?.organizationId ? { currentOrganizationId: currentUser.organizationId } : {}
+    );
     const allSites = useQuery(api.sites.listAll);
     const allUsers = useQuery(api.users.listAll);
     const createOrg = useMutation((api as any).organizations.create);
     const updateOrg = useMutation((api as any).organizations.update);
+    const setOrgStatus = useMutation((api as any).organizations.setStatus);
+    const updateOrgAccess = useMutation((api as any).organizations.updateAccess);
     const removeOrg = useMutation((api as any).organizations.remove);
 
     const [isModalOpen, setIsModalOpen] = useState(false);
-    const [editingOrg, setEditingOrg] = useState<{ id: Id<"organizations">, name: string } | null>(null);
+    const [editingOrg, setEditingOrg] = useState<{
+        id: Id<"organizations">;
+        name: string;
+        status: "active" | "inactive";
+        access: {
+            patrolling: boolean;
+            visits: boolean;
+            attendance: boolean;
+        };
+    } | null>(null);
     const [name, setName] = useState("");
+    const [status, setStatus] = useState<"active" | "inactive">("active");
+    const [access, setAccess] = useState({
+        patrolling: true,
+        visits: true,
+        attendance: true,
+    });
     const [searchQuery, setSearchQuery] = useState("");
     const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -39,9 +65,17 @@ export default function OrganizationManagement() {
         return (allUsers as any)?.filter((u: any) => u.organizationId === orgId).length || 0;
     };
 
-    const filteredOrgs = orgs?.filter((org: any) =>
+    const getMainOrgName = (org: any) => {
+        if (!org.parentOrganizationId) {
+            return "Self";
+        }
+        const parentOrg = orgs?.find((item: any) => item._id === org.parentOrganizationId);
+        return parentOrg?.name || "-";
+    };
+
+    const filteredOrgs = useMemo(() => orgs?.filter((org: any) =>
         org.name.toLowerCase().includes(searchQuery.toLowerCase())
-    );
+    ), [orgs, searchQuery]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -50,14 +84,16 @@ export default function OrganizationManagement() {
         setIsSubmitting(true);
         try {
             if (editingOrg) {
-                await updateOrg({ id: editingOrg.id, name });
+                await updateOrg({ id: editingOrg.id, name, status, access });
                 toast.success("Organization updated successfully");
             } else {
-                await createOrg({ name });
+                await createOrg({ name, status, access });
                 toast.success("Organization created successfully");
             }
             setIsModalOpen(false);
             setName("");
+            setStatus("active");
+            setAccess({ patrolling: true, visits: true, attendance: true });
             setEditingOrg(null);
         } catch (error: any) {
             toast.error(error.message || "Something went wrong");
@@ -96,14 +132,69 @@ export default function OrganizationManagement() {
     const openCreateModal = () => {
         setEditingOrg(null);
         setName("");
+        setStatus("active");
+        setAccess({ patrolling: true, visits: true, attendance: true });
         setIsModalOpen(true);
     };
 
     const openEditModal = (org: any) => {
-        setEditingOrg({ id: org._id, name: org.name });
+        setEditingOrg({
+            id: org._id,
+            name: org.name,
+            status: org.status || "active",
+            access: org.access || { patrolling: true, visits: true, attendance: true },
+        });
         setName(org.name);
+        setStatus(org.status || "active");
+        setAccess(org.access || { patrolling: true, visits: true, attendance: true });
         setIsModalOpen(true);
     };
+
+    const handleToggleStatus = async (org: any) => {
+        try {
+            const nextStatus = org.status === "inactive" ? "active" : "inactive";
+            await setOrgStatus({ id: org._id, status: nextStatus });
+            toast.success(`Organization ${nextStatus === "active" ? "activated" : "deactivated"} successfully`);
+        } catch (error: any) {
+            toast.error(error.message || "Failed to update organization status");
+        }
+    };
+
+    const handleToggleAccess = async (org: any, key: "patrolling" | "visits" | "attendance") => {
+        try {
+            const currentAccess = org.access || { patrolling: true, visits: true, attendance: true };
+            const nextAccess = {
+                ...currentAccess,
+                [key]: !currentAccess[key],
+            };
+            await updateOrgAccess({ id: org._id, access: nextAccess });
+            toast.success(`${key} access updated`);
+        } catch (error: any) {
+            toast.error(error.message || "Failed to update organization access");
+        }
+    };
+
+    const renderToggle = (
+        checked: boolean,
+        onClick: () => void,
+        title: string
+    ) => (
+        <button
+            onClick={onClick}
+            className={cn(
+                "relative inline-flex h-6 w-11 items-center rounded-full transition-colors",
+                checked ? "bg-emerald-500/80" : "bg-white/10"
+            )}
+            title={title}
+        >
+            <span
+                className={cn(
+                    "inline-block h-5 w-5 transform rounded-full bg-white transition-transform",
+                    checked ? "translate-x-5" : "translate-x-1"
+                )}
+            />
+        </button>
+    );
 
     return (
         <Layout title="Organization Management">
@@ -129,83 +220,152 @@ export default function OrganizationManagement() {
                     </button>
                 </div>
 
-                {/* Grid */}
+                {/* Table */}
                 {!orgs || !allSites || !allUsers ? (
                     <div className="flex items-center justify-center py-20">
                         <Loader2 className="w-8 h-8 text-primary animate-spin" />
                     </div>
                 ) : filteredOrgs?.length === 0 ? (
                     <div className="text-center py-20 glass rounded-3xl border border-white/5">
-                        <Building2 className="w-12 h-12 text-muted-foreground mx-auto mb-4 opacity-20" />
+                        <Power className="w-12 h-12 text-muted-foreground mx-auto mb-4 opacity-20" />
                         <h3 className="text-lg font-medium text-white/60">No organizations found</h3>
                         <p className="text-sm text-muted-foreground mt-1">Try adjusting your search or create a new one.</p>
                     </div>
                 ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                        {filteredOrgs?.map((org: any) => {
-                            const siteCount = getSiteCount(org._id);
-                            const userCount = getUserCount(org._id);
-                            return (
-                                <div
-                                    key={org._id}
-                                    className="group glass p-6 rounded-3xl border border-white/5 hover:border-primary/30 transition-all duration-300 relative overflow-hidden"
-                                >
-                                    <div className="absolute top-0 right-0 p-4 opacity-0 group-hover:opacity-100 transition-opacity flex gap-2">
-                                        <button
-                                            onClick={() => openEditModal(org)}
-                                            className="p-2 bg-white/5 hover:bg-primary/20 rounded-lg text-muted-foreground hover:text-primary transition-colors"
-                                            title="Edit Organization Name"
-                                        >
-                                            <Pencil className="w-4 h-4" />
-                                        </button>
-                                        <button
-                                            onClick={() => handleDelete(org)}
-                                            className={cn(
-                                                "p-2 bg-white/5 rounded-lg text-muted-foreground transition-colors",
-                                                (siteCount > 0 || userCount > 0) ? "hover:bg-red-500/10 cursor-not-allowed opacity-50" : "hover:bg-red-500/20 hover:text-red-500"
-                                            )}
-                                            title={(siteCount > 0 || userCount > 0) ? "Cannot delete while sites or users are connected" : "Delete Organization"}
-                                        >
-                                            <Trash2 className="w-4 h-4" />
-                                        </button>
-                                    </div>
-
-                                    <div className="flex items-start gap-4">
-                                        <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center shrink-0">
-                                            <Building2 className="w-6 h-6 text-primary" />
-                                        </div>
-                                        <div className="flex-1 min-w-0">
-                                            <h3 className="text-lg font-bold text-white truncate">{org.name}</h3>
-                                            <div className="flex flex-col gap-2 mt-2">
-                                                <div className="flex gap-4">
-                                                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                                                        <Calendar className="w-3 h-3" />
-                                                        Established {new Date(org.createdAt).toLocaleDateString()}
+                    <div className="glass rounded-2xl border border-white/10 overflow-hidden">
+                        <div className="overflow-x-auto custom-scrollbar">
+                            <table className="w-full text-left min-w-[1250px]">
+                                <thead>
+                                    <tr className="border-b border-white/5 bg-white/[0.02]">
+                                        <th className="px-4 sm:px-6 py-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Organization</th>
+                                        <th className="px-4 sm:px-6 py-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Type</th>
+                                        <th className="px-4 sm:px-6 py-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Main Org</th>
+                                        <th className="px-4 sm:px-6 py-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Created</th>
+                                        <th className="px-4 sm:px-6 py-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Sites</th>
+                                        <th className="px-4 sm:px-6 py-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Users</th>
+                                        <th className="px-4 sm:px-6 py-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Status</th>
+                                        <th className="px-4 sm:px-6 py-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Patrolling</th>
+                                        <th className="px-4 sm:px-6 py-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Visits</th>
+                                        <th className="px-4 sm:px-6 py-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Attendance</th>
+                                        <th className="px-4 sm:px-6 py-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider text-right">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-white/5">
+                                    {filteredOrgs?.map((org: any) => {
+                                        const siteCount = getSiteCount(org._id);
+                                        const userCount = getUserCount(org._id);
+                                        const orgAccess = org.access || { patrolling: true, visits: true, attendance: true };
+                                        return (
+                                            <tr key={org._id} className="hover:bg-white/[0.02] transition-colors">
+                                                <td className="px-4 sm:px-6 py-4">
+                                                    <div className="flex items-start justify-between gap-3">
+                                                        <div className="flex flex-col min-w-0">
+                                                            <span className="text-sm font-semibold text-white truncate">{org.name}</span>
+                                                            <span className="text-xs text-muted-foreground truncate">{org._id}</span>
+                                                        </div>
+                                                        {org.parentOrganizationId && (
+                                                            <button
+                                                                onClick={() => openEditModal(org)}
+                                                                className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-white/5 hover:bg-primary/20 text-[10px] font-medium text-muted-foreground hover:text-primary transition-colors whitespace-nowrap"
+                                                                title="Edit organization name"
+                                                            >
+                                                                <Pencil className="w-3 h-3" />
+                                                                Edit
+                                                            </button>
+                                                        )}
                                                     </div>
-                                                </div>
-                                                <div className="flex gap-3 mt-1">
-                                                    <div className={cn(
-                                                        "px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider",
-                                                        siteCount > 0 ? "bg-emerald-500/10 text-emerald-500" : "bg-white/5 text-muted-foreground"
+                                                </td>
+                                                <td className="px-4 sm:px-6 py-4 text-sm text-white">
+                                                    <span className={cn(
+                                                        "inline-flex items-center px-2 py-1 rounded-full text-[10px] sm:text-xs font-bold uppercase tracking-wider border whitespace-nowrap",
+                                                        !org.parentOrganizationId
+                                                            ? "bg-amber-500/10 text-amber-400 border-amber-500/20"
+                                                            : "bg-blue-500/10 text-blue-400 border-blue-500/20"
                                                     )}>
-                                                        {siteCount} {siteCount === 1 ? 'Site' : 'Sites'}
+                                                        {!org.parentOrganizationId ? "MAIN_ORG" : "SUB_ORG"}
+                                                    </span>
+                                                </td>
+                                                <td className="px-4 sm:px-6 py-4 text-sm text-white">{getMainOrgName(org)}</td>
+                                                <td className="px-4 sm:px-6 py-4 text-sm text-muted-foreground">
+                                                    <div className="flex items-center gap-2">
+                                                        <Calendar className="w-4 h-4" />
+                                                        {new Date(org.createdAt).toLocaleDateString()}
                                                     </div>
-                                                    <div className={cn(
-                                                        "px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider",
-                                                        userCount > 0 ? "bg-blue-500/10 text-blue-400" : "bg-white/5 text-muted-foreground"
-                                                    )}>
-                                                        {userCount} {userCount === 1 ? 'User' : 'Users'}
+                                                </td>
+                                                <td className="px-4 sm:px-6 py-4 text-sm text-white">{siteCount}</td>
+                                                <td className="px-4 sm:px-6 py-4 text-sm text-white">{userCount}</td>
+                                                <td className="px-4 sm:px-6 py-4">
+                                                    <div className="flex items-center gap-3">
+                                                        <span className={cn(
+                                                            "inline-flex items-center px-2 py-1 rounded-full text-[10px] sm:text-xs font-bold uppercase tracking-wider border whitespace-nowrap",
+                                                            org.status === "inactive"
+                                                                ? "bg-red-500/10 text-red-400 border-red-500/20"
+                                                                : "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                                                        )}>
+                                                            {org.status === "inactive" ? "Inactive" : "Active"}
+                                                        </span>
+                                                        {renderToggle(
+                                                            org.status !== "inactive",
+                                                            () => handleToggleStatus(org),
+                                                            org.status === "inactive" ? "Activate organization" : "Deactivate organization"
+                                                        )}
                                                     </div>
-                                                </div>
-                                                {(siteCount === 0 && userCount === 0) && (
-                                                    <span className="text-[10px] text-red-400 font-medium opacity-60 italic mt-1">Ready to Delete</span>
-                                                )}
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            );
-                        })}
+                                                </td>
+                                                <td className="px-4 sm:px-6 py-4">
+                                                    {renderToggle(
+                                                        orgAccess.patrolling,
+                                                        () => handleToggleAccess(org, "patrolling"),
+                                                        "Toggle patrolling access"
+                                                    )}
+                                                </td>
+                                                <td className="px-4 sm:px-6 py-4">
+                                                    {renderToggle(
+                                                        orgAccess.visits,
+                                                        () => handleToggleAccess(org, "visits"),
+                                                        "Toggle visits access"
+                                                    )}
+                                                </td>
+                                                <td className="px-4 sm:px-6 py-4">
+                                                    {renderToggle(
+                                                        orgAccess.attendance,
+                                                        () => handleToggleAccess(org, "attendance"),
+                                                        "Toggle attendance access"
+                                                    )}
+                                                </td>
+                                                <td className="px-4 sm:px-6 py-4 text-right">
+                                                    <div className="flex items-center justify-end gap-2">
+                                                        <button
+                                                            onClick={() => openEditModal(org)}
+                                                            className="p-2 bg-white/5 hover:bg-primary/20 rounded-lg text-muted-foreground hover:text-primary transition-colors"
+                                                            title="Edit organization"
+                                                            disabled={!org.parentOrganizationId}
+                                                        >
+                                                            <Pencil className="w-4 h-4" />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleDelete(org)}
+                                                            className={cn(
+                                                                "p-2 bg-white/5 rounded-lg text-muted-foreground transition-colors",
+                                                                (siteCount > 0 || userCount > 0 || !org.parentOrganizationId)
+                                                                    ? "hover:bg-red-500/10 cursor-not-allowed opacity-50"
+                                                                    : "hover:bg-red-500/20 hover:text-red-500"
+                                                            )}
+                                                            title={!org.parentOrganizationId
+                                                                ? "MAIN_ORG cannot be deleted"
+                                                                : (siteCount > 0 || userCount > 0)
+                                                                    ? "Cannot delete while sites or users are connected"
+                                                                    : "Delete organization"}
+                                                        >
+                                                            <Trash2 className="w-4 h-4" />
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 )}
             </div>
@@ -217,7 +377,7 @@ export default function OrganizationManagement() {
                     <div className="relative w-full max-w-md glass rounded-3xl border border-white/10 overflow-hidden animate-in zoom-in-95 duration-200">
                         <div className="p-6 border-b border-white/5 flex items-center justify-between">
                             <h2 className="text-xl font-bold text-white">
-                                {editingOrg ? "Rename Organization" : "New Organization"}
+                                {editingOrg ? "Edit Organization" : "New Organization"}
                             </h2>
                             <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-white/5 rounded-xl transition-colors">
                                 <X className="w-5 h-5 text-muted-foreground" />
@@ -235,8 +395,45 @@ export default function OrganizationManagement() {
                                     placeholder="Enter organization name..."
                                     value={name}
                                     onChange={(e) => setName(e.target.value)}
+                                    disabled={editingOrg ? !orgs?.find((org: any) => org._id === editingOrg.id)?.parentOrganizationId : false}
                                     className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 text-white placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
                                 />
+                            </div>
+
+                            <div className="space-y-2">
+                                <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider ml-1">
+                                    Status
+                                </label>
+                                <select
+                                    value={status}
+                                    onChange={(e) => setStatus(e.target.value as "active" | "inactive")}
+                                    className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 text-white focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
+                                >
+                                    <option value="active">Active</option>
+                                    <option value="inactive">Inactive</option>
+                                </select>
+                            </div>
+
+                            <div className="space-y-3">
+                                <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider ml-1">
+                                    Organization Access
+                                </label>
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                    {([
+                                        ["patrolling", "Patrolling"],
+                                        ["visits", "Visits"],
+                                        ["attendance", "Attendance"],
+                                    ] as const).map(([key, label]) => (
+                                        <div key={key} className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 flex items-center justify-between">
+                                            <span className="text-sm text-white">{label}</span>
+                                            {renderToggle(
+                                                access[key],
+                                                () => setAccess({ ...access, [key]: !access[key] }),
+                                                `Toggle ${label.toLowerCase()} access`
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
 
                             <div className="flex gap-3 pt-2">

@@ -11,12 +11,16 @@ import {
     Building2,
     Globe,
     Calendar,
-    X
 } from "lucide-react";
 import { useUser } from "@clerk/nextjs";
 import { useQuery } from "convex/react";
 import { api } from "../services/convex";
 import { NavLink, useLocation } from "react-router-dom";
+
+interface SidebarProps {
+    isOpen?: boolean;
+    onClose?: () => void;
+}
 
 const navItems = [
     { name: "Dashboard", icon: LayoutDashboard, href: "/", permission: "analytics" },
@@ -24,99 +28,113 @@ const navItems = [
     { name: "Organizations", icon: Building2, href: "/organizations", permission: "sites" },
     { name: "Regions", icon: Globe, href: "/regions", permission: "sites" },
     { name: "Sites", icon: MapPin, href: "/sites", permission: "sites" },
-    { name: "Patrol Points", icon: QrCode, href: "/patrol-points", permission: "patrolPoints" },
-    { name: "Patrol Logs", icon: ClipboardList, href: "/patrol-logs", permission: "patrolLogs" },
-    { name: "Visit Logs", icon: ClipboardList, href: "/visit-logs", permission: "visitLogs" },
+
+    // ✅ SINGLE PATROL TAB
+    { name: "Patrol Reports", icon: QrCode, href: "/patrol", permission: "patrolLogs" },
+
+    { name: "Visits", icon: ClipboardList, href: "/visit-logs", permission: "visitLogs" },
     { name: "Attendance", icon: Calendar, href: "/attendance", permission: "attendance" },
     { name: "Issue Tracker", icon: ShieldAlert, href: "/issues", permission: "issues" },
     { name: "Analytics", icon: BarChart3, href: "/analytics", permission: "analytics" },
 ];
 
-interface SidebarProps {
-    isOpen?: boolean;
-    onClose?: () => void;
-}
-
-export function Sidebar({ isOpen, onClose }: SidebarProps) {
+export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
     const { user } = useUser();
     const location = useLocation();
-    const currentUser = useQuery(api.users.getByClerkId,
+
+    const currentUser = useQuery(
+        api.users.getByClerkId,
         user?.id ? { clerkId: user.id } : "skip"
+    );
+    const organization = useQuery(
+        api.organizations.get,
+        currentUser?.organizationId ? { id: currentUser.organizationId, currentOrganizationId: currentUser.organizationId } : "skip"
     );
 
     const permissions = currentUser?.permissions;
+    const orgAccess = organization?.access;
 
-    const filteredNavItems = navItems.filter(item => {
+    const filteredNavItems = navItems.filter((item) => {
+        if (currentUser?.roles?.includes("Owner")) {
+            return true;
+        }
+
         if (!permissions) {
-            if (currentUser?.role === "Owner") return true;
             return false;
         }
-        return permissions[item.permission as keyof typeof permissions];
+
+        const hasUserPermission = permissions[item.permission as keyof typeof permissions];
+        if (!hasUserPermission) return false;
+
+        if (item.permission === "patrolLogs") {
+            return orgAccess?.patrolling ?? true;
+        }
+
+        if (item.permission === "visitLogs") {
+            return orgAccess?.visits ?? true;
+        }
+
+        if (item.permission === "attendance") {
+            return orgAccess?.attendance ?? true;
+        }
+
+        return true;
     });
 
     return (
         <>
-            {/* Mobile Overlay */}
-            {isOpen && (
-                <div
-                    className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[50] lg:hidden"
+            {isOpen ? (
+                <button
+                    type="button"
+                    aria-label="Close menu"
+                    className="fixed inset-0 z-30 bg-black/60 lg:hidden"
                     onClick={onClose}
                 />
-            )}
+            ) : null}
+            <aside
+                className={cn(
+                    "w-64 bg-black h-full border-r border-white/10 shrink-0",
+                    "fixed inset-y-0 left-0 z-40 flex flex-col transition-transform duration-200 lg:static lg:translate-x-0",
+                    isOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
+                )}
+            >
+            <nav className="space-y-2 p-4 flex-1 overflow-y-auto">
+                {filteredNavItems.map((item) => {
+                    const isActive =
+                        item.href === "/"
+                            ? location.pathname === "/"
+                            : location.pathname.startsWith(item.href); // ✅ FIXED ACTIVE STATE
 
-            <aside className={cn(
-                "fixed inset-y-0 left-0 z-[60] w-64 glass flex flex-col border-r border-white/5 transition-transform duration-300 transform lg:translate-x-0 lg:static lg:inset-auto",
-                isOpen ? "translate-x-0" : "-translate-x-full"
-            )}>
-                <div className="p-6 flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-                            <ShieldAlert className="text-primary-foreground w-5 h-5" />
-                        </div>
-                        <h1 className="text-xl font-bold bg-gradient-to-r from-white to-white/60 bg-clip-text text-transparent">
-                            Security OS
-                        </h1>
-                    </div>
-                    {onClose && (
-                        <button onClick={onClose} className="lg:hidden p-1 hover:bg-white/10 rounded-lg">
-                            <X className="w-5 h-5 text-muted-foreground" />
-                        </button>
-                    )}
-                </div>
-
-                <nav className="flex-1 px-4 py-4 space-y-1">
-                    {filteredNavItems.map((item) => (
+                    return (
                         <NavLink
                             key={item.name}
                             to={item.href}
                             onClick={onClose}
                             className={cn(
-                                "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all group",
-                                location.pathname === item.href
-                                    ? "bg-primary/20 text-primary border border-primary/20 shadow-[0_0_15px_rgba(37,99,235,0.2)]"
-                                    : "text-muted-foreground hover:bg-white/5 hover:text-white"
+                                "flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all",
+                                isActive
+                                    ? "bg-primary text-white"
+                                    : "text-gray-400 hover:text-white hover:bg-white/5"
                             )}
                         >
-                            <item.icon className={cn(
-                                "w-4 h-4",
-                                location.pathname === item.href ? "text-primary" : "text-muted-foreground group-hover:text-white"
-                            )} />
+                            <item.icon className="w-4 h-4" />
                             {item.name}
                         </NavLink>
-                    ))}
-                </nav>
+                    );
+                })}
+            </nav>
 
-                <div className="p-4 border-t border-white/5 mt-auto">
-                    <NavLink
-                        to="/settings"
-                        onClick={onClose}
-                        className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-muted-foreground hover:bg-white/5 hover:text-white"
-                    >
-                        <Settings className="w-4 h-4" />
-                        Settings
-                    </NavLink>
-                </div>
-            </aside>
+            {/* ✅ Settings at bottom */}
+            <div className="p-4 border-t border-white/10 mt-auto">
+                <NavLink
+                    to="/settings"
+                    className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5"
+                >
+                    <Settings className="w-4 h-4" />
+                    Settings
+                </NavLink>
+            </div>
+        </aside>
         </>
     );
 }
