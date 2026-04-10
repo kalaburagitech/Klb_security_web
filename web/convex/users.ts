@@ -3,6 +3,7 @@ import { mutation, query } from "./_generated/server";
 import {
   normalizePermissionsForRoles,
 } from "./userAccess";
+import { getAuthorizedSiteIds, filterUsersByAuthorizedSites } from "./accessControl";
 
 /* ------------------------------------------------ */
 /* GET USER BY CLERK ID */
@@ -18,7 +19,35 @@ export const getByClerkId = query({
             .withIndex("by_clerkId", (q) => q.eq("clerkId", clerkId))
             .first();
 
-        return user ?? null;
+        if (!user) return null;
+
+        // Determine effective organization
+        // For restricted roles (Client, SO), use the organization of their first site
+        const RESTRICTED_ROLES = ["Client", "SO"];
+        const isRestricted = (user.roles || []).some(r => RESTRICTED_ROLES.includes(r));
+        
+        let effectiveOrgId = user.organizationId;
+        let effectiveOrgName = "";
+
+        if (isRestricted) {
+            const firstSiteId = user.siteIds?.[0] || user.siteId;
+            if (firstSiteId) {
+                const site = await ctx.db.get(firstSiteId);
+                if (site) {
+                    effectiveOrgId = site.organizationId;
+                }
+            }
+        }
+
+        const org = await ctx.db.get(effectiveOrgId);
+        effectiveOrgName = org?.name || "Unknown Organization";
+
+        return {
+            ...user,
+            effectiveOrganizationId: effectiveOrgId,
+            effectiveOrganizationName: effectiveOrgName,
+            permissions: normalizePermissionsForRoles(user.roles || [], user.permissions),
+        };
     },
 });
 
@@ -132,6 +161,18 @@ export const getByIndianMobile10 = query({
     },
 });
 
+async function getSiteIdsInCities(ctx: any, organizationId: any, cities?: string[]) {
+    if (!cities || cities.length === 0 || !organizationId) return [];
+    const allSites = await ctx.db
+        .query("sites")
+        .withIndex("by_org", (q: any) => q.eq("organizationId", organizationId))
+        .collect();
+    const citySet = new Set(cities);
+    return allSites
+        .filter((s: any) => s.city && citySet.has(s.city))
+        .map((s: any) => s._id);
+}
+
 /* ------------------------------------------------ */
 /* CREATE USER */
 /* ------------------------------------------------ */
@@ -181,6 +222,7 @@ export const create = mutation({
                 issues: v.boolean(),
                 analytics: v.boolean(),
                 attendance: v.optional(v.boolean()),
+                regions: v.optional(v.boolean()),
             })
         ),
     },
@@ -213,14 +255,20 @@ export const create = mutation({
             throw new Error("At least one role is required");
         }
 
+        // AUTO-POPULATE siteIds from cities if not provided
+        let finalSiteIds = args.siteIds;
+        if ((!finalSiteIds || finalSiteIds.length === 0) && args.cities && args.cities.length > 0) {
+            finalSiteIds = await getSiteIdsInCities(ctx, args.organizationId, args.cities);
+        }
+
         return await ctx.db.insert("users", {
             clerkId,
             name: args.name,
             roles: rolesList,
             status: args.status ?? "active",
             organizationId: args.organizationId,
-            siteId: (args.siteIds && args.siteIds.length > 0) ? args.siteIds[0] : undefined,
-            siteIds: args.siteIds,
+            siteId: (finalSiteIds && finalSiteIds.length > 0) ? finalSiteIds[0] : undefined,
+            siteIds: finalSiteIds,
             email: args.email,
             mobileNumber: args.mobileNumber,
             regionId: args.regionId,
@@ -280,6 +328,7 @@ export const update = mutation({
                 issues: v.boolean(),
                 analytics: v.boolean(),
                 attendance: v.optional(v.boolean()),
+                regions: v.optional(v.boolean()),
             })
         ),
     },
@@ -308,6 +357,16 @@ export const update = mutation({
         delete (data as { role?: unknown }).role;
         (data as { roles: typeof rolesList }).roles = rolesList;
         data.permissions = normalizePermissionsForRoles(rolesList, data.permissions);
+
+        // SYNC siteIds from cities if cities changed or siteIds not explicitly provided
+        if (data.cities && (!args.siteIds || args.siteIds.length === 0)) {
+            const orgId = data.organizationId || existing.organizationId;
+            const syncedSiteIds = await getSiteIdsInCities(ctx, orgId, data.cities);
+            if (syncedSiteIds.length > 0) {
+                data.siteIds = syncedSiteIds;
+                (data as any).siteId = syncedSiteIds[0];
+            }
+        }
 
         await ctx.db.patch(id, data);
         return id;
@@ -358,13 +417,23 @@ export const countAll = query({
 /* ------------------------------------------------ */
 
 export const listByOrg = query({
-    args: { organizationId: v.id("organizations") },
+    args: { 
+        organizationId: v.optional(v.id("organizations")),
+        requestingUserId: v.optional(v.id("users"))
+    },
 
     handler: async (ctx, args) => {
-        return await ctx.db
-            .query("users")
-            .withIndex("by_org", (q) => q.eq("organizationId", args.organizationId))
-            .collect();
+        const query = args.organizationId
+            ? ctx.db.query("users").withIndex("by_org", (q: any) => q.eq("organizationId", args.organizationId))
+            : ctx.db.query("users");
+        
+        const users = await query.collect();
+
+        const authorizedSiteIds = await getAuthorizedSiteIds(ctx, args.requestingUserId);
+        if (authorizedSiteIds) {
+            return filterUsersByAuthorizedSites(users, authorizedSiteIds);
+        }
+        return users;
     },
 });
 
@@ -397,6 +466,7 @@ export const countByOrg = query({
     args: {
         organizationId: v.id("organizations"),
         siteId: v.optional(v.id("sites")),
+        requestingUserId: v.optional(v.id("users")),
     },
     handler: async (ctx, args) => {
         let users = await ctx.db

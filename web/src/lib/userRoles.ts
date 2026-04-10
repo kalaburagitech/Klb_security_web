@@ -1,5 +1,8 @@
 import { pickPrimaryRoleForPermissions } from "../../convex/userAccess";
 
+export const ADMIN_ROLES = ["Owner", "Deployment Manager", "Manager", "Visiting Officer"];
+export const RESTRICTED_ROLES = ["Client", "SO", "NEW_USER"];
+
 /** Convex user shape (subset): roles are the only source of truth. */
 export function getUserRoles(user: { roles?: string[] } | null | undefined): string[] {
     if (!user?.roles?.length) return [];

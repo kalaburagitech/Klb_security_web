@@ -98,6 +98,18 @@ export const getOrCreateUser = mutation({
       permissions: normalizePermissionsForRoles(["NEW_USER"]),
       creationTime: Date.now(),
     });
+
+    // Create notification for admins
+    await ctx.db.insert("notifications", {
+      organizationId: finalOrgId,
+      type: "new_user",
+      title: "New User Registered",
+      message: `${name} (${email || "no email"}) has joined.`,
+      isRead: false,
+      createdAt: Date.now(),
+      referenceId: userId,
+    });
+
     return await ctx.db.get(userId);
   },
 });

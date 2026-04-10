@@ -12,6 +12,46 @@ async function getRootOrganizationId(ctx: any, organizationId: any) {
     return organization.parentOrganizationId || organization._id;
 }
 
+async function getAuthorizedOrganizationIds(ctx: any, userId?: string) {
+    if (!userId) return null;
+    const user = await ctx.db.get(userId);
+    if (!user) return null;
+
+    const roles = user.roles ?? [];
+    const isOwner = roles.some((r: string) => ["Owner", "Manager", "Deployment Manager"].includes(r));
+    const isRestricted = roles.some((r: string) => ["Client", "SO"].includes(r));
+    
+    // Admins/Owners see everything
+    if (isOwner) return null;
+    
+    // For non-owner restricted users, be strict
+    if (!isRestricted) return null; // Or return empty if they have NO valid roles? Assuming other roles might exist.
+
+    // For restricted users, their "Effective Organizations" are the ones 
+    // associated with their assigned sites.
+    const ids = new Set<string>();
+    
+    const siteIds = [] as any[];
+    if ((user as any).siteId) siteIds.push((user as any).siteId);
+    if (Array.isArray(user.siteIds)) {
+        user.siteIds.forEach((id: any) => siteIds.push(id));
+    }
+
+    if (siteIds.length > 0) {
+        for (const sid of siteIds) {
+            const site = await ctx.db.get(sid);
+            if (site) {
+                ids.add(site.organizationId);
+            }
+        }
+    } else {
+        // Fallback: their own profile org if no sites are assigned
+        ids.add(user.organizationId);
+    }
+
+    return Array.from(ids);
+}
+
 async function listOrganizationsInHierarchy(ctx: any, rootOrganizationId: any) {
     const childOrganizations = await ctx.db
         .query("organizations")
@@ -61,6 +101,7 @@ export const get = query({
 export const create = mutation({
     args: {
         name: v.string(),
+        parentOrganizationId: v.optional(v.id("organizations")),
         status: v.optional(v.union(v.literal("active"), v.literal("inactive"))),
         access: v.optional(v.object({
             patrolling: v.boolean(),
@@ -73,7 +114,7 @@ export const create = mutation({
         const mainOrganizationId = await ensureMainOrganization(ctx);
         const orgId = await ctx.db.insert("organizations", {
             name: args.name,
-            parentOrganizationId: mainOrganizationId,
+            parentOrganizationId: args.parentOrganizationId ?? mainOrganizationId,
             status: args.status ?? "active",
             access: args.access ?? DEFAULT_ORGANIZATION_ACCESS,
             createdAt: Date.now(),
@@ -175,14 +216,20 @@ export const remove = mutation({
 export const list = query({
     args: {
         currentOrganizationId: v.optional(v.id("organizations")),
+        requestingUserId: v.optional(v.id("users")),
     },
     handler: async (ctx, args) => {
-        if (!args.currentOrganizationId) {
+        const authorizedOrgIds = await getAuthorizedOrganizationIds(ctx, args.requestingUserId);
+
+        // If not restricted (Admin/Owner), show ALL organizations in the system
+        if (!authorizedOrgIds) {
             return await ctx.db.query("organizations").collect();
         }
 
-        const rootOrganizationId = await getRootOrganizationId(ctx, args.currentOrganizationId);
-        return await listOrganizationsInHierarchy(ctx, rootOrganizationId);
+        // For restricted roles (Client/SO), filter based on authorized IDs
+        // We list all then filter to ensure we stay within the authorized set
+        const allOrgs = await ctx.db.query("organizations").collect();
+        return allOrgs.filter(org => (authorizedOrgIds as any[]).includes(org._id));
     },
 });
 

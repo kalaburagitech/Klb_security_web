@@ -4,6 +4,8 @@ import { Bell, Search, UserCircle, Menu } from "lucide-react";
 import { useUser } from "@clerk/nextjs";
 import { useQuery } from "convex/react";
 import { api } from "../services/convex";
+import { NotificationList } from "./NotificationList";
+import { cn } from "../lib/utils";
 
 interface LayoutProps {
     children: React.ReactNode;
@@ -21,6 +23,11 @@ export function Layout({ children, title = "Security Dashboard" }: LayoutProps) 
     const organization = useQuery(api.organizations.get, 
         currentUser?.organizationId ? { id: currentUser.organizationId, currentOrganizationId: currentUser.organizationId } : "skip"
     );
+    const unreadCount = useQuery(api.notifications.getUnreadCount, 
+        currentUser?.organizationId ? { organizationId: currentUser.organizationId } : "skip"
+    );
+
+    const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
 
     return (
         <div className="flex h-screen bg-background overflow-hidden relative">
@@ -44,11 +51,29 @@ export function Layout({ children, title = "Security Dashboard" }: LayoutProps) 
                         </h2>
                     </div>
 
-                    <div className="flex items-center gap-4">
-                        <button className="relative w-8 h-8 flex items-center justify-center rounded-full hover:bg-white/10 transition-colors text-muted-foreground hover:text-white">
+                    <div className="flex items-center gap-4 relative">
+                        <button 
+                            onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
+                            className={cn(
+                                "relative w-8 h-8 flex items-center justify-center rounded-full transition-colors text-muted-foreground hover:text-white",
+                                isNotificationsOpen ? "bg-white/10 text-white" : "hover:bg-white/10"
+                            )}
+                        >
                             < Bell className="w-4 h-4" />
-                            <span className="absolute top-1 right-1 w-2 h-2 bg-primary rounded-full border border-background shadow-[0_0_10px_rgba(37,99,235,0.5)]" />
+                            {unreadCount !== undefined && unreadCount > 0 && (
+                                <span className="absolute top-1 right-1 w-2 h-2 bg-primary rounded-full border border-background shadow-[0_0_10px_rgba(37,99,235,0.5)] animate-pulse" />
+                            )}
                         </button>
+
+                        {isNotificationsOpen && currentUser?.organizationId && (
+                            <div className="absolute top-full right-0 mt-2 z-50">
+                                <NotificationList 
+                                    organizationId={currentUser.organizationId} 
+                                    onClose={() => setIsNotificationsOpen(false)} 
+                                />
+                            </div>
+                        )}
+
                         <div className="h-8 w-px bg-white/10" />
                         <div className="flex items-center gap-3 pl-2 cursor-pointer group">
                             <div className="text-right hidden sm:block leading-none">
@@ -56,7 +81,7 @@ export function Layout({ children, title = "Security Dashboard" }: LayoutProps) 
                                     {currentUser?.name || user?.fullName || "User"}
                                 </p>
                                 <p className="text-[10px] text-muted-foreground mt-0.5">
-                                    {organization?.name || "No Organization"}
+                                    {currentUser?.effectiveOrganizationName || organization?.name || "No Organization"}
                                 </p>
                             </div>
                             <div className="w-8 h-8 rounded-full border border-white/10 flex items-center justify-center bg-white/5 overflow-hidden group-hover:border-primary/50 transition-all">

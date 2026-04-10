@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { ShieldCheck, Clock3, LogOut } from "lucide-react";
 import { useClerk, useUser } from "@clerk/nextjs";
-import { useQuery } from "convex/react";
 import { useNavigate } from "react-router-dom";
+import { useQuery, useMutation } from "convex/react";
+import { toast } from "sonner";
 import { api } from "../../../services/convex";
 import { shouldRestrictToPendingUser } from "../../../lib/userRoles";
 
@@ -16,6 +17,8 @@ export default function Restricted() {
     api.users.getByClerkId,
     user?.id ? { clerkId: user.id } : "skip"
   );
+  const notifyAdmin = useMutation(api.notifications.notifyUnique);
+  const [isPinging, setIsPinging] = useState(false);
 
   useEffect(() => {
     if (currentUser && !shouldRestrictToPendingUser(currentUser) && currentUser.status !== "inactive") {
@@ -63,10 +66,30 @@ export default function Restricted() {
 
           <div className="flex items-center justify-center gap-3">
             <button
-              onClick={() => window.location.reload()}
-              className="px-4 py-2 rounded-xl bg-primary text-white text-sm font-medium hover:bg-primary/90 transition-colors"
+              onClick={async () => {
+                if (currentUser?._id && currentUser?.organizationId) {
+                  setIsPinging(true);
+                  try {
+                    await notifyAdmin({
+                      organizationId: currentUser.organizationId,
+                      type: "new_user",
+                      title: "User Waiting for Approval",
+                      message: `${currentUser.name} is checking their access. Please assign a role.`,
+                      referenceId: currentUser._id,
+                    });
+                    toast.success("Request sent to administrator");
+                  } catch (e) {
+                    // Ignore errors if they spam
+                  } finally {
+                    setIsPinging(false);
+                  }
+                }
+                window.location.reload();
+              }}
+              disabled={isPinging}
+              className="px-4 py-2 rounded-xl bg-primary text-white text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
             >
-              Check Access Again
+              {isPinging ? "Checking..." : "Check Access Again"}
             </button>
             <button
               onClick={async () => {

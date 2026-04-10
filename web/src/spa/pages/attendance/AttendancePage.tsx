@@ -5,6 +5,13 @@ import { useQuery } from "convex/react";
 import { useUser } from "@clerk/nextjs";
 import { api } from "../../../services/convex";
 import { cn } from "../../../lib/utils";
+import type { Id } from "../../../../convex/_generated/dataModel";
+import { 
+  userHasAnyRole, 
+  ADMIN_ROLES, 
+  RESTRICTED_ROLES 
+} from "../../../lib/userRoles";
+import { SiteSelector } from "../../../components/SiteSelector";
 
 function pad2(n: number) {
   return String(n).padStart(2, "0");
@@ -12,6 +19,24 @@ function pad2(n: number) {
 
 function toYMD(d: Date): string {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
+function last30DaysRange(): { start: string; end: string; days: string[] } {
+  const end = new Date();
+  const start = new Date();
+  start.setDate(end.getDate() - 29);
+  
+  const days: string[] = [];
+  const curr = new Date(start);
+  while (curr <= end) {
+    days.push(toYMD(curr));
+    curr.setDate(curr.getDate() + 1);
+  }
+  return {
+    start: toYMD(start),
+    end: toYMD(end),
+    days,
+  };
 }
 
 function monthDateRange(year: number, monthIndex: number): { start: string; end: string; days: string[] } {
@@ -108,8 +133,6 @@ function DetailsSiteSkeletonRow() {
 export default function AttendancePage() {
   const { user } = useUser();
   const [activeTab, setActiveTab] = useState<"details" | "report">("details");
-  const [selectedRegionId, setSelectedRegionId] = useState("");
-  const [selectedCity, setSelectedCity] = useState("");
   const [detailMonth, setDetailMonth] = useState(() => {
     const t = new Date();
     return { y: t.getFullYear(), m: t.getMonth() };
@@ -130,46 +153,30 @@ export default function AttendancePage() {
     y: today.getFullYear(),
     m: today.getMonth(),
   }));
-  const [reportRegion, setReportRegion] = useState("");
-  const [reportCity, setReportCity] = useState("");
-  const [reportSiteId, setReportSiteId] = useState("");
-  const [reportSearch, setReportSearch] = useState("");
   const [detailsSitesPage, setDetailsSitesPage] = useState(0);
   const [reportTablePage, setReportTablePage] = useState(0);
+  const [detailSiteId, setDetailSiteId] = useState("");
+  const [reportSiteId, setReportSiteId] = useState("");
+  const [reportSearch, setReportSearch] = useState("");
+  const [viewType, setViewType] = useState<"month" | "last30">("month");
 
   const currentUser = useQuery(api.users.getByClerkId, user?.id ? { clerkId: user.id } : "skip");
   const organizationId = currentUser?.organizationId;
+  const isRestricted = userHasAnyRole(currentUser, RESTRICTED_ROLES as any);
+  const isAdmin = userHasAnyRole(currentUser, ADMIN_ROLES as any);
 
   const regions = useQuery(api.regions.list, {});
 
   useEffect(() => {
-    if (currentUser?.regionId && !selectedRegionId) {
-      setSelectedRegionId(currentUser.regionId);
-    }
-  }, [currentUser?.regionId, selectedRegionId]);
-
-  useEffect(() => {
-    if (currentUser?.regionId && !reportRegion) {
-      setReportRegion(currentUser.regionId);
-    }
-  }, [currentUser?.regionId, reportRegion]);
-
-  useEffect(() => {
     setDetailsSitesPage(0);
-  }, [selectedRegionId, selectedCity, detailMonth.y, detailMonth.m, organizationId]);
-
-  const selectedRegionDoc = useMemo(
-    () => (regions as any[])?.find((r) => r.regionId === selectedRegionId),
-    [regions, selectedRegionId]
-  );
+  }, [detailMonth.y, detailMonth.m, organizationId]);
 
   const detailSites = useQuery(
     api.sites.listSitesByOrg,
     organizationId
       ? {
-          organizationId,
-          regionId: selectedRegionId || undefined,
-          city: selectedCity || undefined,
+          organizationId: organizationId,
+          requestingUserId: currentUser?._id
         }
       : "skip"
   );
@@ -178,25 +185,37 @@ export default function AttendancePage() {
     api.sites.listSitesByOrg,
     organizationId
       ? {
-          organizationId,
-          regionId: reportRegion || undefined,
-          city: reportCity || undefined,
+          organizationId: organizationId,
+          requestingUserId: currentUser?._id
         }
       : "skip"
   );
 
-  const { start: monthStart, end: monthEnd, days: monthDays } = monthDateRange(detailMonth.y, detailMonth.m);
+  const { start: monthStart, end: monthEnd, days: monthDays } = 
+    viewType === "month" 
+    ? monthDateRange(detailMonth.y, detailMonth.m)
+    : last30DaysRange();
 
   const monthRecords = useQuery(
     api.attendance.listForOrgDateRange,
-    organizationId ? { organizationId, startDate: monthStart, endDate: monthEnd } : "skip"
+    organizationId ? { 
+      organizationId: organizationId, 
+      startDate: monthStart, 
+      endDate: monthEnd, 
+      requestingUserId: currentUser?._id 
+    } : "skip"
   );
 
   const { start: reportStart, end: reportEnd, days: reportDays } = monthDateRange(reportMonth.y, reportMonth.m);
 
   const reportRecords = useQuery(
     api.attendance.listForOrgDateRange,
-    organizationId ? { organizationId, startDate: reportStart, endDate: reportEnd } : "skip"
+    organizationId ? { 
+      organizationId: organizationId, 
+      startDate: reportStart, 
+      endDate: reportEnd, 
+      requestingUserId: currentUser?._id 
+    } : "skip"
   );
   const enrolledPersons = useQuery(
     api.enrollment.list,
@@ -305,15 +324,18 @@ export default function AttendancePage() {
 
   useEffect(() => {
     setReportTablePage(0);
-  }, [reportMonth.y, reportMonth.m, reportRegion, reportCity, reportSiteId, reportSearch]);
+  }, [reportMonth.y, reportMonth.m, reportSiteId, reportSearch]);
 
   const sortedDetailSites = useMemo(() => {
-    const s = ((detailSites as any[]) || []).slice();
+    let s = ((detailSites as any[]) || []).slice();
+    if (detailSiteId) {
+        s = s.filter(site => String(site._id) === detailSiteId);
+    }
     s.sort((a, b) =>
       String(a.name || a.locationName || "").localeCompare(String(b.name || b.locationName || ""))
     );
     return s;
-  }, [detailSites]);
+  }, [detailSites, detailSiteId]);
 
   const detailsPageCount = Math.max(1, Math.ceil(sortedDetailSites.length / DETAILS_SITES_PAGE));
   const pagedDetailSites = useMemo(() => {
@@ -407,39 +429,40 @@ export default function AttendancePage() {
 
         {activeTab === "details" && (
           <div className="space-y-6">
-            <div className="glass flex flex-col gap-4 rounded-2xl border border-white/10 p-4 md:flex-row md:flex-wrap md:items-end">
-              <div className="min-w-[200px] flex-1">
-                <label className="mb-1 block text-xs font-bold uppercase tracking-wider text-muted-foreground">Region</label>
-                <select
-                  className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary/40"
-                  value={selectedRegionId}
-                  onChange={(e) => {
-                    setSelectedRegionId(e.target.value);
-                    setSelectedCity("");
-                  }}
-                >
-                  <option value="">All regions</option>
-                  {(regions as any[])?.map((r) => (
-                    <option key={r._id} value={r.regionId}>
-                      {r.regionName} ({r.regionId})
-                    </option>
-                  ))}
-                </select>
+            <div className="glass relative z-[60] flex flex-col gap-4 rounded-2xl border border-white/10 p-4 md:flex-row md:flex-wrap md:items-end">
+              <div className="min-w-[150px]">
+                <label className="mb-1 block text-xs font-bold uppercase tracking-wider text-muted-foreground">View Range</label>
+                <div className="flex bg-white/5 border border-white/10 rounded-xl p-1">
+                  <button
+                    onClick={() => setViewType("month")}
+                    className={cn(
+                      "flex-1 px-3 py-1.5 text-xs font-semibold rounded-lg transition-all",
+                      viewType === "month" ? "bg-primary text-white shadow-lg" : "text-muted-foreground hover:text-white"
+                    )}
+                  >
+                    Monthly
+                  </button>
+                  <button
+                    onClick={() => setViewType("last30")}
+                    className={cn(
+                      "flex-1 px-3 py-1.5 text-xs font-semibold rounded-lg transition-all",
+                      viewType === "last30" ? "bg-primary text-white shadow-lg" : "text-muted-foreground hover:text-white"
+                    )}
+                  >
+                    Last 30 Days
+                  </button>
+                </div>
               </div>
-              <div className="min-w-[200px] flex-1">
-                <label className="mb-1 block text-xs font-bold uppercase tracking-wider text-muted-foreground">City</label>
-                <select
-                  className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary/40"
-                  value={selectedCity}
-                  onChange={(e) => setSelectedCity(e.target.value)}
-                >
-                  <option value="">All cities</option>
-                  {(selectedRegionDoc?.cities as string[] | undefined)?.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
+              <div className="min-w-[200px]">
+                <label className="mb-1 block text-xs font-bold uppercase tracking-wider text-muted-foreground">Site</label>
+                <SiteSelector
+                  organizationId={organizationId}
+                  selectedSiteId={detailSiteId}
+                  onSiteChange={setDetailSiteId}
+                  requestingUserId={currentUser?._id}
+                  allOptionLabel="All sites"
+                  className="min-w-[180px]"
+                />
               </div>
               <div className="min-w-[200px]">
                 <label className="mb-1 block text-xs font-bold uppercase tracking-wider text-muted-foreground">Month</label>
@@ -576,9 +599,9 @@ export default function AttendancePage() {
 
         {activeTab === "report" && (
           <div className="space-y-4">
-            <div className="glass flex flex-col flex-wrap gap-4 rounded-2xl border border-white/10 p-4 md:flex-row md:items-end">
-              <div className="min-w-[200px]">
-                <label className="mb-1 block text-xs font-bold text-muted-foreground">Month</label>
+            <div className="glass relative z-[60] flex flex-col flex-wrap gap-4 rounded-2xl border border-white/10 p-4 md:flex-row md:items-end">
+              <div className="min-w-[150px]">
+                <label className="mb-1 block text-xs font-bold uppercase tracking-wider text-muted-foreground">Month</label>
                 <div className="flex items-center gap-2">
                   <Calendar className="h-4 w-4 text-muted-foreground" />
                   <input
@@ -591,78 +614,37 @@ export default function AttendancePage() {
                     }}
                   />
                 </div>
-                <p className="mt-1 text-[10px] text-muted-foreground">
-                  Columns: {reportStart} → {reportEnd}
+                <p className="mt-1 text-[10px] text-muted-foreground font-mono">
+                  {reportStart} to {reportEnd}
                 </p>
               </div>
-              <div className="min-w-[180px] flex-1">
-                <label className="mb-1 block text-xs font-bold text-muted-foreground">Region</label>
-                <select
-                  className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white"
-                  value={reportRegion}
-                  onChange={(e) => {
-                    setReportRegion(e.target.value);
-                    setReportCity("");
-                    setReportSiteId("");
-                  }}
-                >
-                  <option value="">All</option>
-                  {(regions as any[])?.map((r) => (
-                    <option key={r._id} value={r.regionId}>
-                      {r.regionName}
-                    </option>
-                  ))}
-                </select>
+
+              <div className="min-w-[200px]">
+                <label className="mb-1 block text-xs font-bold uppercase tracking-wider text-muted-foreground">Site Filter</label>
+                <SiteSelector
+                  organizationId={organizationId}
+                  selectedSiteId={reportSiteId}
+                  onSiteChange={setReportSiteId}
+                  requestingUserId={currentUser?._id}
+                  allOptionLabel="All sites"
+                />
               </div>
-              <div className="min-w-[160px] flex-1">
-                <label className="mb-1 block text-xs font-bold text-muted-foreground">City</label>
-                <select
-                  className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white"
-                  value={reportCity}
-                  onChange={(e) => {
-                    setReportCity(e.target.value);
-                    setReportSiteId("");
-                  }}
-                >
-                  <option value="">All</option>
-                  {(
-                    (regions as any[])?.find((r) => r.regionId === reportRegion)?.cities as string[] | undefined
-                  )?.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="min-w-[200px] flex-[2]">
-                <label className="mb-1 block text-xs font-bold text-muted-foreground">Site</label>
-                <select
-                  className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white"
-                  value={reportSiteId}
-                  onChange={(e) => setReportSiteId(e.target.value)}
-                >
-                  <option value="">All sites</option>
-                  {(reportSites as any[])?.map((s) => (
-                    <option key={s._id} value={String(s._id)}>
-                      {s.name || s.locationName}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="min-w-[220px] flex-[2]">
-                <label className="mb-1 block text-xs font-bold text-muted-foreground">Search</label>
+
+              <div className="min-w-[200px] flex-1">
+                <label className="mb-1 block text-xs font-bold uppercase tracking-wider text-muted-foreground">Search</label>
                 <input
                   type="text"
                   value={reportSearch}
                   onChange={(e) => setReportSearch(e.target.value)}
                   placeholder="Name / Emp ID / Rank"
-                  className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-muted-foreground"
+                  className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
                 />
               </div>
+
               <button
                 type="button"
                 onClick={downloadCsv}
-                className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-emerald-500/15 px-4 py-2 text-sm font-bold text-emerald-300 hover:bg-emerald-500/25"
+                className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-emerald-500/15 px-4 py-2 text-sm font-bold text-emerald-300 hover:bg-emerald-500/25 transition-colors h-[38px]"
               >
                 <Download className="h-4 w-4" />
                 CSV

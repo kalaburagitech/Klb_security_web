@@ -3,6 +3,7 @@ import { mutation, query } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
 import { ensureMainOrganization } from "./mainOrganization";
 import { isOrgAdminRoles } from "./userAccess";
+import { getAuthorizedSiteIds } from "./accessControl";
 
 const shiftValidator = v.object({
     name: v.string(),
@@ -27,7 +28,10 @@ export const createSite = mutation({
         shifts: v.optional(v.array(shiftValidator)),
     },
     handler: async (ctx, args) => {
-        const organizationId = await ensureMainOrganization(ctx);
+        const { organizationId: providedOrgId, ...rest } = args;
+        const fallbackOrgId = await ensureMainOrganization(ctx);
+        const organizationId = providedOrgId ?? fallbackOrgId;
+        
         const shifts = args.shifts?.length
             ? args.shifts
             : (args.shiftStart && args.shiftEnd
@@ -35,7 +39,7 @@ export const createSite = mutation({
                 : []);
 
         return await ctx.db.insert("sites", {
-            ...args,
+            ...rest,
             organizationId,
             shifts,
         });
@@ -58,8 +62,10 @@ export const updateSite = mutation({
         shifts: v.optional(v.array(shiftValidator)),
     },
     handler: async (ctx, args) => {
-        const { id, ...data } = args;
-        const organizationId = await ensureMainOrganization(ctx);
+        const { id, organizationId: providedOrgId, ...data } = args;
+        const fallbackOrgId = await ensureMainOrganization(ctx);
+        const organizationId = providedOrgId ?? fallbackOrgId;
+        
         const shifts = data.shifts?.length
             ? data.shifts
             : (data.shiftStart && data.shiftEnd
@@ -110,23 +116,37 @@ export const listSitesByOrg = query({
     args: { 
         organizationId: v.id("organizations"),
         regionId: v.optional(v.string()),
-        city: v.optional(v.string())
+        city: v.optional(v.string()),
+        requestingUserId: v.optional(v.id("users"))
     },
     handler: async (ctx, args) => {
-        let sites = await ctx.db
-            .query("sites")
-            .withIndex("by_org", (q) => q.eq("organizationId", args.organizationId))
+        const authorizedSiteIds = await getAuthorizedSiteIds(ctx, args.requestingUserId);
+        
+        // Find all organization IDs in the requested tree
+        const orgIds = [args.organizationId];
+        const childOrgs = await ctx.db.query("organizations")
+            .withIndex("by_parent_org", (q: any) => q.eq("parentOrganizationId", args.organizationId))
             .collect();
+        childOrgs.forEach(o => orgIds.push(o._id));
 
-        if (args.regionId) {
-            const rSearch = args.regionId.toLowerCase().trim();
-            sites = sites.filter(s => s.regionId?.toLowerCase().trim() === rSearch);
+        // Collect sites from all these organizations
+        const allSitesInTree = [];
+        for (const oid of orgIds) {
+            const sites = await ctx.db
+                .query("sites")
+                .withIndex("by_org", (q) => q.eq("organizationId", oid))
+                .collect();
+            allSitesInTree.push(...sites);
         }
-        if (args.city) {
-            const cSearch = args.city.toLowerCase().trim();
-            sites = sites.filter(s => s.city?.toLowerCase().trim() === cSearch);
+        
+        // If we have specific authorized sites (restricted role or scoped admin)
+        if (authorizedSiteIds) {
+            const allowedSet = new Set(authorizedSiteIds.map(id => id.toString()));
+            return allSitesInTree.filter(s => allowedSet.has(s._id.toString()));
         }
-        return sites;
+
+        // Fallback for cases where no authorizedSiteIds list is returned (usually wide admins)
+        return allSitesInTree;
     },
 });
 
@@ -137,69 +157,25 @@ export const listSitesByUser = query({
         city: v.optional(v.string())
     },
     handler: async (ctx, args) => {
-        const user = await ctx.db.get(args.userId);
-        if (!user) return [];
-
-        const roles = user.roles ?? [];
-        const isActuallyAdmin = isOrgAdminRoles(roles);
-
-        if (isActuallyAdmin) {
-            console.log(`[Convex] User ${args.userId} has org admin role(s). Fetching all organization sites.`);
-            let sites = await ctx.db
-                .query("sites")
-                .withIndex("by_org", (q) => q.eq("organizationId", user.organizationId))
-                .collect();
-
-            if (args.regionId) {
-                const rSearch = args.regionId.toLowerCase().trim();
-                sites = sites.filter(s => s.regionId?.toLowerCase().trim() === rSearch);
-            }
-            if (args.city) {
-                const cSearch = args.city.toLowerCase().trim();
-                sites = sites.filter(s => s.city?.toLowerCase().trim() === cSearch);
-            }
-            return sites;
-        }
-
-        const ids = new Set<string>();
-        if ((user as any).siteId) {
-            const sid = (user as any).siteId.toString();
-            if (sid && sid !== "undefined") ids.add(sid);
-        }
-        if (Array.isArray((user as any).siteIds)) {
-            for (const id of (user as any).siteIds) {
-                if (id) {
-                    const sid = id.toString();
-                    if (sid && sid !== "undefined") ids.add(sid);
-                }
-            }
-        }
-
-        console.log(`[Convex] Resolving sites for user ${args.userId}. IDs:`, Array.from(ids));
+        const authorizedSiteIds = await getAuthorizedSiteIds(ctx, args.userId);
+        if (!authorizedSiteIds) return [];
 
         const sites = [];
-        for (const id of ids) {
-            try {
-                const site = await ctx.db.get(id as Id<"sites">);
-                if (site) {
-                    // Filter by region if regionId is provided
-                    let matchesRegion = true;
-                    if (args.regionId) {
-                        matchesRegion = site.regionId === args.regionId;
-                    }
-
-                    // Filter by city if city is provided
-                    let matchesCity = true;
-                    if (args.city) {
-                        matchesCity = site.city === args.city;
-                    }
-
-                    if (matchesRegion && matchesCity) {
-                        sites.push(site);
-                    }
+        for (const sid of authorizedSiteIds) {
+            const site = await ctx.db.get(sid);
+            if (site) {
+                let matchesRegion = true;
+                if (args.regionId) {
+                    matchesRegion = site.regionId === args.regionId;
                 }
-            } catch (err) {
-                console.error(`[Convex] Error fetching site ${id}:`, err);
+                let matchesCity = true;
+                if (args.city) {
+                    matchesCity = site.city === args.city;
+                }
+
+                if (matchesRegion && matchesCity) {
+                    sites.push(site);
+                }
             }
         }
         return sites;
@@ -242,20 +218,41 @@ export const countByOrg = query({
         siteId: v.optional(v.id("sites")),
         regionId: v.optional(v.string()),
         city: v.optional(v.string()),
+        requestingUserId: v.optional(v.id("users"))
     },
     handler: async (ctx, args) => {
+        const authorizedSiteIds = await getAuthorizedSiteIds(ctx, args.requestingUserId);
+        
         if (args.siteId) {
             const site = await ctx.db.get(args.siteId);
-            if (!site || site.organizationId !== args.organizationId) {
-                return 0;
+            if (!site) return 0;
+            if (authorizedSiteIds) {
+                const allowedSet = new Set(authorizedSiteIds.map(id => id.toString()));
+                if (!allowedSet.has(args.siteId.toString())) return 0;
             }
             return 1;
         }
 
-        let sites = await ctx.db
-            .query("sites")
-            .withIndex("by_org", (q) => q.eq("organizationId", args.organizationId))
+        // Find all organization IDs in the requested tree
+        const orgIdsJoin = [args.organizationId];
+        const childOrgs = await ctx.db.query("organizations")
+            .withIndex("by_parent_org", (q: any) => q.eq("parentOrganizationId", args.organizationId))
             .collect();
+        childOrgs.forEach(o => orgIdsJoin.push(o._id));
+
+        let sites: any[] = [];
+        for (const oid of orgIdsJoin) {
+            const orgSites = await ctx.db
+                .query("sites")
+                .withIndex("by_org", (q) => q.eq("organizationId", oid))
+                .collect();
+            sites.push(...orgSites);
+        }
+
+        if (authorizedSiteIds) {
+            const allowedSet = new Set(authorizedSiteIds.map(id => id.toString()));
+            sites = sites.filter(s => allowedSet.has(s._id.toString()));
+        }
 
         if (args.regionId) {
             sites = sites.filter(s => s.regionId === args.regionId);

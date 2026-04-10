@@ -123,18 +123,37 @@ async function migrateRegionIdOnAssignments(
 }
 
 export const list = query({
-    args: {},
-    handler: async (ctx) => {
-        const organizations = await ctx.db.query("organizations").collect();
-        const mainOrganization = organizations.find((organization) => !organization.parentOrganizationId);
-        if (!mainOrganization) {
-            return [];
+    args: { organizationId: v.optional(v.id("organizations")) },
+    handler: async (ctx, args) => {
+        let orgIds: Id<"organizations">[] = [];
+        
+        if (args.organizationId) {
+            orgIds.push(args.organizationId);
+            // Find child organizations
+            const children = await ctx.db
+                .query("organizations")
+                .withIndex("by_parent_org", (q: any) => q.eq("parentOrganizationId", args.organizationId))
+                .collect();
+            children.forEach(c => orgIds.push(c._id));
+        } else {
+            // Default legacy behavior: main organization
+            const organizations = await ctx.db.query("organizations").collect();
+            const mainOrganization = organizations.find((organization) => !organization.parentOrganizationId);
+            if (!mainOrganization) return [];
+            orgIds.push(mainOrganization._id);
         }
 
-        return await ctx.db
-            .query("regions")
-            .withIndex("by_org", (q) => q.eq("organizationId", mainOrganization._id))
-            .collect();
+        const allRegions: Doc<"regions">[] = [];
+        for (const oid of orgIds) {
+            const regions = await ctx.db
+                .query("regions")
+                .withIndex("by_org", (q) => q.eq("organizationId", oid))
+                .collect();
+            allRegions.push(...regions);
+        }
+
+        // Return unique regions by regionId or just all of them
+        return allRegions;
     },
 });
 

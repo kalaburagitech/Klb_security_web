@@ -1,5 +1,6 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
+import { getAuthorizedSiteIds } from "./accessControl";
 
 function normShiftKey(shiftName: string | undefined): string {
     const t = (shiftName ?? "").trim();
@@ -157,32 +158,67 @@ export const list = query({
         empId: v.optional(v.string()),
         siteId: v.optional(v.id("sites")),
         shiftName: v.optional(v.string()),
+        requestingUserId: v.optional(v.id("users"))
     },
     handler: async (ctx, args) => {
-        const records = args.organizationId
-            ? await ctx.db
-                  .query("attendanceRecords")
-                  .withIndex("by_org", (q) => q.eq("organizationId", args.organizationId))
-                  .collect()
-            : args.region
-              ? await ctx.db
-                    .query("attendanceRecords")
-                    .withIndex("by_region", (q) => q.eq("region", args.region!))
-                    .collect()
-              : args.empId
-                ? await ctx.db
-                      .query("attendanceRecords")
-                      .withIndex("by_empId", (q) => q.eq("empId", args.empId!))
-                      .collect()
-                : args.date
-                  ? await ctx.db
-                        .query("attendanceRecords")
-                        .withIndex("by_date", (q) => q.eq("date", args.date!))
-                        .collect()
-                  : await ctx.db.query("attendanceRecords").collect();
+        const authorizedSiteIds = await getAuthorizedSiteIds(ctx, args.requestingUserId);
         
-        // Filter by additional criteria if needed
+        let records;
+        if (args.siteId) {
+            records = await ctx.db
+                .query("attendanceRecords")
+                .withIndex("by_site", (q) => q.eq("siteId", args.siteId))
+                .collect();
+        } else if (authorizedSiteIds) {
+            const recordsPromises = authorizedSiteIds.map(sid => 
+                ctx.db.query("attendanceRecords")
+                    .withIndex("by_site", q => q.eq("siteId", sid))
+                    .collect()
+            );
+            const results = await Promise.all(recordsPromises);
+            records = results.flat();
+        } else if (args.organizationId) {
+            // Unrestricted fallback: use hierarchy
+            const orgIds = [args.organizationId];
+            const childOrgs = await ctx.db.query("organizations")
+                .withIndex("by_parent_org", (q: any) => q.eq("parentOrganizationId", args.organizationId))
+                .collect();
+            childOrgs.forEach(o => orgIds.push(o._id));
+            
+            let all = [] as any[];
+            for (const oid of orgIds) {
+                const results = await ctx.db.query("attendanceRecords")
+                    .withIndex("by_org", q => q.eq("organizationId", oid))
+                    .collect();
+                all = [...all, ...results];
+            }
+            records = all;
+        } else if (args.region) {
+            records = await ctx.db
+                .query("attendanceRecords")
+                .withIndex("by_region", (q) => q.eq("region", args.region!))
+                .collect();
+        } else if (args.empId) {
+            records = await ctx.db
+                .query("attendanceRecords")
+                .withIndex("by_empId", (q) => q.eq("empId", args.empId!))
+                .collect();
+        } else if (args.date) {
+            records = await ctx.db
+                .query("attendanceRecords")
+                .withIndex("by_date", (q) => q.eq("date", args.date!))
+                .collect();
+        } else {
+            records = await ctx.db.query("attendanceRecords").collect();
+        }
+        
         let filtered = records;
+        if (authorizedSiteIds) {
+            const allowedSet = new Set(authorizedSiteIds.map(id => id.toString()));
+            filtered = filtered.filter(r => r.siteId && allowedSet.has(r.siteId.toString()));
+        }
+
+        // Filter by additional criteria if needed
         if (args.date) {
             filtered = filtered.filter((r) => r.date === args.date);
         }
@@ -208,14 +244,66 @@ export const listForOrgDateRange = query({
         organizationId: v.id("organizations"),
         startDate: v.string(),
         endDate: v.string(),
+        requestingUserId: v.optional(v.id("users")),
     },
     handler: async (ctx, args) => {
+        const authorizedSiteIds = await getAuthorizedSiteIds(ctx, args.requestingUserId);
         const records = await ctx.db
             .query("attendanceRecords")
             .withIndex("by_org", (q) => q.eq("organizationId", args.organizationId))
             .collect();
-        return records.filter(
+
+        const inDateRange = records.filter(
             (r) => r.date >= args.startDate && r.date <= args.endDate
         );
+
+        if (authorizedSiteIds) {
+            const allowedSet = new Set(authorizedSiteIds.map((id) => id.toString()));
+            return inDateRange.filter((r) => r.siteId && allowedSet.has(r.siteId.toString()));
+        }
+
+        return inDateRange;
+    },
+});
+
+export const countByOrg = query({
+    args: {
+        organizationId: v.optional(v.id("organizations")),
+        siteId: v.optional(v.id("sites")),
+        regionId: v.optional(v.string()),
+        city: v.optional(v.string()),
+        requestingUserId: v.optional(v.id("users")),
+        date: v.optional(v.string()), // Optional: count for a specific day
+    },
+    handler: async (ctx, args) => {
+        const authorizedSiteIds = await getAuthorizedSiteIds(ctx, args.requestingUserId);
+        let records;
+
+        if (args.organizationId) {
+            records = await ctx.db
+                .query("attendanceRecords")
+                .withIndex("by_org", (q) => q.eq("organizationId", args.organizationId!))
+                .collect();
+        } else {
+            records = await ctx.db.query("attendanceRecords").collect();
+        }
+
+        let filtered = records;
+        if (authorizedSiteIds) {
+            const allowedSet = new Set(authorizedSiteIds.map(id => id.toString()));
+            filtered = filtered.filter(r => r.siteId && allowedSet.has(r.siteId.toString()));
+        }
+
+        if (args.date) {
+            filtered = filtered.filter((r) => r.date === args.date);
+        }
+        if (args.siteId) {
+            filtered = filtered.filter((r) => r.siteId === args.siteId);
+        }
+        if (args.regionId) {
+            filtered = filtered.filter((r) => r.region === args.regionId);
+        }
+
+        return filtered.length;
     },
 });

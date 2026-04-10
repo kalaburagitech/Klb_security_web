@@ -46,6 +46,7 @@ export default defineSchema({
             issues: v.boolean(),
             analytics: v.boolean(),
             attendance: v.optional(v.boolean()),
+            regions: v.optional(v.boolean()),
         })),
         creationTime: v.optional(v.number()),
     }).index("by_clerkId", ["clerkId"])
@@ -247,5 +248,18 @@ export default defineSchema({
         .index("by_empId", ["empId"])
         .index("by_date", ["date"])
         .index("by_region", ["region"])
-        .index("by_empId_date", ["empId", "date"]),
+        .index("by_empId_date", ["empId", "date"])
+        .index("by_site", ["siteId"]),
+
+    notifications: defineTable({
+        organizationId: v.id("organizations"),
+        type: v.union(v.literal("new_user"), v.literal("issue")),
+        title: v.string(),
+        message: v.string(),
+        isRead: v.boolean(),
+        createdAt: v.number(),
+        referenceId: v.optional(v.union(v.id("users"), v.id("issues"), v.id("incidents"))),
+    }).index("by_org", ["organizationId"])
+        .index("by_org_read", ["organizationId", "isRead"])
+        .index("by_type", ["type"]),
 });

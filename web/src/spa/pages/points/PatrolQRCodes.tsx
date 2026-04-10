@@ -1,7 +1,11 @@
 import { useCallback, useMemo, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { Printer } from "lucide-react";
+import { Printer, Save, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { useMutation, useQuery } from "convex/react";
+import { api } from "../../../services/convex";
+import { useUser } from "@clerk/nextjs";
+import type { Id } from "../../../../convex/_generated/dataModel";
 
 type QrItem = { id: string; code: string; title: string };
 
@@ -54,13 +58,47 @@ function printPrintableArea(elementId: string) {
 
 /**
  * Generate printable QR payloads (short `k` + 10 chars) for physical labels. Register each code to a site
- * from the mobile app: Patrol → site → Add QR code → name → scan this label → save with GPS.
+ * from the mobile app or directly using the "Save to Site" button here.
  */
-export default function PatrolQRCodes() {
+export default function PatrolQRCodes({ selectedSiteId }: { selectedSiteId?: string }) {
+    const { user } = useUser();
     const [codes, setCodes] = useState<QrItem[]>(initialCodes);
     const [title, setTitle] = useState("");
     const [count, setCount] = useState(1);
     const [showTitle, setShowTitle] = useState(true);
+    const [isSaving, setIsSaving] = useState(false);
+
+    const currentUser = useQuery(api.users.getByClerkId,
+        user?.id ? { clerkId: user.id } : "skip"
+    );
+    const organizationId = currentUser?.organizationId;
+
+    const site = useQuery(api.sites.getSite, 
+        selectedSiteId && selectedSiteId !== "all" 
+            ? { id: selectedSiteId as Id<"sites"> } 
+            : "skip"
+    );
+
+    const saveMutation = useMutation(api.patrolPoints.createPointsFromList);
+
+    const handleSaveToSite = async () => {
+        if (!organizationId || !selectedSiteId || selectedSiteId === "all" || codes.length === 0) return;
+        
+        setIsSaving(true);
+        try {
+            await saveMutation({
+                organizationId,
+                siteId: selectedSiteId as Id<"sites">,
+                points: codes.map(c => ({ name: c.title, qrCode: c.code }))
+            });
+            toast.success(`Successfully saved ${codes.length} points to ${site?.name || "site"}`);
+        } catch (err) {
+            console.error(err);
+            toast.error("Failed to save points to site");
+        } finally {
+            setIsSaving(false);
+        }
+    };
 
     const generateQRCodes = useCallback(() => {
         const n = Math.min(50, Math.max(1, Math.floor(count) || 1));
@@ -81,9 +119,11 @@ export default function PatrolQRCodes() {
 
     const emptyHint = useMemo(
         () =>
-            "Use the mobile app: open Patrol, pick a site, Add QR code, enter the point name, then scan one of these printed codes. Save with GPS so patrol scans can verify distance.",
+            "Generate printable QR payloads for physical labels. Once generated, you can save them directly to a site or register them individually using the mobile app.",
         []
     );
+
+    const isSiteSelected = selectedSiteId && selectedSiteId !== "all";
 
     return (
         <div className="space-y-6">
@@ -127,22 +167,38 @@ export default function PatrolQRCodes() {
                         />
                         Show title on sheet
                     </label>
-                    <button
-                        type="button"
-                        onClick={generateQRCodes}
-                        className="w-full py-3 bg-primary text-primary-foreground rounded-xl font-bold hover:bg-primary/90 transition-all"
-                    >
-                        Generate QR codes
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => printPrintableArea(printableId)}
-                        disabled={codes.length === 0}
-                        className="w-full py-3 flex items-center justify-center gap-2 bg-white/10 border border-white/15 text-white rounded-xl font-semibold hover:bg-white/15 disabled:opacity-40 disabled:pointer-events-none"
-                    >
-                        <Printer className="w-4 h-4" />
-                        Print QR codes
-                    </button>
+                    
+                    <div className="pt-2 space-y-3">
+                        <button
+                            type="button"
+                            onClick={generateQRCodes}
+                            className="w-full py-3 bg-primary text-primary-foreground rounded-xl font-bold hover:bg-primary/90 transition-all shadow-lg shadow-primary/20"
+                        >
+                            Generate QR codes
+                        </button>
+
+                        {isSiteSelected && (
+                            <button
+                                type="button"
+                                onClick={handleSaveToSite}
+                                disabled={isSaving || codes.length === 0}
+                                className="w-full py-3 flex items-center justify-center gap-2 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-500 transition-all disabled:opacity-40 shadow-lg shadow-emerald-900/20"
+                            >
+                                {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                                Save to {site?.name || "Site"}
+                            </button>
+                        )}
+
+                        <button
+                            type="button"
+                            onClick={() => printPrintableArea(printableId)}
+                            disabled={codes.length === 0}
+                            className="w-full py-3 flex items-center justify-center gap-2 bg-white/10 border border-white/15 text-white rounded-xl font-semibold hover:bg-white/15 disabled:opacity-40 disabled:pointer-events-none"
+                        >
+                            <Printer className="w-4 h-4" />
+                            Print QR codes
+                        </button>
+                    </div>
                 </div>
 
                 <div
@@ -150,9 +206,10 @@ export default function PatrolQRCodes() {
                     className="glass rounded-2xl border border-white/10 p-5 min-h-[200px]"
                 >
                     {codes.length === 0 ? (
-                        <p className="text-center text-muted-foreground text-sm py-12">
-                            No codes in the list. Use Generate to add labels.
-                        </p>
+                        <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
+                            <QRCodeSVG value="placeholder" size={48} className="opacity-20 mb-4" />
+                            <p className="text-sm">No codes in the list. Use Generate to add labels.</p>
+                        </div>
                     ) : (
                         <div className="flex flex-wrap gap-4">
                             {codes.map((qr) => (

@@ -11,6 +11,7 @@ import {
   Sun,
   Moon,
   QrCode,
+  Building,
 } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { useQuery } from "convex/react";
@@ -18,7 +19,9 @@ import { api } from "../../services/convex";
 import { useUser } from "@clerk/nextjs";
 import { useState } from "react";
 import type { Id } from "../../../convex/_generated/dataModel";
-import { userHasRole } from "../../lib/userRoles";
+import { userHasRole, userHasAnyRole, ADMIN_ROLES, RESTRICTED_ROLES } from "../../lib/userRoles";
+import { SiteSelector } from "../../components/SiteSelector";
+import MonitoringDashboard from "./monitoring/MonitoringDashboard";
 
 export default function Dashboard() {
   const { user } = useUser();
@@ -29,22 +32,29 @@ export default function Dashboard() {
 
   // Fetch real data
   const currentUser = useQuery(api.users.getByClerkId, user?.id ? { clerkId: user.id } : "skip");
-  const regions = useQuery(api.regions.list);
   const organizationId = currentUser?.organizationId;
+  const regions = useQuery(api.regions.list, organizationId ? { organizationId: (selectedOrgId as any) || organizationId } : "skip");
   const isOwner = userHasRole(currentUser, "Owner");
+  const isAdmin = userHasAnyRole(currentUser, ADMIN_ROLES as any);
+  const isRestricted = userHasAnyRole(currentUser, RESTRICTED_ROLES as any);
+  const isClient = userHasRole(currentUser, "Client");
+  const isSO = userHasRole(currentUser, "SO");
+
   const orgs = useQuery(
     api.organizations.list,
     currentUser?.organizationId ? { currentOrganizationId: currentUser.organizationId } : {}
   );
 
+
   const orgIdToUse = (organizationId || selectedOrgId) as Id<"organizations">;
-  const siteIdToUse = selectedSiteId === "all" ? undefined : (selectedSiteId as Id<"sites">);
+  const siteIdToUse = (selectedSiteId === "all" || !selectedSiteId) ? undefined : (selectedSiteId as Id<"sites">);
   const orgScopedQueryArgs = orgIdToUse
     ? {
         organizationId: orgIdToUse,
         siteId: siteIdToUse,
         regionId: selectedRegionId || undefined,
         city: selectedCity || undefined,
+        requestingUserId: currentUser?._id
       }
     : "skip";
 
@@ -54,7 +64,8 @@ export default function Dashboard() {
       organizationId: orgIdToUse, 
       siteId: siteIdToUse,
       regionId: selectedRegionId || undefined,
-      city: selectedCity || undefined
+      city: selectedCity || undefined,
+      requestingUserId: currentUser?._id
     } : "skip") as any
   );
   const sitesCount = useQuery(
@@ -62,7 +73,8 @@ export default function Dashboard() {
     (isOwner ? {} : orgIdToUse ? { 
       organizationId: orgIdToUse,
       regionId: selectedRegionId || undefined,
-      city: selectedCity || undefined
+      city: selectedCity || undefined,
+      requestingUserId: currentUser?._id
     } : "skip") as any
   );
   const patrolLogsCount = useQuery(
@@ -83,12 +95,27 @@ export default function Dashboard() {
       organizationId: orgIdToUse, 
       siteId: siteIdToUse,
       regionId: selectedRegionId || undefined,
-      city: selectedCity || undefined
+      city: selectedCity || undefined,
+      requestingUserId: currentUser?._id
     } : "skip") as any
   );
   const dailyCoverage = useQuery(
     api.logs.getDailyOfficerCoverage,
-    (orgIdToUse ? { organizationId: orgIdToUse } : "skip") as any
+    (orgIdToUse ? { 
+      organizationId: (selectedOrgId as Id<"organizations">) || orgIdToUse,
+      requestingUserId: currentUser?._id
+    } : "skip") as any
+  );
+
+  const attendanceCount = useQuery(
+    api.attendance.countByOrg,
+    (orgIdToUse ? { 
+      organizationId: orgIdToUse, 
+      siteId: siteIdToUse,
+      regionId: selectedRegionId || undefined,
+      requestingUserId: currentUser?._id,
+      date: new Date().toISOString().split('T')[0] // Today
+    } : "skip") as any
   );
 
   const dashboardSites = useQuery(
@@ -96,9 +123,14 @@ export default function Dashboard() {
     (orgIdToUse ? { 
       organizationId: orgIdToUse,
       regionId: selectedRegionId || undefined,
-      city: selectedCity || undefined
+      city: selectedCity || undefined,
+      requestingUserId: currentUser?._id
     } : "skip") as any
   );
+
+  if ((isClient || isSO) && !isAdmin) {
+    return <MonitoringDashboard userId={currentUser?._id as Id<"users">} />;
+  }
 
   const stats = [
     {
@@ -129,36 +161,59 @@ export default function Dashboard() {
       color: "text-rose-500",
       trend: openIssuesCount === undefined ? "Loading..." : "Critical",
     },
+    {
+      label: "Attendance Today",
+      value: attendanceCount?.toString() || "0",
+      icon: Users,
+      color: "text-cyan-400",
+      trend: attendanceCount === undefined ? "Loading..." : "Live",
+    },
+    {
+      label: "Visits Today",
+      value: visitStats?.total?.toString() || "0",
+      icon: QrCode,
+      color: "text-indigo-400",
+      trend: visitStats === undefined ? "Loading..." : "Live",
+    },
   ];
 
   return (
     <Layout title="Command Center Overview">
       <div className="space-y-8">
-        {/* Organization Selector (if not linked) */}
-        {!currentUser?.organizationId && (
-          <div className="flex items-center gap-4 bg-white/5 border border-white/10 p-4 rounded-2xl">
-            <span className="text-sm font-semibold text-muted-foreground ml-2">Select Organization:</span>
-            <div className="flex flex-wrap gap-2">
-              {orgs?.map((org) => (
-                <button
-                  key={org._id}
-                  onClick={() => setSelectedOrgId(org._id)}
-                  className={cn(
-                    "px-4 py-1.5 rounded-xl text-xs font-semibold border transition-all",
-                    selectedOrgId === org._id
-                      ? "bg-primary text-primary-foreground border-primary shadow-[0_0_15px_rgba(37,99,235,0.3)]"
-                      : "bg-white/5 text-muted-foreground border-white/10 hover:border-white/20"
-                  )}
-                >
-                  {org.name}
-                </button>
-              ))}
+        {/* Organization Selector (for Drill-down) */}
+        {(isAdmin || isOwner) && (
+          <div className="flex flex-col lg:flex-row lg:items-center gap-4 bg-white/5 border border-white/10 p-4 rounded-2xl">
+            <div className="flex items-center gap-2 min-w-fit">
+              <Building className="w-4 h-4 text-primary" />
+              <span className="text-sm font-semibold text-muted-foreground mr-2">Organization:</span>
+            </div>
+            <div className="flex-1 max-w-sm">
+              <select
+                value={selectedOrgId || organizationId || ""}
+                onChange={(e) => {
+                  setSelectedOrgId(e.target.value);
+                  setSelectedSiteId("all");
+                  setSelectedRegionId("");
+                  setSelectedCity("");
+                }}
+                className="w-full h-10 px-4 bg-white/5 border border-white/10 rounded-xl text-sm text-white focus:outline-none focus:ring-1 focus:ring-primary/50"
+              >
+                {!organizationId && <option value="" className="bg-[#1a1c20]">Select Organization</option>}
+                {orgs?.map((org) => (
+                  <option key={org._id} value={org._id} className="bg-[#1a1c20]">
+                    {org.name} {org._id === organizationId ? "(Primary)" : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="text-[10px] text-muted-foreground italic lg:ml-auto">
+              Drill down into sub-organizations to filter reports and site coverage.
             </div>
           </div>
         )}
 
         {/* Region & City Filter Bar */}
-        <div className="flex flex-col lg:flex-row lg:items-center gap-4 bg-white/5 border border-white/10 p-4 rounded-2xl">
+        <div className="flex flex-col lg:flex-row lg:items-center gap-4 bg-white/5 border border-white/10 p-4 rounded-2xl relative z-[100]">
           <div className="flex items-center gap-2 min-w-fit">
             <MapPin className="w-4 h-4 text-primary" />
             <span className="text-sm font-semibold text-muted-foreground mr-2">Region:</span>
@@ -202,6 +257,20 @@ export default function Dashboard() {
                 </option>
               ))}
             </select>
+          </div>
+
+          <div className="flex items-center gap-2 min-w-fit">
+            <span className="text-sm font-semibold text-muted-foreground mr-2 lg:ml-4">Site:</span>
+          </div>
+          <div className="flex-1 max-w-sm">
+            <SiteSelector
+              organizationId={orgIdToUse}
+              selectedSiteId={selectedSiteId}
+              onSiteChange={setSelectedSiteId}
+              regionId={selectedRegionId}
+              city={selectedCity}
+              requestingUserId={currentUser?._id}
+            />
           </div>
         </div>
 

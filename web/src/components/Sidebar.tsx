@@ -26,7 +26,7 @@ const navItems = [
     { name: "Dashboard", icon: LayoutDashboard, href: "/", permission: "analytics" },
     { name: "Users", icon: Users, href: "/users", permission: "users" },
     { name: "Organizations", icon: Building2, href: "/organizations", permission: "sites" },
-    { name: "Regions", icon: Globe, href: "/regions", permission: "sites" },
+    { name: "Regions", icon: Globe, href: "/regions", permission: "regions" },
     { name: "Sites", icon: MapPin, href: "/sites", permission: "sites" },
 
     // ✅ SINGLE PATROL TAB
@@ -55,10 +55,6 @@ export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
     const orgAccess = organization?.access;
 
     const filteredNavItems = navItems.filter((item) => {
-        if (currentUser?.roles?.includes("Owner")) {
-            return true;
-        }
-
         if (!permissions) {
             return false;
         }

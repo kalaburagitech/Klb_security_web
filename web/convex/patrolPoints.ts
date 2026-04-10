@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { mutation, query, internalMutation } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
+import { getAuthorizedSiteIds } from "./accessControl";
 
 /** One QR string per org: remove any other patrol point using the same code before insert/update. */
 async function removeOtherPointsWithSameQr(
@@ -104,6 +105,35 @@ export const createBatchPoints = mutation({
     },
 });
 
+export const createPointsFromList = mutation({
+    args: {
+        points: v.array(v.object({ name: v.string(), qrCode: v.string() })),
+        siteId: v.id("sites"),
+        organizationId: v.id("organizations"),
+    },
+    handler: async (ctx, args) => {
+        const site = await ctx.db.get(args.siteId);
+        if (!site) throw new Error("Site not found");
+        const siteName = site.name;
+
+        const results = [];
+        for (const p of args.points) {
+            await removeOtherPointsWithSameQr(ctx, args.organizationId, p.qrCode);
+            const id = await ctx.db.insert("patrolPoints", {
+                siteId: args.siteId,
+                siteName,
+                name: p.name,
+                qrCode: p.qrCode,
+                organizationId: args.organizationId,
+                pointRadiusMeters: 200,
+                createdAt: Date.now(),
+            });
+            results.push(id);
+        }
+        return results;
+    },
+});
+
 // Internal mutation to migrate existing records
 export const migrateSiteNames = internalMutation({
     handler: async (ctx) => {
@@ -155,16 +185,23 @@ export const listAll = query({
 });
 
 export const listByOrg = query({
-    args: { organizationId: v.id("organizations") },
+    args: { organizationId: v.id("organizations"), requestingUserId: v.optional(v.id("users")) },
     handler: async (ctx, args) => {
+        const authorizedSiteIds = await getAuthorizedSiteIds(ctx, args.requestingUserId);
         const points = await ctx.db
             .query("patrolPoints")
             .withIndex("by_org", (q) => q.eq("organizationId", args.organizationId))
             .collect();
 
+        let filtered = points;
+        if (authorizedSiteIds) {
+            const authSet = new Set(authorizedSiteIds);
+            filtered = points.filter((p) => authSet.has(p.siteId as any));
+        }
+
         // Ensure all points have siteName (for backward compatibility)
         const pointsWithSiteName = await Promise.all(
-            points.map(async (point) => {
+            filtered.map(async (point) => {
                 if (point.siteName) {
                     return point;
                 }
@@ -266,8 +303,10 @@ export const searchPoints = query({
             numItems: v.float64(),
             id: v.optional(v.float64()),
         }),
+        requestingUserId: v.optional(v.id("users")),
     },
     handler: async (ctx, args) => {
+        const authorizedSiteIds = await getAuthorizedSiteIds(ctx, args.requestingUserId);
         // Fetch patrol points for org (and optionally site), then apply optional search filter.
         let points;
         if (args.organizationId) {
@@ -277,6 +316,11 @@ export const searchPoints = query({
                 .collect();
         } else {
             points = await ctx.db.query("patrolPoints").collect();
+        }
+
+        if (authorizedSiteIds) {
+            const authSet = new Set(authorizedSiteIds);
+            points = points.filter((p) => authSet.has(p.siteId as any));
         }
 
         if (args.siteId) {
@@ -326,9 +370,11 @@ export const searchPoints = query({
 export const countByOrg = query({
     args: {
         organizationId: v.optional(v.id("organizations")),
-        siteId: v.optional(v.id("sites"))
+        siteId: v.optional(v.id("sites")),
+        requestingUserId: v.optional(v.id("users")),
     },
     handler: async (ctx, args) => {
+        const authorizedSiteIds = await getAuthorizedSiteIds(ctx, args.requestingUserId);
         const orgId = args.organizationId;
         const sId = args.siteId;
 
@@ -343,7 +389,13 @@ export const countByOrg = query({
         const q = orgId
             ? ctx.db.query("patrolPoints").withIndex("by_org", (q) => q.eq("organizationId", orgId))
             : ctx.db.query("patrolPoints");
-        const points = await q.collect();
+        let points = await q.collect();
+
+        if (authorizedSiteIds) {
+            const authSet = new Set(authorizedSiteIds);
+            points = points.filter((p) => authSet.has(p.siteId as any));
+        }
+
         return points.length;
     },
 });

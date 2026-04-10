@@ -24,10 +24,15 @@ export default function IssueTracker() {
     );
 
     const orgIssues = useQuery((api.logs as any).listIssuesByOrg,
-        (organizationId || (selectedOrgId as Id<"organizations">)) ? { organizationId: (organizationId || selectedOrgId) as Id<"organizations"> } : "skip"
+        (organizationId || (selectedOrgId as Id<"organizations">)) ? { 
+            organizationId: (organizationId || selectedOrgId) as Id<"organizations">,
+            requestingUserId: currentUser?._id
+        } : "skip"
     );
     const allIssuesList = useQuery(api.logs.listAllIssues);
+    const isRestricted = (currentUser?.roles || []).some((r: string) => ["Client", "SO"].includes(r));
     const isSuperAdmin = userHasAnyRole(currentUser, ["Owner", "Deployment Manager"]);
+    const isAdmin = isSuperAdmin || (currentUser?.roles || []).includes("Manager");
     const issues = isSuperAdmin ? allIssuesList : orgIssues;
 
     const resolveIssue = useMutation(api.logs.resolveIssue);
@@ -121,7 +126,7 @@ export default function IssueTracker() {
                     >
                         View Details
                     </button>
-                    {!isResolved && issue.status === "open" && (
+                    {!isResolved && issue.status === "open" && isAdmin && (
                         <button
                             onClick={() => handleResolve(issue._id)}
                             className="px-4 py-2 bg-primary/10 border border-primary/20 text-primary rounded-xl text-xs font-semibold hover:bg-primary hover:text-white transition-all shadow-sm active:scale-95"
@@ -168,7 +173,7 @@ export default function IssueTracker() {
         <Layout title="Issue Tracker">
             <div className="space-y-6">
                 {/* Organization Selector (if not linked) */}
-                {!currentUser?.organizationId && (
+                {!isRestricted && !currentUser?.organizationId && (
                     <div className="flex items-center gap-4 bg-white/5 border border-white/10 p-4 rounded-2xl mb-6">
                         <span className="text-sm font-semibold text-muted-foreground ml-2">Select Organization:</span>
                         <div className="flex flex-wrap gap-2">
@@ -186,6 +191,20 @@ export default function IssueTracker() {
                                     {org.name}
                                 </button>
                             ))}
+                        </div>
+                    </div>
+                )}
+                
+                {isRestricted && (
+                    <div className="flex items-center gap-3 bg-primary/10 border border-primary/20 p-4 rounded-2xl mb-6">
+                        <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
+                            <ShieldAlert className="w-5 h-5 text-primary" />
+                        </div>
+                        <div>
+                            <p className="text-xs font-bold text-primary uppercase tracking-wider">Effective Tenant</p>
+                            <h3 className="text-lg font-bold text-white leading-tight">
+                                {currentUser?.effectiveOrganizationName || "Loading..."}
+                            </h3>
                         </div>
                     </div>
                 )}

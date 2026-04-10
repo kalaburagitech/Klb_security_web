@@ -97,10 +97,9 @@ interface PatrolPoint {
 
 type Order = "asc" | "desc";
 
-export default function PatrolPoints() {
+export default function PatrolPoints({ selectedSiteId }: { selectedSiteId: string }) {
     const { user } = useUser();
     const [searchQuery, setSearchQuery] = useState("");
-    const [selectedSiteId, setSelectedSiteId] = useState<string>("all");
     const [editingPoint, setEditingPoint] = useState<any | null>(null);
     const [isDeletingId, setIsDeletingId] = useState<Id<"patrolPoints"> | null>(null);
 
@@ -125,8 +124,9 @@ export default function PatrolPoints() {
         api.patrolPoints.searchPoints,
         (isOwner || orgIdToUse) ? {
             organizationId: isOwner ? undefined : (orgIdToUse as Id<"organizations">),
-            siteId: selectedSiteId === "all" ? undefined : selectedSiteId as Id<"sites">,
-            searchQuery: searchQuery
+            siteId: (selectedSiteId === "all" || !selectedSiteId) ? undefined : selectedSiteId as Id<"sites">,
+            searchQuery: searchQuery,
+            requestingUserId: currentUser?._id
         } : "skip",
         { initialNumItems: ITEMS_PER_PAGE }
     );
@@ -336,14 +336,6 @@ export default function PatrolPoints() {
                                 className="w-full pl-10 pr-4 py-2 bg-white/5 border border-white/10 rounded-xl text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
                             />
                         </div>
-                        {orgIdToUse && (
-                            <SearchableSitePicker
-                                organizationId={orgIdToUse as Id<"organizations">}
-                                selectedSiteId={selectedSiteId}
-                                onSelect={setSelectedSiteId}
-                                className="w-full md:w-64"
-                            />
-                        )}
                     </div>
                     <div className="flex items-center gap-3">
                         {points && points.length > 0 && (
@@ -575,6 +567,7 @@ export default function PatrolPoints() {
                                         organizationId={orgIdToUse}
                                         selectedSiteId={editingPoint.siteId}
                                         onSelect={sId => setEditingPoint({ ...editingPoint, siteId: sId })}
+                                        requestingUserId={currentUser?._id}
                                     />
                                 )}
                             </div>

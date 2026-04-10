@@ -9,7 +9,7 @@ import { api } from "../../../services/convex";
 import { useUser } from "@clerk/nextjs";
 import type { Id } from "../../../../convex/_generated/dataModel";
 import { toast } from "sonner";
-import { getUserRoles, userHasRole } from "../../../lib/userRoles";
+import { getUserRoles, userHasRole, userHasAnyRole, ADMIN_ROLES, RESTRICTED_ROLES } from "../../../lib/userRoles";
 
 type SiteShift = {
     name: string;
@@ -27,6 +27,7 @@ type SiteFormState = {
     regionId?: string;
     city?: string;
     shifts: SiteShift[];
+    organizationId?: Id<"organizations">;
 };
 
 const createDefaultShift = (): SiteShift => ({
@@ -44,6 +45,7 @@ const createDefaultSiteForm = (): SiteFormState => ({
     regionId: "",
     city: "",
     shifts: [createDefaultShift()],
+    organizationId: undefined,
 });
 
 export default function SiteManagement() {
@@ -72,14 +74,21 @@ export default function SiteManagement() {
 
     const currentUser = useQuery(api.users.getByClerkId, user?.id ? { clerkId: user.id } : "skip");
     const organizationId = currentUser?.organizationId;
-    const regions = useQuery(api.regions.list);
-    const allSites = useQuery(api.sites.listAll);
-    const orgSites = useQuery(api.sites.listSitesByOrg, organizationId ? { organizationId } : "skip");
-    const allUsers = useQuery(api.users.listAll);
+    const regions = useQuery(api.regions.list, {});
+    const allSites = useQuery(api.sites.listAll, {});
+    const orgSites = useQuery(api.sites.listSitesByOrg, organizationId ? { 
+        organizationId,
+        requestingUserId: currentUser?._id
+    } : "skip");
+    const allOrgs = useQuery(api.organizations.list, { 
+        requestingUserId: currentUser?._id 
+    });
+    const allUsers = useQuery(api.users.listAll, {});
 
+    const isRestricted = userHasAnyRole(currentUser, RESTRICTED_ROLES as any);
     const isSuperAdmin =
-        getUserRoles(currentUser).includes("Owner") ||
-        getUserRoles(currentUser).includes("Deployment Manager");
+        userHasAnyRole(currentUser, ["Owner", "Deployment Manager"] as any);
+    const isAdmin = isSuperAdmin || userHasRole(currentUser, "Manager") || userHasRole(currentUser, "Visiting Officer");
     const sites = isSuperAdmin ? allSites : orgSites;
     const soUsers = useMemo(
         () =>
@@ -218,7 +227,10 @@ export default function SiteManagement() {
         }
 
         try {
-            await createSite(buildSitePayload(newSite));
+            await createSite({
+                ...buildSitePayload(newSite),
+                organizationId: newSite.organizationId || organizationId,
+            });
             setIsAddModalOpen(false);
             resetNewSite();
             toast.success("Site created successfully");
@@ -244,6 +256,7 @@ export default function SiteManagement() {
             await updateSite({
                 id: editingSite.id,
                 ...buildSitePayload(editingSite),
+                organizationId: editingSite.organizationId || organizationId,
             });
             setEditingSite(null);
             setShowEditMapPicker(false);
@@ -275,6 +288,7 @@ export default function SiteManagement() {
             shifts,
             shiftStart: shifts[0]?.start,
             shiftEnd: shifts[0]?.end,
+            organizationId: site.organizationId,
         });
     };
 
@@ -389,13 +403,15 @@ export default function SiteManagement() {
                             className="pl-10 pr-4 py-2 bg-white/5 border border-white/10 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-primary/50 w-full sm:w-72"
                         />
                     </div>
-                    <button
-                        onClick={() => setIsAddModalOpen(true)}
-                        className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-xl text-sm font-semibold hover:bg-primary/90 transition-all shadow-[0_0_20px_rgba(37,99,235,0.3)]"
-                    >
-                        <Plus className="w-4 h-4" />
-                        Add New Site
-                    </button>
+                    {isAdmin && (
+                        <button
+                            onClick={() => setIsAddModalOpen(true)}
+                            className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-xl text-sm font-semibold hover:bg-primary/90 transition-all shadow-[0_0_20px_rgba(37,99,235,0.3)]"
+                        >
+                            <Plus className="w-4 h-4" />
+                            Add New Site
+                        </button>
+                    )}
                 </div>
 
                 <div className="glass rounded-2xl border border-white/10 overflow-hidden">
@@ -438,29 +454,32 @@ export default function SiteManagement() {
                                             </td>
                                             <td className="px-4 sm:px-6 py-4 text-sm text-white">{site.shifts?.length || 0}</td>
                                             <td className="px-4 sm:px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
-                                                <div className="flex items-center justify-end gap-2">
-                                                    <button
-                                                        onClick={() => setEditingSite({
-                                                            id: site._id,
-                                                            name: site.name,
-                                                            latitude: site.latitude,
-                                                            longitude: site.longitude,
-                                                            allowedRadius: site.allowedRadius,
-                                                            regionId: site.regionId || "",
-                                                            city: site.city || "",
-                                                            shifts: site.shifts?.length ? site.shifts : [createDefaultShift()],
-                                                        })}
-                                                        className="p-2 hover:bg-white/5 rounded-lg text-muted-foreground hover:text-primary transition-colors"
-                                                    >
-                                                        <Edit2 className="w-4 h-4" />
-                                                    </button>
-                                                    <button
-                                                        onClick={() => setIsDeletingId(site._id)}
-                                                        className="p-2 hover:bg-white/5 rounded-lg text-muted-foreground hover:text-red-500 transition-colors"
-                                                    >
-                                                        <Trash2 className="w-4 h-4" />
-                                                    </button>
-                                                </div>
+                                                {isAdmin && (
+                                                    <div className="flex items-center justify-end gap-2">
+                                                        <button
+                                                            onClick={() => setEditingSite({
+                                                                id: site._id,
+                                                                name: site.name,
+                                                                latitude: site.latitude,
+                                                                longitude: site.longitude,
+                                                                allowedRadius: site.allowedRadius,
+                                                                regionId: site.regionId || "",
+                                                                city: site.city || "",
+                                                                shifts: site.shifts?.length ? site.shifts : [createDefaultShift()],
+                                                                organizationId: site.organizationId,
+                                                            })}
+                                                            className="p-2 hover:bg-white/5 rounded-lg text-muted-foreground hover:text-primary transition-colors"
+                                                        >
+                                                            <Edit2 className="w-4 h-4" />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => setIsDeletingId(site._id)}
+                                                            className="p-2 hover:bg-white/5 rounded-lg text-muted-foreground hover:text-red-500 transition-colors"
+                                                        >
+                                                            <Trash2 className="w-4 h-4" />
+                                                        </button>
+                                                    </div>
+                                                )}
                                             </td>
                                         </tr>
                                         {expandedSiteId === site._id && (
@@ -473,17 +492,19 @@ export default function SiteManagement() {
                                                                     <Clock className="w-3.5 h-3.5" />
                                                                     Shift Details
                                                                 </h4>
-                                                                <button
-                                                                    onClick={() => setShiftEditor({
-                                                                        siteId: site._id,
-                                                                        shiftIndex: null,
-                                                                        shift: { ...createDefaultShift(), name: `Shift ${(site.shifts?.length || 0) + 1}` },
-                                                                    })}
-                                                                    className="flex items-center gap-1 px-2 py-1 bg-primary/10 text-primary rounded-lg text-[10px] font-bold hover:bg-primary/20 transition-all border border-primary/20"
-                                                                >
-                                                                    <Plus className="w-3 h-3" />
-                                                                    Add New Shift
-                                                                </button>
+                                                                {isAdmin && (
+                                                                    <button
+                                                                        onClick={() => setShiftEditor({
+                                                                            siteId: site._id,
+                                                                            shiftIndex: null,
+                                                                            shift: { ...createDefaultShift(), name: `Shift ${(site.shifts?.length || 0) + 1}` },
+                                                                        })}
+                                                                        className="flex items-center gap-1 px-2 py-1 bg-primary/10 text-primary rounded-lg text-[10px] font-bold hover:bg-primary/20 transition-all border border-primary/20"
+                                                                    >
+                                                                        <Plus className="w-3 h-3" />
+                                                                        Add New Shift
+                                                                    </button>
+                                                                )}
                                                             </div>
                                                             <div className="space-y-3">
                                                                 {(site.shifts || []).map((shift: SiteShift, index: number) => (
@@ -495,18 +516,22 @@ export default function SiteManagement() {
                                                                                 <p className="text-xs text-muted-foreground mt-1">Shift Strength: {shift.strength}</p>
                                                                             </div>
                                                                             <div className="flex items-center gap-2">
-                                                                                <button
-                                                                                    onClick={() => setShiftEditor({ siteId: site._id, shiftIndex: index, shift: { ...shift } })}
-                                                                                    className="p-2 hover:bg-white/5 rounded-lg text-muted-foreground hover:text-primary transition-colors"
-                                                                                >
-                                                                                    <Edit2 className="w-4 h-4" />
-                                                                                </button>
-                                                                                <button
-                                                                                    onClick={() => handleDeleteShift(site, index)}
-                                                                                    className="p-2 hover:bg-white/5 rounded-lg text-muted-foreground hover:text-red-500 transition-colors"
-                                                                                >
-                                                                                    <Trash2 className="w-4 h-4" />
-                                                                                </button>
+                                                                                {isAdmin && (
+                                                                                    <>
+                                                                                        <button
+                                                                                            onClick={() => setShiftEditor({ siteId: site._id, shiftIndex: index, shift: { ...shift } })}
+                                                                                            className="p-2 hover:bg-white/5 rounded-lg text-muted-foreground hover:text-primary transition-colors"
+                                                                                        >
+                                                                                            <Edit2 className="w-4 h-4" />
+                                                                                        </button>
+                                                                                        <button
+                                                                                            onClick={() => handleDeleteShift(site, index)}
+                                                                                            className="p-2 hover:bg-white/5 rounded-lg text-muted-foreground hover:text-red-500 transition-colors"
+                                                                                        >
+                                                                                            <Trash2 className="w-4 h-4" />
+                                                                                        </button>
+                                                                                    </>
+                                                                                )}
                                                                             </div>
                                                                         </div>
                                                                     </div>
@@ -520,22 +545,24 @@ export default function SiteManagement() {
                                                                     <Users className="w-3.5 h-3.5" />
                                                                     Assigned SO Officers
                                                                 </h4>
-                                                                <button
-                                                                    onClick={() => {
-                                                                        setAssigningSiteId(site._id);
-                                                                        setIsAssignModalOpen(true);
-                                                                    }}
-                                                                    className="flex items-center gap-1 px-2 py-1 bg-primary/10 text-primary rounded-lg text-[10px] font-bold hover:bg-primary/20 transition-all border border-primary/20"
-                                                                >
-                                                                    <UserPlus className="w-3 h-3" />
-                                                                    Add Officer
-                                                                </button>
+                                                                {isAdmin && (
+                                                                    <button
+                                                                        onClick={() => {
+                                                                            setAssigningSiteId(site._id);
+                                                                            setIsAssignModalOpen(true);
+                                                                        }}
+                                                                        className="flex items-center gap-1 px-2 py-1 bg-primary/10 text-primary rounded-lg text-[10px] font-bold hover:bg-primary/20 transition-all border border-primary/20"
+                                                                    >
+                                                                        <UserPlus className="w-3 h-3" />
+                                                                        Add Officer
+                                                                    </button>
+                                                                )}
                                                             </div>
                                                             <div className="glass rounded-xl p-4 border border-white/5 min-h-[60px]">
                                                                 <SiteOfficersList
                                                                     siteId={site._id}
                                                                     allUsers={soUsers}
-                                                                    onRemove={async (officerId) => {
+                                                                    onRemove={isAdmin ? async (officerId) => {
                                                                         const officer = soUsers.find((currentOfficer: any) => currentOfficer._id === officerId);
                                                                         if (!officer) return;
                                                                         try {
@@ -544,7 +571,7 @@ export default function SiteManagement() {
                                                                         } catch (error: any) {
                                                                             toast.error(error.message || "Failed to unassign officer");
                                                                         }
-                                                                    }}
+                                                                    } : undefined}
                                                                 />
                                                             </div>
                                                         </div>
@@ -672,6 +699,8 @@ export default function SiteManagement() {
                     onSubmit={handleAddSite}
                     submitLabel="Create Site"
                     getRegionCities={getRegionCities}
+                    organizations={allOrgs}
+                    isAdmin={isAdmin}
                 />
             )}
 
@@ -694,6 +723,8 @@ export default function SiteManagement() {
                     onSubmit={handleUpdateSite}
                     submitLabel="Save Changes"
                     getRegionCities={getRegionCities}
+                    organizations={allOrgs}
+                    isAdmin={isAdmin}
                 />
             )}
 
@@ -778,6 +809,8 @@ function SiteModal({
     title,
     form,
     regions,
+    organizations,
+    isAdmin,
     showMapPicker,
     onClose,
     onChange,
@@ -793,6 +826,8 @@ function SiteModal({
     title: string;
     form: SiteFormState;
     regions: any[] | undefined;
+    organizations: any[] | undefined;
+    isAdmin: boolean;
     showMapPicker: boolean;
     onClose: () => void;
     onChange: (nextForm: any) => void;
@@ -816,6 +851,24 @@ function SiteModal({
                 </div>
 
                 <div className="space-y-4">
+                    {isAdmin && (
+                        <div>
+                            <label className="text-xs font-medium text-muted-foreground uppercase">Organization</label>
+                            <select
+                                value={form.organizationId || ""}
+                                onChange={(e) => onChange({ ...form, organizationId: e.target.value as Id<"organizations"> })}
+                                className="w-full mt-1 px-4 py-2 bg-neutral-900 border border-white/10 rounded-xl text-white"
+                            >
+                                <option value="">Default (Your Organization)</option>
+                                {organizations?.map((org: any) => (
+                                    <option key={org._id} value={org._id}>
+                                        {org.name} {org.parentOrganizationId ? "(Sub-Org)" : "(Root)"}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
+
                     <div>
                         <label className="text-xs font-medium text-muted-foreground uppercase">Site Name</label>
                         <input
@@ -976,7 +1029,7 @@ function SiteModal({
 function SiteOfficersList({ siteId, allUsers, onRemove }: {
     siteId: Id<"sites">;
     allUsers: any[] | undefined;
-    onRemove: (id: Id<"users">) => void;
+    onRemove?: (id: Id<"users">) => void | Promise<void>;
 }) {
     if (allUsers === undefined) {
         return <div className="text-xs text-muted-foreground italic flex items-center gap-2"><Loader2 className="w-3 h-3 animate-spin" />Loading officers...</div>;
@@ -1001,15 +1054,17 @@ function SiteOfficersList({ siteId, allUsers, onRemove }: {
                         <div className="text-xs font-medium text-white">{officer.name}</div>
                         <div className="text-[10px] text-muted-foreground">{getUserRoles(officer).join(", ") || "—"}</div>
                     </div>
-                    <button
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            onRemove(officer._id);
-                        }}
-                        className="p-1.5 bg-white/5 hover:bg-red-500/20 rounded-lg text-red-400 transition-all"
-                    >
-                        <UserMinus className="w-3.5 h-3.5" />
-                    </button>
+                    {onRemove && (
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onRemove(officer._id);
+                            }}
+                            className="p-1.5 bg-white/5 hover:bg-red-500/20 rounded-lg text-red-400 transition-all"
+                        >
+                            <UserMinus className="w-3.5 h-3.5" />
+                        </button>
+                    )}
                 </div>
             ))}
         </div>

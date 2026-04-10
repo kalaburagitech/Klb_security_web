@@ -1,4 +1,16 @@
-export const OWNER_PERMISSIONS = {
+export type UserPermissions = {
+  users: boolean;
+  sites: boolean;
+  patrolPoints: boolean;
+  patrolLogs: boolean;
+  visitLogs: boolean;
+  issues: boolean;
+  analytics: boolean;
+  attendance: boolean;
+  regions: boolean;
+};
+
+export const OWNER_PERMISSIONS: UserPermissions = {
   users: true,
   sites: true,
   patrolPoints: true,
@@ -7,9 +19,10 @@ export const OWNER_PERMISSIONS = {
   issues: true,
   analytics: true,
   attendance: true,
-} as const;
+  regions: true,
+};
 
-export const NEW_USER_PERMISSIONS = {
+export const NEW_USER_PERMISSIONS: UserPermissions = {
   users: false,
   sites: false,
   patrolPoints: false,
@@ -18,7 +31,8 @@ export const NEW_USER_PERMISSIONS = {
   issues: false,
   analytics: false,
   attendance: false,
-} as const;
+  regions: false,
+};
 
 const ROLE_PRIORITY = [
   "Owner",
@@ -38,6 +52,7 @@ const ORG_ADMIN_ROLES = new Set<string>([
   "Owner",
   "Deployment Manager",
   "Manager",
+  "Visiting Officer",
 ]);
 
 /** True if the user has any org-wide admin role (site list / admin flows). */
@@ -60,20 +75,57 @@ export function pickPrimaryRoleForPermissions(roles: string[]): string {
   return best;
 }
 
+export const DEFAULT_ROLE_PERMISSIONS: Record<string, typeof OWNER_PERMISSIONS> = {
+  "Owner": OWNER_PERMISSIONS,
+  "Deployment Manager": OWNER_PERMISSIONS,
+  "Manager": OWNER_PERMISSIONS,
+  "Visiting Officer": {
+    ...NEW_USER_PERMISSIONS,
+    patrolLogs: true,
+    visitLogs: true,
+    issues: true,
+    attendance: true,
+    analytics: true,
+    regions: true,
+  },
+  "SO": {
+    ...NEW_USER_PERMISSIONS,
+    sites: true,
+    patrolLogs: true,
+    visitLogs: true,
+    issues: true,
+    attendance: true,
+    analytics: true,
+    regions: true,
+  },
+  "Client": {
+    ...NEW_USER_PERMISSIONS,
+    sites: true,
+    patrolLogs: true,
+    visitLogs: true,
+    issues: true,
+    attendance: true,
+    analytics: true,
+    regions: true,
+  },
+  "NEW_USER": NEW_USER_PERMISSIONS,
+};
+
 export function normalizePermissionsForRole(
   role: string,
   permissions?: PermissionsPatch
 ) {
-  if (role === "Owner") {
-    return { ...OWNER_PERMISSIONS };
-  }
-
-  if (role === "NEW_USER") {
-    return { ...NEW_USER_PERMISSIONS };
+  const defaults = DEFAULT_ROLE_PERMISSIONS[role] || NEW_USER_PERMISSIONS;
+  
+  // If role is NOT NEW_USER, and permissions are missing or all false, 
+  // we assume it's uninitialized and return the role defaults.
+  const isAllFalse = !permissions || Object.values(permissions).every(v => v === false);
+  if (role !== "NEW_USER" && isAllFalse) {
+    return defaults;
   }
 
   return {
-    ...NEW_USER_PERMISSIONS,
+    ...defaults,
     ...permissions,
   };
 }

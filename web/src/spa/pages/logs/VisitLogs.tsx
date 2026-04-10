@@ -18,6 +18,7 @@ import { useUser } from "@clerk/nextjs";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { userHasRole } from "../../../lib/userRoles";
+import type { Id } from "../../../../convex/_generated/dataModel";
 
 const REPORT_PAGE_SIZE = 25;
 
@@ -78,6 +79,8 @@ export default function VisitLogs() {
     const [activeTab, setActiveTab] = useState<"details" | "report">("details");
     const [selectedRegionId, setSelectedRegionId] = useState("");
     const [selectedCity, setSelectedCity] = useState("");
+    const [selectedOrganizationId, setSelectedOrganizationId] = useState("");
+    const [selectedSiteId, setSelectedSiteId] = useState("");
     const [selectedDayDetails, setSelectedDayDetails] = useState<{
         officerName: string;
         dateLabel: string;
@@ -98,15 +101,25 @@ export default function VisitLogs() {
         user?.id ? { clerkId: user.id } : "skip"
     );
     const organizationId = currentUser?.organizationId;
+    const isRestricted = (currentUser?.roles || []).some((r: string) => ["Client", "SO"].includes(r));
+    const isAdmin = (currentUser?.roles || []).some((r: string) => ["Owner", "Deployment Manager", "Manager", "Visiting Officer"].includes(r));
+
     const orgUsers = useQuery(
         api.users.listByOrg,
         organizationId ? { organizationId } : "skip"
     );
     const regions = useQuery(api.regions.list, {});
+    const orgs = useQuery(api.organizations.list, organizationId ? { 
+        requestingUserId: currentUser?._id 
+    } : "skip");
     const sites = useQuery(
         api.sites.listSitesByOrg,
         organizationId
-            ? { organizationId, regionId: selectedRegionId || undefined }
+            ? { 
+                organizationId: (selectedOrganizationId as Id<"organizations">) || organizationId, 
+                regionId: selectedRegionId || undefined,
+                requestingUserId: currentUser?._id
+            }
             : "skip"
     );
 
@@ -123,17 +136,28 @@ export default function VisitLogs() {
     const reportFromMs = useMemo(() => parseVisitDayStart(reportFromDate), [reportFromDate]);
     const reportToMs = useMemo(() => parseVisitDayEnd(reportToDate), [reportToDate]);
 
+    useEffect(() => {
+        if (selectedSiteId && !sites?.some((s: { _id: string }) => s._id === selectedSiteId)) {
+            setSelectedSiteId("");
+        }
+        // Auto-select if restricted and only one site available
+        if (isRestricted && (sites || []).length === 1 && !selectedSiteId) {
+            setSelectedSiteId(sites![0]._id);
+        }
+    }, [sites, selectedSiteId, isRestricted]);
+
     const visitReportPage = useQuery(
         api.logs.listVisitLogsPage,
         organizationId && selectedRegionId && activeTab === "report" && reportFromMs <= reportToMs
             ? {
-                  organizationId,
+                  organizationId: (selectedOrganizationId as Id<"organizations">) || organizationId,
                   regionId: selectedRegionId,
                   fromMs: reportFromMs,
                   toMs: reportToMs,
                   city: selectedCity || undefined,
                   offset: reportPageIndex * REPORT_PAGE_SIZE,
                   limit: REPORT_PAGE_SIZE,
+                  requestingUserId: currentUser?._id
               }
             : "skip"
     );
@@ -142,9 +166,10 @@ export default function VisitLogs() {
         api.logs.listVisitLogs,
         organizationId
             ? {
-                organizationId,
+                organizationId: (selectedOrganizationId as Id<"organizations">) || organizationId,
                 regionId: selectedRegionId || undefined,
                 city: selectedCity || undefined,
+                requestingUserId: currentUser?._id
             }
             : "skip"
     );
@@ -233,6 +258,7 @@ export default function VisitLogs() {
             toMs: reportToMs,
             city: selectedCity || undefined,
             maxRows: 2500,
+            requestingUserId: currentUser?._id
         });
         return items as any[];
     };
@@ -410,53 +436,112 @@ export default function VisitLogs() {
                     </button>
                 </div>
 
-                <div className="grid gap-4 rounded-2xl border border-white/10 bg-white/[0.02] p-4 md:grid-cols-3">
-                    <label className="space-y-2">
-                        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Region</span>
-                        <select
-                            value={selectedRegionId}
-                            onChange={(e) => {
-                                setSelectedRegionId(e.target.value);
-                                setSelectedCity("");
-                            }}
-                            className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none transition focus:border-primary"
-                        >
-                            <option value="">All Regions</option>
-                            {(regions ?? []).map((region: any) => (
-                                <option key={region._id} value={region.regionId}>
-                                    {region.regionName} ({region.regionId})
-                                </option>
-                            ))}
-                        </select>
-                    </label>
+                {!isRestricted && (
+                    <div className="grid gap-4 rounded-2xl border border-white/10 bg-white/[0.02] p-4 md:grid-cols-4">
+                        {isAdmin && (
+                            <label className="space-y-2">
+                                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Organization</span>
+                                <select
+                                    value={selectedOrganizationId}
+                                    onChange={(e) => {
+                                        setSelectedOrganizationId(e.target.value);
+                                        setSelectedRegionId("");
+                                        setSelectedCity("");
+                                        setSelectedSiteId("");
+                                    }}
+                                    className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none transition focus:border-primary"
+                                >
+                                    <option value="">All Organizations</option>
+                                    {(orgs ?? []).map((o: any) => (
+                                        <option key={o._id} value={o._id}>
+                                            {o.name}
+                                        </option>
+                                    ))}
+                                </select>
+                            </label>
+                        )}
+                        <label className="space-y-2">
+                            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Region</span>
+                            <select
+                                value={selectedRegionId}
+                                onChange={(e) => {
+                                    setSelectedRegionId(e.target.value);
+                                    setSelectedCity("");
+                                }}
+                                className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none transition focus:border-primary"
+                            >
+                                <option value="">All Regions</option>
+                                {(regions ?? []).map((region: any) => (
+                                    <option key={region._id} value={region.regionId}>
+                                        {region.regionName} ({region.regionId})
+                                    </option>
+                                ))}
+                            </select>
+                        </label>
 
-                    <label className="space-y-2">
-                        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">City</span>
-                        <select
-                            value={selectedCity}
-                            onChange={(e) => setSelectedCity(e.target.value)}
-                            className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none transition focus:border-primary"
-                        >
-                            <option value="">All Cities</option>
-                            {availableCities.map((city) => (
-                                <option key={city} value={city}>
-                                    {city}
-                                </option>
-                            ))}
-                        </select>
-                    </label>
+                        <label className="space-y-2">
+                            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">City</span>
+                            <select
+                                value={selectedCity}
+                                onChange={(e) => setSelectedCity(e.target.value)}
+                                className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none transition focus:border-primary"
+                            >
+                                <option value="">All Cities</option>
+                                {availableCities.map((city) => (
+                                    <option key={city} value={city}>
+                                        {city}
+                                    </option>
+                                ))}
+                            </select>
+                        </label>
 
-                    <div className="rounded-xl border border-white/10 bg-black/20 p-4">
-                        <p className="text-sm font-semibold text-white/90">
-                            Visiting Officers: {visitingOfficers.length}
-                        </p>
-                        <p className="mt-2 text-xs text-muted-foreground">
-                            {activeTab === "details"
-                                ? "The details view shows past 30 days coverage. Click any day circle to open visit details."
-                                : "The report view shows visit rows for the selected date range and lets you download CSV or PDF."}
-                        </p>
+                        <div className="rounded-xl border border-white/10 bg-black/20 p-4">
+                            <p className="text-sm font-semibold text-white/90">
+                                Visiting Officers: {visitingOfficers.length}
+                            </p>
+                            <p className="mt-2 text-xs text-muted-foreground">
+                                {activeTab === "details"
+                                    ? "The details view shows past 30 days coverage. Click any day circle to open visit details."
+                                    : "The report view shows visit rows for the selected date range and lets you download CSV or PDF."}
+                            </p>
+                        </div>
                     </div>
-                </div>
+                )}
+
+                {isRestricted && (
+                    <div className="grid gap-4 rounded-2xl border border-white/10 bg-white/[0.02] p-4 md:grid-cols-3">
+                        <div className="bg-black/20 border border-white/10 rounded-xl p-4 flex flex-col justify-center h-[72px]">
+                            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Organization</span>
+                            <div className="text-base font-bold text-white truncate opacity-70">
+                                {currentUser?.effectiveOrganizationName}
+                            </div>
+                        </div>
+                        <div className="min-w-[200px] bg-black/20 border border-white/10 rounded-xl p-4 flex flex-col justify-center h-[72px]">
+                            <label className="mb-1 block text-xs font-bold uppercase tracking-wider text-muted-foreground">Filter Site</label>
+                            <select
+                                className="w-full h-9 rounded-xl border border-white/10 bg-white/5 px-3 py-1 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:opacity-50 disabled:cursor-not-allowed"
+                                value={selectedSiteId}
+                                onChange={(e) => setSelectedSiteId(e.target.value)}
+                                disabled={isRestricted && (sites ?? []).length === 1}
+                            >
+                                {!(isRestricted && (sites ?? []).length === 1) && (
+                                    <option value="">All Sites</option>
+                                )}
+                                {(sites ?? []).map((s: any) => (
+                                    <option key={s._id} value={s._id}>{s.name || s.locationName}</option>
+                                ))}
+                            </select>
+                        </div>
+                        <div className="rounded-xl border border-white/10 bg-black/20 p-4 flex flex-col justify-center h-[72px]">
+                            <p className="text-sm font-semibold text-white/90">
+                                Visiting Officers: {visitingOfficers.length}
+                            </p>
+                            <p className="mt-1 text-[10px] text-muted-foreground">
+                                Detailed visibility for authorized sites only.
+                            </p>
+                        </div>
+                    </div>
+                )}
 
                 {activeTab === "details" && (
                     <div className="glass rounded-2xl border border-white/10 overflow-hidden">
@@ -542,6 +627,24 @@ export default function VisitLogs() {
                         )}
 
                         <div className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+                            {isAdmin && (
+                                <div className="grid gap-4 md:grid-cols-3">
+                                    <label className="space-y-2">
+                                        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Filter Organization</span>
+                                        <select
+                                            value={selectedOrganizationId}
+                                            onChange={(e) => setSelectedOrganizationId(e.target.value)}
+                                            className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none transition focus:border-primary"
+                                        >
+                                            <option value="">All Organizations</option>
+                                            {(orgs ?? []).map((o: any) => (
+                                                <option key={o._id} value={o._id}>{o.name}</option>
+                                            ))}
+                                        </select>
+                                    </label>
+                                    <div className="md:col-span-2" />
+                                </div>
+                            )}
                             <div className="grid gap-4 md:grid-cols-2">
                                 <label className="space-y-2">
                                     <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">From Date</span>

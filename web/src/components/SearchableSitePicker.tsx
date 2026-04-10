@@ -12,6 +12,7 @@ interface SearchableSitePickerProps {
     className?: string;
     regionId?: string;
     city?: string;
+    requestingUserId?: Id<"users">;
 }
 
 export function SearchableSitePicker({
@@ -20,20 +21,23 @@ export function SearchableSitePicker({
     onSelect,
     className,
     regionId,
-    city
+    city,
+    requestingUserId
 }: SearchableSitePickerProps) {
     const [isOpen, setIsOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
     const dropdownRef = useRef<HTMLDivElement>(null);
 
-    // Fetch sites ordinarily by org and also all sites for global display.
+    // Fetch sites ordinarily by org
     const orgSites = useQuery(api.sites.listSitesByOrg, {
-        organizationId
+        organizationId,
+        requestingUserId
     });
-    const allSitesFallback = useQuery(api.sites.listAll);
+    
+    // Only fetch listAll if we don't have a requestingUserId (non-restricted role)
+    const allSitesFallback = useQuery(api.sites.listAll, !requestingUserId ? {} : "skip");
 
-    // If we have all sites, we trust it for full visibility; otherwise, use org sites.
-    // This ensures the list shows everything from Site Management whenever possible.
+    // If we have all sites (admin), we trust it; otherwise, use org sites (which are filtered by requestingUserId).
     const allSites = allSitesFallback || orgSites || [];
 
     // Debug: Log current state

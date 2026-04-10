@@ -29,6 +29,7 @@ export default function UserManagement() {
     const [editingEnrollment, setEditingEnrollment] = useState<any>(null);
     const [isDeletingEnrollmentId, setIsDeletingEnrollmentId] = useState<Id<"enrolledPersons"> | null>(null);
     const [searchQuery, setSearchQuery] = useState("");
+    const [selectedOrganizationId, setSelectedOrganizationId] = useState<string>("");
 
     // Form states
     const [newName, setNewName] = useState("");
@@ -40,6 +41,8 @@ export default function UserManagement() {
     const [citySelection, setCitySelection] = useState<CitySelection>({ all: true, selected: [] });
     const [isCityDropdownOpen, setIsCityDropdownOpen] = useState(false);
     const [isEditCityDropdownOpen, setIsEditCityDropdownOpen] = useState(false);
+    const [isPermissionsOpen, setIsPermissionsOpen] = useState(false);
+    const [isEditPermissionsOpen, setIsEditPermissionsOpen] = useState(false);
 
     const [newPermissions, setNewPermissions] = useState({
         users: false,
@@ -50,6 +53,7 @@ export default function UserManagement() {
         issues: true,
         analytics: true,
         attendance: true,
+        regions: false,
     });
 
     // Mutations
@@ -66,22 +70,38 @@ export default function UserManagement() {
         user?.id ? { clerkId: user.id } : "skip"
     );
 
-    const regions = useQuery(api.regions.list);
+    const regions = useQuery(api.regions.list, {});
     const allUsers = useQuery(api.users.listAll);
-    const orgUsers = useQuery(api.users.listByOrg,
-        currentUser?.organizationId ? { organizationId: currentUser.organizationId } : "skip"
-    );
-
+    const isRestricted = (currentUser?.roles || []).some((r: string) => ["Client", "SO"].includes(r));
     const isSuperAdmin =
         getUserRoles(currentUser).includes("Owner") ||
         getUserRoles(currentUser).includes("Deployment Manager");
-    const users = isSuperAdmin ? allUsers : orgUsers;
+    const isAdmin = isSuperAdmin || getUserRoles(currentUser).includes("Manager");
+
+    const orgUsers = useQuery(api.users.listByOrg,
+        (currentUser?.organizationId || (isSuperAdmin && selectedOrganizationId)) ? { 
+            organizationId: (selectedOrganizationId as Id<"organizations">) || (currentUser?.organizationId as Id<"organizations">),
+            requestingUserId: currentUser?._id
+        } : "skip"
+    );
+
+    const orgs = useQuery(
+        api.organizations.list,
+        currentUser?._id ? { 
+            currentOrganizationId: currentUser.organizationId,
+            requestingUserId: currentUser._id 
+        } : "skip"
+    );
+
+    const users = isSuperAdmin 
+        ? (selectedOrganizationId ? orgUsers : allUsers)
+        : orgUsers;
     const enrolledPersons = useQuery(
         api.enrollment.list,
         isSuperAdmin
-            ? {}
+            ? (selectedOrganizationId ? { organizationId: selectedOrganizationId as Id<"organizations"> } : {})
             : currentUser?.organizationId
-              ? { organizationId: currentUser.organizationId }
+              ? { organizationId: (selectedOrganizationId as Id<"organizations">) || currentUser.organizationId }
               : "skip"
     );
 
@@ -213,9 +233,12 @@ export default function UserManagement() {
             issues: true,
             analytics: true,
             attendance: true,
+            regions: false,
         });
         setIsCityDropdownOpen(false);
         setIsEditCityDropdownOpen(false);
+        setIsPermissionsOpen(false);
+        setIsEditPermissionsOpen(false);
     }, []);
 
     const handleAddUser = async () => {
@@ -437,48 +460,61 @@ export default function UserManagement() {
                     </div>
                 ) : (
                     <>
-                        {/* Tabs + Header */}
-                        <div className="space-y-4">
-                            <div className="flex items-center gap-2 border-b border-white/10">
+                        {/* Tabs & Search */}
+                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                            <div className="flex bg-white/5 p-1 rounded-xl w-fit">
                                 <button
                                     onClick={() => setActiveTab("users")}
                                     className={cn(
-                                        "px-3 py-2 text-sm font-semibold border-b-2 transition-colors",
-                                        activeTab === "users"
-                                            ? "border-primary text-primary"
-                                            : "border-transparent text-muted-foreground hover:text-white"
+                                        "px-6 py-2 rounded-lg text-sm font-semibold transition-all",
+                                        activeTab === "users" ? "bg-primary text-white shadow-lg" : "text-muted-foreground hover:text-white"
                                     )}
                                 >
-                                    Users
+                                    All Users
                                 </button>
                                 <button
                                     onClick={() => setActiveTab("enrolled")}
                                     className={cn(
-                                        "px-3 py-2 text-sm font-semibold border-b-2 transition-colors",
-                                        activeTab === "enrolled"
-                                            ? "border-primary text-primary"
-                                            : "border-transparent text-muted-foreground hover:text-white"
+                                        "px-6 py-2 rounded-lg text-sm font-semibold transition-all",
+                                        activeTab === "enrolled" ? "bg-emerald-500 text-white shadow-lg" : "text-muted-foreground hover:text-white"
                                     )}
                                 >
                                     Enrolled Persons
                                 </button>
                             </div>
-                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                                <div className="relative group w-full sm:w-auto">
-                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
+
+                            <div className="flex flex-1 items-center gap-4 max-w-2xl">
+                                {/* Organization Filter */}
+                                {isAdmin && (
+                                    <div className="relative w-48 shrink-0">
+                                        <Building className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                                        <select
+                                            value={selectedOrganizationId}
+                                            onChange={(e) => setSelectedOrganizationId(e.target.value)}
+                                            className="w-full bg-white/5 border border-white/10 rounded-xl py-2 pl-10 pr-4 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary/50 appearance-none"
+                                        >
+                                            <option value="" className="bg-[#1a1c20]">All Organizations</option>
+                                            {orgs?.map((org) => (
+                                                <option key={org._id} value={org._id} className="bg-[#1a1c20]">
+                                                    {org.name}
+                                                </option>
+                                            ))}
+                                        </select>
+                                        <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground pointer-events-none" />
+                                    </div>
+                                )}
+
+                                <div className="relative flex-1">
+                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                                     <input
                                         type="text"
+                                        placeholder={`Search ${activeTab === "users" ? "users" : "enrolled persons"}...`}
                                         value={searchQuery}
                                         onChange={(e) => setSearchQuery(e.target.value)}
-                                        placeholder={
-                                            activeTab === "users"
-                                                ? "Search users by name, role or email..."
-                                                : "Search enrolled persons by name, ID, rank, region..."
-                                        }
-                                        className="w-full sm:w-96 pl-10 pr-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-primary/50 text-white placeholder:text-muted-foreground"
+                                        className="w-full bg-white/5 border border-white/10 rounded-xl py-2 pl-10 pr-4 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary/50"
                                     />
                                 </div>
-                                {activeTab === "users" ? (
+                                {activeTab === "users" && isAdmin ? (
                                     <button
                                         onClick={() => {
                                             resetForm();
@@ -580,45 +616,50 @@ export default function UserManagement() {
                                                         )}>
                                                             {u.status === "inactive" ? "Inactive" : "Active"}
                                                         </span>
-                                                        <button
-                                                            onClick={() => handleToggleStatus(u._id, u.status)}
-                                                            className={cn(
-                                                                "relative inline-flex h-6 w-11 items-center rounded-full transition-colors",
-                                                                u.status === "inactive" ? "bg-white/10" : "bg-emerald-500/80"
-                                                            )}
-                                                            title={u.status === "inactive" ? "Activate user" : "Deactivate user"}
-                                                        >
-                                                            <span
+                                                        {isAdmin && (
+                                                            <button
+                                                                onClick={() => handleToggleStatus(u._id, u.status)}
                                                                 className={cn(
-                                                                    "inline-block h-5 w-5 transform rounded-full bg-white transition-transform",
-                                                                    u.status === "inactive" ? "translate-x-1" : "translate-x-5"
+                                                                    "relative inline-flex h-6 w-11 items-center rounded-full transition-colors",
+                                                                    u.status === "inactive" ? "bg-white/10" : "bg-emerald-500/80"
                                                                 )}
-                                                            />
-                                                        </button>
+                                                                title={u.status === "inactive" ? "Activate user" : "Deactivate user"}
+                                                            >
+                                                                <span
+                                                                    className={cn(
+                                                                        "inline-block h-5 w-5 transform rounded-full bg-white transition-transform",
+                                                                        u.status === "inactive" ? "translate-x-1" : "translate-x-5"
+                                                                    )}
+                                                                />
+                                                            </button>
+                                                        )}
                                                     </div>
                                                 </td>
                                                 <td className="px-4 sm:px-6 py-4 text-right">
-                                                    <div className="flex items-center justify-end gap-1 sm:gap-2">
-                                                        <button
-                                                            onClick={() =>
-                                                                setEditingUser({
-                                                                    ...u,
-                                                                    roles: getUserRoles(u) as Role[],
-                                                                })
-                                                            }
-                                                            className="p-1.5 sm:p-2 hover:bg-white/5 rounded-lg text-muted-foreground hover:text-primary transition-colors"
-                                                            title="Edit user"
-                                                        >
-                                                            <Edit2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                                                        </button>
-                                                        <button
-                                                            onClick={() => setIsDeletingId(u._id)}
-                                                            className="p-1.5 sm:p-2 hover:bg-white/5 rounded-lg text-muted-foreground hover:text-red-500 transition-colors"
-                                                            title="Delete user"
-                                                        >
-                                                            <Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                                                        </button>
-                                                    </div>
+                                                    {isAdmin && (
+                                                        <div className="flex items-center justify-end gap-1 sm:gap-2">
+                                                            <button
+                                                                onClick={() => {
+                                                                    setEditingUser({
+                                                                        ...u,
+                                                                        roles: getUserRoles(u) as Role[],
+                                                                    });
+                                                                    setIsEditPermissionsOpen(false);
+                                                                }}
+                                                                className="p-1.5 sm:p-2 hover:bg-white/5 rounded-lg text-muted-foreground hover:text-primary transition-colors"
+                                                                title="Edit user"
+                                                            >
+                                                                <Edit2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                                                            </button>
+                                                            <button
+                                                                onClick={() => setIsDeletingId(u._id)}
+                                                                className="p-1.5 sm:p-2 hover:bg-white/5 rounded-lg text-muted-foreground hover:text-red-500 transition-colors"
+                                                                title="Delete user"
+                                                            >
+                                                                <Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                                                            </button>
+                                                        </div>
+                                                    )}
                                                 </td>
                                             </tr>
                                         ))}
@@ -930,37 +971,53 @@ export default function UserManagement() {
 
                             {/* Permissions */}
                             <div className="space-y-2 pt-2 border-t border-white/5">
-                                <div className="flex items-center justify-between">
-                                    <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Dashboard Access</label>
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            const allTrue = Object.keys(newPermissions).reduce((acc, key) => {
-                                                acc[key as keyof typeof newPermissions] = true;
-                                                return acc;
-                                            }, { ...newPermissions });
-                                            setNewPermissions(allTrue);
-                                        }}
-                                        className="text-[10px] text-primary hover:underline"
-                                    >
-                                        Select All
-                                    </button>
-                                </div>
-                                <div className="grid grid-cols-2 gap-x-4 gap-y-2">
-                                    {Object.entries(newPermissions).map(([key, value]) => (
-                                        <label key={key} className="flex items-center gap-2 cursor-pointer group">
-                                            <input
-                                                type="checkbox"
-                                                checked={value}
-                                                onChange={e => setNewPermissions({ ...newPermissions, [key]: e.target.checked })}
-                                                className="w-3.5 h-3.5 rounded border-white/10 bg-white/5 text-primary focus:ring-primary/50"
-                                            />
-                                            <span className="text-xs text-white/70 group-hover:text-white capitalize">
-                                                {key.replace(/([A-Z])/g, ' $1').trim()}
-                                            </span>
-                                        </label>
-                                    ))}
-                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setIsPermissionsOpen(!isPermissionsOpen)}
+                                    className="w-full flex items-center justify-between group"
+                                >
+                                    <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider cursor-pointer group-hover:text-white transition-colors">
+                                        Dashboard Access
+                                    </label>
+                                    <div className="flex items-center gap-3">
+                                        <button
+                                            type="button"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                const allTrue = Object.keys(newPermissions).reduce((acc, key) => {
+                                                    acc[key as keyof typeof newPermissions] = true;
+                                                    return acc;
+                                                }, { ...newPermissions });
+                                                setNewPermissions(allTrue);
+                                            }}
+                                            className="text-[10px] text-primary hover:underline"
+                                        >
+                                            Select All
+                                        </button>
+                                        <ChevronDown className={cn(
+                                            "w-4 h-4 text-muted-foreground transition-transform",
+                                            isPermissionsOpen && "rotate-180"
+                                        )} />
+                                    </div>
+                                </button>
+                                
+                                {isPermissionsOpen && (
+                                    <div className="grid grid-cols-2 gap-x-4 gap-y-2 mt-2 pt-2 border-t border-white/5 animate-in slide-in-from-top-2 duration-200">
+                                        {Object.entries(newPermissions).map(([key, value]) => (
+                                            <label key={key} className="flex items-center gap-2 cursor-pointer group">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={value}
+                                                    onChange={e => setNewPermissions({ ...newPermissions, [key]: e.target.checked })}
+                                                    className="w-3.5 h-3.5 rounded border-white/10 bg-white/5 text-primary focus:ring-primary/50"
+                                                />
+                                                <span className="text-xs text-white/70 group-hover:text-white capitalize">
+                                                    {key.replace(/([A-Z])/g, ' $1').trim()}
+                                                </span>
+                                            </label>
+                                        ))}
+                                    </div>
+                                )}
                             </div>
                         </div>
 
@@ -1068,6 +1125,65 @@ export default function UserManagement() {
                                 </select>
                             </div>
 
+                             {/* Permissions / Dashboard Access - FORCED VISIBILITY FOR DEBUG */}
+                             <div className="space-y-4 pt-4 border-2 border-red-500 rounded-xl p-4 bg-red-500/5">
+                                 <div className="flex items-center justify-between">
+                                     <label className="text-sm font-bold text-red-500 uppercase tracking-widest">
+                                         Dashboard Access (ADMIN)
+                                     </label>
+                                     <button
+                                         type="button"
+                                         onClick={(e) => {
+                                             e.stopPropagation();
+                                             const defaultPerms = {
+                                                 users: false, sites: false, patrolPoints: false,
+                                                 patrolLogs: true, visitLogs: true, issues: true,
+                                                 analytics: true, attendance: true, regions: false
+                                             };
+                                             const currentPerms = { ...defaultPerms, ...(editingUser.permissions || {}) };
+                                             const allTrue = Object.keys(currentPerms).reduce((acc: any, key) => {
+                                                 acc[key] = true;
+                                                 return acc;
+                                             }, {});
+                                             setEditingUser({ ...editingUser, permissions: allTrue });
+                                         }}
+                                         className="text-xs text-primary hover:underline font-bold"
+                                     >
+                                         Select All
+                                     </button>
+                                 </div>
+ 
+                                 <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+                                     {Object.entries({
+                                         users: false, sites: false, patrolPoints: false,
+                                         patrolLogs: true, visitLogs: true, issues: true,
+                                         analytics: true, attendance: true, regions: false,
+                                         ...(editingUser.permissions || {})
+                                     }).map(([key, value]) => (
+                                         <label key={key} className="flex items-center gap-2 cursor-pointer group bg-white/5 p-2 rounded-lg hover:bg-white/10 transition-colors">
+                                             <input
+                                                 type="checkbox"
+                                                 checked={!!value}
+                                                 onChange={e => {
+                                                     const perms = { 
+                                                         users: false, sites: false, patrolPoints: false,
+                                                         patrolLogs: true, visitLogs: true, issues: true,
+                                                         analytics: true, attendance: true, regions: false,
+                                                         ...(editingUser.permissions || {}), 
+                                                         [key]: e.target.checked 
+                                                     };
+                                                     setEditingUser({ ...editingUser, permissions: perms });
+                                                 }}
+                                                 className="w-4 h-4 rounded border-white/20 bg-white/5 text-primary focus:ring-primary/50"
+                                             />
+                                             <span className="text-xs text-white/90 group-hover:text-white capitalize font-medium">
+                                                 {key.replace(/([A-Z])/g, ' $1').trim()}
+                                             </span>
+                                         </label>
+                                     ))}
+                                 </div>
+                             </div>
+
                             {editingUser.regionId && editingRegionCities.length > 0 && (
                                 <div>
                                     <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center justify-between">
@@ -1133,6 +1249,7 @@ export default function UserManagement() {
                                     </div>
                                 </div>
                             )}
+
                         </div>
 
                         <button
