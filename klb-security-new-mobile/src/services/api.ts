@@ -16,7 +16,7 @@ const envRaw =
     typeof process !== "undefined" && process.env?.EXPO_PUBLIC_API_URL
         ? String(process.env.EXPO_PUBLIC_API_URL).trim().replace(/\/+$/, "")
         : "";
-const FALLBACK_DEV = "http://192.168.0.110:3000/api";
+const FALLBACK_DEV = "http://localhost:3000/api";
 export const API_URL = envRaw
     ? envRaw.endsWith("/api")
         ? envRaw
@@ -32,6 +32,7 @@ export const api = axios.create({
     baseURL: API_URL,
     headers: {
         'Content-Type': 'application/json',
+        'bypass-tunnel-reminder': 'true',
     },
 });
 
@@ -83,6 +84,7 @@ const faceProxyApi = axios.create({
     baseURL: API_URL,
     headers: {
         accept: 'application/json',
+        'bypass-tunnel-reminder': 'true',
     },
 });
 
@@ -111,15 +113,15 @@ faceProxyApi.interceptors.response.use(
     (error) => {
         const summary = isAxiosError(error)
             ? {
-                  message: error.message,
-                  code: error.code,
-                  fullURL: error.config?.baseURL
-                      ? `${String(error.config.baseURL).replace(/\/$/, '')}/${String(error.config.url || '').replace(/^\//, '')}`
-                      : error.config?.url,
-                  method: error.config?.method,
-                  responseStatus: error.response?.status,
-                  responseData: error.response?.data,
-              }
+                message: error.message,
+                code: error.code,
+                fullURL: error.config?.baseURL
+                    ? `${String(error.config.baseURL).replace(/\/$/, '')}/${String(error.config.url || '').replace(/^\//, '')}`
+                    : error.config?.url,
+                method: error.config?.method,
+                responseStatus: error.response?.status,
+                responseData: error.response?.data,
+            }
             : klbFormatNetworkError(error);
         klbApiError('FaceProxy', 'HTTP/network failure', summary);
         if (error.message === 'Network Error') {
@@ -187,9 +189,9 @@ async function faceMultipartPost(
         const body = data as Record<string, unknown>;
         const err = new Error(
             (typeof body?.error === 'string' && body.error) ||
-                (typeof body?.message === 'string' && body.message) ||
-                res.statusText ||
-                `HTTP ${res.status}`
+            (typeof body?.message === 'string' && body.message) ||
+            res.statusText ||
+            `HTTP ${res.status}`
         ) as Error & { response?: { status: number; statusText: string; data: unknown }; isAxiosError?: boolean };
         err.response = { status: res.status, statusText: res.statusText, data };
         err.isAxiosError = true;
